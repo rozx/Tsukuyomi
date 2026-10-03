@@ -18,16 +18,6 @@ const flushPendingChanges = async () => {
   await Promise.resolve();
 };
 
-const waitForPendingItem = async (
-  state: ReturnType<typeof useSyncPendingChanges> | undefined,
-  predicate: (item: { kind: string; action: string; label: string }) => boolean,
-) => {
-  for (let i = 0; i < 20; i += 1) {
-    await flushPendingChanges();
-    if (state?.pendingItems.value.some(predicate)) return;
-  }
-};
-
 describe('useSyncPendingChanges', () => {
   const settingsStore = reactive({
     uiLocale: 'zh-CN',
@@ -171,7 +161,7 @@ describe('useSyncPendingChanges', () => {
     scope.stop();
   });
 
-  it('AI 读取记忆刷新 lastAccessedAt 后应显示待同步变更', async () => {
+  it('AI 读取记忆只刷新访问时间，不产生待同步变更或重新扫描', async () => {
     const db = await getDB();
     await db.put('memories', {
       id: 'mem-accessed',
@@ -187,22 +177,12 @@ describe('useSyncPendingChanges', () => {
 
     await flushPendingChanges();
     expect(state?.pendingItems.value).toEqual([]);
+    const reads = spyOn(MemoryService, 'getAllMemoriesForBooksFlat');
 
-    await MemoryService.getMemory('book-1', 'mem-accessed');
-    await waitForPendingItem(
-      state,
-      (item) => item.kind === 'memory' && item.action === 'edited' && item.label === '访问后的记忆',
-    );
-
-    expect(state?.pendingItems.value).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          kind: 'memory',
-          action: 'edited',
-          label: '访问后的记忆',
-        }),
-      ]),
-    );
+    await MemoryService.getRecentMemories('book-1');
+    await flushPendingChanges();
+    expect(state?.pendingItems.value).toEqual([]);
+    expect(reads).not.toHaveBeenCalled();
 
     scope.stop();
   });

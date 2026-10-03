@@ -1,6 +1,7 @@
 # data-sync Specification
 
 ## Purpose
+
 定义基于 GitHub Gist 的数据同步操作：统一的手动同步入口、错误处理与进度反馈、手动同步时恢复已删除项，以及恢复到修订版本时完全覆盖本地数据并保留同步凭据。
 
 ## Requirements
@@ -320,3 +321,23 @@
 
 - **WHEN** `forceSyncMode.active = true` 但 `SyncConfig.syncParams.gistId` 为空且用户点击 "强制推送到远程"
 - **THEN** 系统 SHALL NOT 弹出确认对话框，而是调用普通首次上传逻辑（由 `executeSync` 的首次同步分支处理），创建新 Gist，完成后显示 toast 提示"未检测到远程 Gist，已按普通同步处理"，并将 `forceSyncMode.active` 重置为 `false`
+
+### Requirement: Memory 访问与内容修改分离
+
+Memory SHALL 使用独立的 `updatedAt` 表达内容或摘要修改。`lastAccessedAt` SHALL 仅影响本设备的 LRU、排序和检索，不得因读取而改变上传载荷、manifest 哈希或待同步状态。同步合并和单条删除裁决 SHALL 使用内容修改时间；旧数据首次读写时冻结原访问时间作为内容时间，后续读取不再改变它。
+
+#### Scenario: 读取与重复保存
+
+- **WHEN** 用户或 AI 读取 Memory，或保存相同内容与摘要
+- **THEN** 同步内容与哈希 SHALL 保持不变，本地访问时间可继续更新
+
+#### Scenario: 访问与远端修改或删除竞争
+
+- **WHEN** 本地仅有较新的访问时间，而远端修改了内容或发布删除记录
+- **THEN** 本地访问 SHALL 不得压过较新的内容修改或使被删除的 Memory 复活
+
+#### Scenario: 不完整下载、应用或本地读取
+
+- **WHEN** 任一远端条目读取、应用或删除失败，或构建本地快照时读取失败
+- **THEN** 本轮同步 SHALL 中止，不继续上传或推进成功时间；下载及应用失败 SHALL 保留旧 ETag，确保后续重新读取远端
+- **AND** 已成功应用的条目可保留，本轮不得显示完全成功

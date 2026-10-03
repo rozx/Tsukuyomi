@@ -160,6 +160,7 @@ export interface TsukuyomiDB extends DBSchema {
       content: string;
       summary: string;
       createdAt: number;
+      updatedAt?: number;
       lastAccessedAt: number;
       embeddings?: number[][];
       embeddingModel?: string;

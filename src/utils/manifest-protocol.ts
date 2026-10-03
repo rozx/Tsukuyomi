@@ -41,7 +41,7 @@ export function parseGistManifest(content: string): GistManifest {
     (typeof pending !== 'number' ||
       !Number.isSafeInteger(pending) ||
       pending < 1 ||
-      pending >= MANIFEST_SCHEMA_VERSION)
+      pending >= version)
   )
     throw new ManifestProtocolError('MANIFEST_INVALID', 'invalid');
   return value as GistManifest;

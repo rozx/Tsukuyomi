@@ -30,6 +30,7 @@ function createSyncConfig(overrides: Partial<SyncConfig> = {}): SyncConfig {
     apiEndpoint: '',
     lastRemoteETag: 'etag-v1',
     knownRemoteHashes: { 'novel:book-1': 'old-hash' },
+    knownRemoteSchemaVersion: MANIFEST_SCHEMA_VERSION,
     ...overrides,
   };
 }
@@ -113,6 +114,51 @@ describe('useGistSync (manifest-driven flow)', () => {
   });
 
   describe('download phase', () => {
+    it('并发检查不能把仅墓碑变化的远端当作 ETag 漂移', async () => {
+      const stable = makeManifest();
+      mockSettingsStore.gistSync.knownRemoteHashes = Object.fromEntries(
+        Object.entries(stable.entries).map(([key, entry]) => [key, entry.hash]),
+      );
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: true,
+        remoteETag: 'etag-v1',
+      });
+      spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(true);
+      spyOn(GistSyncService.prototype, 'verifyRemoteUnchanged').mockResolvedValue({
+        status: 'changed',
+        etag: 'foreign',
+        files: {
+          'manifest.json': {
+            content: JSON.stringify({
+              ...stable,
+              tombstones: { 'novel:deleted': { deletedAt: '2026-10-01T00:00:00Z' } },
+            }),
+          },
+        },
+      });
+      const upload = spyOn(GistSyncService.prototype, 'uploadToGistIncremental').mockRejectedValue(
+        new Error('不应上传'),
+      );
+      await useGistSync().sync();
+      expect(upload).not.toHaveBeenCalled();
+      expect(mockToastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+    });
+    it('本地 Memory 读取失败时不把未知数据作为删除上传', async () => {
+      spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
+        success: true,
+        skipped: true,
+        remoteETag: 'etag-v1',
+      });
+      spyOn(MemoryService, 'getAllMemories').mockRejectedValue(new Error('数据库读取失败'));
+      const upload = spyOn(GistSyncService.prototype, 'uploadToGistIncremental');
+
+      await useGistSync().sync();
+
+      expect(upload).not.toHaveBeenCalled();
+      expect(mockSettingsStore.updateLastSyncTime).not.toHaveBeenCalled();
+      expect(mockToastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+    });
     it('304 skipped: no changes — completes without apply or upload', async () => {
       spyOn(GistSyncService.prototype, 'downloadFromGistWithManifest').mockResolvedValue({
         success: true,
@@ -791,7 +837,7 @@ describe('useGistSync (manifest-driven flow)', () => {
       expect(verifyConfigArg.knownRemoteHashes?.[novelEntryKey('book-1')]).toBe('new-remote-hash');
     });
 
-    it('下载失败的条目不得把新远端哈希记为已知（否则永不重拉且会用陈旧本地覆盖远端）', async () => {
+    it('下载部分失败必须中止同步，不推进 ETag 或上传本地副本', async () => {
       mockSettingsStore.gistSync = createSyncConfig({
         knownRemoteHashes: { [novelEntryKey('book-1')]: 'old-hash', settings: 'settings-hash' },
       });
@@ -808,19 +854,18 @@ describe('useGistSync (manifest-driven flow)', () => {
       } as any);
       spyOn(SyncDataService, 'applyPartialRemoteData').mockResolvedValue([] as never);
       spyOn(SyncDataService, 'hasLocalChangesByHash').mockReturnValue(false);
+      const upload = spyOn(GistSyncService.prototype, 'uploadToGistIncremental');
 
       const { sync } = useGistSync();
       await sync();
 
-      const persisted = (
-        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as unknown[] | undefined
-      )?.[0] as Record<string, string>;
-      // 失败条目保留旧哈希 → 下轮 diff 会重新拉取；其余条目正常采用新 manifest 值
-      expect(persisted?.[novelEntryKey('book-1')]).toBe('old-hash');
-      expect(persisted?.['ai-models']).toBe('ai-hash');
+      expect(mockSettingsStore.updateLastRemoteETag).not.toHaveBeenCalled();
+      expect(mockSettingsStore.updateKnownRemoteHashes).not.toHaveBeenCalled();
+      expect(upload).not.toHaveBeenCalled();
+      expect(mockToastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
     });
 
-    it('应用失败的条目不得把新远端哈希记为已知', async () => {
+    it('应用部分失败必须中止同步，不推进 ETag 或上传本地副本', async () => {
       mockSettingsStore.gistSync = createSyncConfig({
         knownRemoteHashes: { [novelEntryKey('book-1')]: 'old-hash' },
       });
@@ -845,10 +890,9 @@ describe('useGistSync (manifest-driven flow)', () => {
       const { sync } = useGistSync();
       await sync();
 
-      const persisted = (
-        mockSettingsStore.updateKnownRemoteHashes.mock.calls[0] as unknown as unknown[] | undefined
-      )?.[0] as Record<string, string>;
-      expect(persisted?.[novelEntryKey('book-1')]).toBe('old-hash');
+      expect(mockSettingsStore.updateLastRemoteETag).not.toHaveBeenCalled();
+      expect(mockSettingsStore.updateKnownRemoteHashes).not.toHaveBeenCalled();
+      expect(mockToastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
     });
 
     it('恢复已删除项目时应刷新时间戳并清除对应墓碑，防止下轮同步"僵尸删除"', async () => {

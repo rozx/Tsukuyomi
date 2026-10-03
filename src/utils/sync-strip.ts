@@ -3,6 +3,7 @@ import type { Memory } from 'src/models/memory';
 import type { CoverHistoryItem, Novel, Translation } from 'src/models/novel';
 import type { AppSettings } from 'src/models/settings';
 import type { AIModel } from 'src/services/ai/types/ai-model';
+import { memoryModifiedAt } from './memory-timestamps';
 
 /**
  * 剥离 Memory 的本地字段：
@@ -10,6 +11,7 @@ import type { AIModel } from 'src/services/ai/types/ai-model';
  * - `embeddings`：按需生成的分段本地向量，不参与同步
  * - `embeddingModel`：embedding 版本标识，同样是本地状态
  * - `attachedTo`：已废弃字段，防御性清理
+ * - `lastAccessedAt`：设备访问轨迹，上传时规范化为内容修改时间
  *
  * 剥离后的 Memory 用于：
  * 1. 计算 manifest hash（确保相同内容产生相同 hash，不受 embedding 填充进度影响）
@@ -29,7 +31,9 @@ function stripMemoryLocalFields(memory: Memory): Memory {
   };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   delete (rest as any).attachedTo;
-  return rest as Memory;
+  const updatedAt = memoryModifiedAt(memory);
+  // 保留兼容字段，但仅放内容时间；设备的访问轨迹不进入哈希或上传载荷。
+  return { ...rest, updatedAt, lastAccessedAt: updatedAt } as Memory;
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   buildLocalManifest,
   buildMemoriesPayload,
   diffManifests,
+  manifestMatchesKnownState,
 } from 'src/services/sync-manifest-builder';
 import {
   effectiveSchemaVersion,
@@ -55,6 +56,7 @@ import { stripNovelLocalFields } from 'src/utils/sync-strip';
 import { compressString, decompressString } from 'src/utils/compression';
 import { deserializeDates } from 'src/utils/serialize-dates';
 import { canonicalStringify } from 'src/utils/canonical-json';
+import { hashJson } from 'src/utils/content-hash';
 
 /**
  * 单文件大小上限（压缩后字节）。超出需要分块。GitHub 实际 1MB，留 100KB 余量。
@@ -1007,6 +1009,15 @@ async function readChangedEntries(
     let value: EntryValue | null = null;
     try {
       value = await deserializeEntry(key, entry, files, fetchRaw);
+      // 旧协议可能在规范化时改变表示；新协议的上传与读取必须完全一致。
+      if (
+        value &&
+        effectiveSchemaVersion(remoteManifest) >= MANIFEST_SCHEMA_VERSION &&
+        (await hashJson(value.value)) !== entry.hash
+      ) {
+        console.error(`[gist-sync-incremental] 条目 ${key} 与 manifest 哈希不一致`);
+        value = null;
+      }
     } catch (error) {
       if (
         error instanceof Error &&
@@ -1137,6 +1148,7 @@ export async function uploadIncremental(
   remoteFilesSnapshot: Record<string, GistFileLike>,
   onProgress?: SyncProgress,
   locale: AppLocale = 'zh-CN',
+  options: { checkConcurrency?: boolean } = {},
 ): Promise<IncrementalUploadResult> {
   const gistId = config.syncParams.gistId;
   if (!gistId) throw new LocalizedError('GIST_ID_MISSING', 'syncUi.service.gistIdMissing');
@@ -1270,6 +1282,7 @@ export async function uploadIncremental(
     PROGRESS_TOTAL,
     onProgress,
     locale,
+    options.checkConcurrency ? config : undefined,
   );
 
   onProgress?.({
@@ -1441,15 +1454,34 @@ async function executePatchBatches(
   PROGRESS_TOTAL: number,
   onProgress: SyncProgress | undefined,
   locale: AppLocale,
+  guardedConfig?: SyncConfig,
 ): Promise<{ etag: string; htmlUrl: string | undefined; updatedAt: string }> {
   let newETag = '';
   let htmlUrl: string | undefined;
   let newUpdatedAt = '';
+  let expectedETag = guardedConfig?.lastRemoteETag;
 
   const runBatch = async (
     batch: Record<string, { content: string } | null>,
     isFirst: boolean,
   ): Promise<void> => {
+    if (guardedConfig) {
+      // Gist PATCH 没有条件写入；每批写入前重查，发现变化立即停止。
+      const current = await conditionalGetGist(
+        resolveGistToken(guardedConfig),
+        gistId,
+        expectedETag,
+      );
+      if (!current.notModified) {
+        const content = isFirst
+          ? await readFile(MANIFEST_FILE_NAME, current.files, createFetchRaw())
+          : null;
+        if (!content || !manifestMatchesKnownState(parseGistManifest(content), guardedConfig))
+          throw syncError('GIST_UPDATE_CONFLICT', 'concurrentWrite');
+        expectedETag = current.etag;
+      }
+      if (!expectedETag) throw syncError('GIST_UPDATE_CONFLICT', 'concurrentWrite');
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response: any = await octokit.rest.gists.update({
       gist_id: gistId,
@@ -1465,6 +1497,7 @@ async function executePatchBatches(
       if (response.headers?.etag) newETag = response.headers.etag as string;
       if (response.data?.updated_at) newUpdatedAt = response.data.updated_at;
     }
+    expectedETag = response.headers?.etag;
   };
 
   const totalBatches = additionBatches.length;

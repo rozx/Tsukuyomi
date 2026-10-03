@@ -1,5 +1,6 @@
 import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 import './setup';
+import { expect as expectAsync } from 'vitest';
 
 import { SyncDataService } from '../services/sync-data-service';
 import { MemoryService } from '../services/memory-service';
@@ -594,6 +595,23 @@ describe('applyPartialRemoteData: novel structure merge regression', () => {
 
   afterEach(() => {
     mock.restore();
+  });
+
+  it('本地较新的书籍合并或保存失败也必须上报失败条目', async () => {
+    localBooks.push({ id: 'failed', title: '书籍', volumes: [], lastEdited: new Date(9000) });
+    bulkAddBooksSpy.mockRejectedValueOnce(new Error('保存失败'));
+    const failed = await SyncDataService.applyPartialRemoteData({
+      'novel:failed': {
+        kind: 'novel',
+        value: {
+          id: 'failed',
+          title: '远端书籍',
+          volumes: [],
+          lastEdited: new Date(2000),
+        },
+      },
+    });
+    expect(failed).toEqual(['novel:failed']);
   });
 
   it('当本地时间更新但远端 novel 结构更完整时，仍保留远端新增章节和实体', async () => {
@@ -1211,6 +1229,16 @@ describe('applyRemoteDeletions: tombstone threshold', () => {
     mock.restore();
   });
 
+  it('删除失败必须抛出，不能让执行器记为已同步', async () => {
+    localBooks.push({ id: 'failed-delete', title: '书籍', lastEdited: new Date(1000) });
+    deleteBookSpy.mockRejectedValueOnce(new Error('删除失败'));
+    await expectAsync(
+      SyncDataService.applyRemoteDeletions([
+        { key: 'novel:failed-delete', deletedAt: new Date(4000).toISOString() },
+      ]),
+    ).rejects.toThrow('删除失败');
+  });
+
   it('deletes a local book when tombstone is newer than local lastEdited', async () => {
     localBooks.push({
       id: 'b1',
@@ -1520,9 +1548,7 @@ describe('applyPartialRemoteData: memories envelope tombstones', () => {
     // 但 deletedMemoryIds 记录了删除。远端尚未感知，本次又把它发了回来。
     spyOn(GlobalConfig, 'getGistSyncSnapshot').mockImplementation(() =>
       makeConfig({
-        deletedMemoryIds: [
-          { id: 'mem-deleted', bookId: BOOK_ID, deletedAt: LAST_SYNC + 1000 },
-        ],
+        deletedMemoryIds: [{ id: 'mem-deleted', bookId: BOOK_ID, deletedAt: LAST_SYNC + 1000 }],
       }),
     );
 
@@ -1810,9 +1836,7 @@ describe('applyRemoteDeletions: memories collection-level tombstone', () => {
       lastAccessedAt: LAST_SYNC,
     });
 
-    await SyncDataService.applyRemoteDeletions([
-      { key: `memories:${BOOK_ID}`, deletedAt: '' },
-    ]);
+    await SyncDataService.applyRemoteDeletions([{ key: `memories:${BOOK_ID}`, deletedAt: '' }]);
 
     // '' falsy → 走 implicit deletion 分支（保守跳过）
     expect(deleteSpy).not.toHaveBeenCalled();

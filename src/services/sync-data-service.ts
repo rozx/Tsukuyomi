@@ -35,7 +35,8 @@ import type { AppSettings, ImportResult } from 'src/models/settings';
 import { importMemoriesPreservingIdentity } from './settings/memory-import';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
-import { stripNovelLocalFields } from 'src/utils/sync-strip';
+import { normalizeMemoriesForSync, stripNovelLocalFields } from 'src/utils/sync-strip';
+import { memoryModifiedAt } from 'src/utils/memory-timestamps';
 import { getErrorMessage } from 'src/utils/error-message';
 import { LocalizedError } from 'src/utils/localized-error';
 import { chapterStructureHash } from 'src/utils/chapter-structure-hash';
@@ -950,7 +951,7 @@ export class SyncDataService {
       embeddingModel: _m,
       ...clean
     } = memory as Record<string, unknown>;
-    return clean as unknown as Memory;
+    return normalizeMemoriesForSync({ memories: [clean as unknown as Memory] }).memories![0]!;
   }
 
   /**
@@ -1761,7 +1762,7 @@ export class SyncDataService {
           });
         }
         return null;
-      } else if (remoteMemory.lastAccessedAt > syncTime) {
+      } else if (memoryModifiedAt(remoteMemory) > syncTime) {
         memoryIdsToUndelete.add(remoteMemory.id);
       } else {
         return null;
@@ -1771,7 +1772,7 @@ export class SyncDataService {
     if (
       syncTime === 0 ||
       isManualRetrieval ||
-      checkIsNewlyAdded(remoteMemory.lastAccessedAt, syncTime)
+      checkIsNewlyAdded(memoryModifiedAt(remoteMemory), syncTime)
     ) {
       return remoteMemory;
     }
@@ -1796,19 +1797,8 @@ export class SyncDataService {
     const finalMemories: Memory[] = [];
     const contentMap = new Map<string, Memory>();
 
-    const addToFinal = (memory: Memory) => {
-      const existingByContent = contentMap.get(memory.content);
-      if (existingByContent) {
-        if (memory.lastAccessedAt > existingByContent.lastAccessedAt) {
-          const idx = finalMemories.indexOf(existingByContent);
-          if (idx >= 0) finalMemories[idx] = memory;
-          contentMap.set(memory.content, memory);
-        }
-      } else {
-        finalMemories.push(memory);
-        contentMap.set(memory.content, memory);
-      }
-    };
+    const addToFinal = (memory: Memory) =>
+      SyncDataService.pushMemoryWithContentDedup(memory, finalMemories, contentMap);
 
     const localMemoryMap = new Map<string, Memory>();
     for (const localMemory of localMemories) {
@@ -1820,7 +1810,9 @@ export class SyncDataService {
       const localMemory = localMemoryMap.get(remoteMemory.id);
       if (localMemory) {
         const winner =
-          remoteMemory.lastAccessedAt > localMemory.lastAccessedAt ? remoteMemory : localMemory;
+          memoryModifiedAt(remoteMemory) > memoryModifiedAt(localMemory)
+            ? remoteMemory
+            : localMemory;
         addToFinal(winner);
       } else {
         const resolved = SyncDataService.resolveRemoteOnlyMemory(
@@ -1838,7 +1830,7 @@ export class SyncDataService {
     // 2. 添加本地独有的 Memory
     for (const localMemory of localMemories) {
       if (remoteMemoryMap.has(localMemory.id)) continue;
-      if (remoteMemoriesListEmpty || checkIsNewlyAdded(localMemory.lastAccessedAt, syncTime)) {
+      if (remoteMemoriesListEmpty || checkIsNewlyAdded(memoryModifiedAt(localMemory), syncTime)) {
         addToFinal(localMemory);
       }
     }
@@ -1846,14 +1838,7 @@ export class SyncDataService {
     // 3. 先写入，再删除不在最终列表中的旧 Memory
     const finalMemoryIds = new Set(finalMemories.map((m) => m.id));
     for (const memory of finalMemories) {
-      try {
-        await MemoryService.createMemoryWithId(bookId, memory.id, memory.content, memory.summary, {
-          createdAt: memory.createdAt,
-          lastAccessedAt: memory.lastAccessedAt,
-        });
-      } catch (error) {
-        console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
-      }
+      await SyncDataService.writeImportedMemory(memory, bookId);
     }
 
     const staleMemoryIds = localMemories.filter((m) => !finalMemoryIds.has(m.id)).map((m) => m.id);
@@ -1897,7 +1882,7 @@ export class SyncDataService {
       }
       // 远程可能存在重复 id（历史数据问题），保留 lastAccessedAt 更大的那条
       const existing = bookMap.get(remoteMemory.id);
-      if (!existing || remoteMemory.lastAccessedAt > existing.lastAccessedAt) {
+      if (!existing || memoryModifiedAt(remoteMemory) > memoryModifiedAt(existing)) {
         bookMap.set(remoteMemory.id, remoteMemory);
       }
     }
@@ -2144,17 +2129,20 @@ export class SyncDataService {
 
     const remoteMemories = Array.isArray(remoteData.memories) ? remoteData.memories : [];
     for (const memory of remoteMemories) {
-      try {
-        await MemoryService.createMemoryWithId(
-          memory.bookId,
-          memory.id,
-          memory.content,
-          memory.summary,
-          { createdAt: memory.createdAt, lastAccessedAt: memory.lastAccessedAt },
-        );
-      } catch (error) {
-        console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
-      }
+      await SyncDataService.writeImportedMemory(memory);
+    }
+  }
+
+  /** 导入/旧格式合并共用，保留内容时间和设备访问时间。 */
+  private static async writeImportedMemory(memory: Memory, bookId = memory.bookId): Promise<void> {
+    try {
+      await MemoryService.createMemoryWithId(bookId, memory.id, memory.content, memory.summary, {
+        createdAt: memory.createdAt,
+        lastAccessedAt: memory.lastAccessedAt,
+        updatedAt: memoryModifiedAt(memory),
+      });
+    } catch (error) {
+      console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
     }
   }
 
@@ -2563,7 +2551,7 @@ export class SyncDataService {
   }
 
   /**
-   * 将 Memory 加入最终列表，按内容去重——同内容保留 lastAccessedAt 更新的条目。
+   * 将 Memory 加入最终列表，按内容去重——同内容保留内容修改时间更新的条目。
    */
   private static pushMemoryWithContentDedup(
     memory: Memory,
@@ -2576,7 +2564,7 @@ export class SyncDataService {
       contentMap.set(memory.content, memory);
       return;
     }
-    if (memory.lastAccessedAt > existingByContent.lastAccessedAt) {
+    if (memoryModifiedAt(memory) > memoryModifiedAt(existingByContent)) {
       const idx = finalMemories.indexOf(existingByContent);
       if (idx >= 0) finalMemories[idx] = memory;
       contentMap.set(memory.content, memory);
@@ -2584,7 +2572,7 @@ export class SyncDataService {
   }
 
   /**
-   * 合并上传时的 Memory 列表：按 id 取较新 lastAccessedAt；之后按 content 二次去重。
+   * 合并上传时的 Memory 列表：按 id 取较新内容修改时间；之后按 content 二次去重。
    */
   private static mergeMemoriesForUpload(
     localMemories: Memory[],
@@ -2601,7 +2589,9 @@ export class SyncDataService {
       let winner: Memory;
       if (remoteMemory) {
         winner =
-          remoteMemory.lastAccessedAt > localMemory.lastAccessedAt ? remoteMemory : localMemory;
+          memoryModifiedAt(remoteMemory) > memoryModifiedAt(localMemory)
+            ? remoteMemory
+            : localMemory;
         remoteMemoryMap.delete(localMemory.id);
       } else {
         winner = localMemory;
@@ -2732,7 +2722,8 @@ export class SyncDataService {
     for (const localMemory of local) {
       const remoteMemory = remoteMemoryMap.get(localMemory.id);
       if (!remoteMemory) return true;
-      if (isTimeDifferent(localMemory.lastAccessedAt, remoteMemory.lastAccessedAt)) return true;
+      if (isTimeDifferent(memoryModifiedAt(localMemory), memoryModifiedAt(remoteMemory)))
+        return true;
       if (
         localMemory.content !== remoteMemory.content ||
         localMemory.summary !== remoteMemory.summary
@@ -2784,7 +2775,7 @@ export class SyncDataService {
    * - `ai-models`：远端为准（应用时已经做过时间比较）
    * - `cover-history`：远端为准
    * - `novel:<id>`：使用 mergeNovelWithLocalContent 保留本地章节内容
-   * - `memories:<id>`：按 lastAccessedAt 合并每本书的 memory 列表，内容去重
+   * - `memories:<id>`：按内容修改时间合并每本书的 memory 列表，内容去重
    *
    * @returns 应用失败的条目 key 列表。调用方不得把这些条目的新远端哈希记为已知，
    *   否则远端更新会被静默丢弃且下轮上传会用陈旧本地副本覆盖远端。
@@ -2938,6 +2929,7 @@ export class SyncDataService {
         await aiModelService.deleteModel(localModel.id);
       } catch (e) {
         console.warn('[SyncDataService] 传播远端模型删除失败:', localModel.id, e);
+        throw e;
       }
       const idx = aiModelsStore.models.findIndex((m) => m.id === localModel.id);
       if (idx >= 0) aiModelsStore.models.splice(idx, 1);
@@ -2984,6 +2976,7 @@ export class SyncDataService {
         await coverHistoryStore.removeCover(localCover.id);
       } catch (e) {
         console.warn('[SyncDataService] 传播远端封面删除失败:', localCover.id, e);
+        throw e;
       }
     }
   }
@@ -3039,17 +3032,18 @@ export class SyncDataService {
       await recordStructureBaselines([remoteNovel]);
     } catch (e) {
       console.warn(`[SyncDataService] 合并远端翻译失败 (novel:${remoteNovel.id})，保留本地:`, e);
+      throw e;
     }
   }
 
   /**
-   * 合并远端 / 本地 memory：按 id 去重取 lastAccessedAt 较大者，再按 content 去重。
+   * 合并远端 / 本地 memory：按 id 去重取内容修改时间较大者，再按 content 去重。
    *
    * @param deletedMap 本地 deletedMemoryIds 记录（id -> deletedAt 毫秒）
    * @param remoteTombstones 远端 envelope 携带的单条 memory 墓碑（v3+），按 id 索引
    *
    * 删除冲突：
-   *  - 远端 tombstone：若 `local.lastAccessedAt < deletedAt` → 删除本地；否则保留（本地编辑赢）。
+   *  - 远端 tombstone：若 `memoryModifiedAt(local) < deletedAt` → 删除本地；否则保留（本地编辑赢）。
    *  - 本地 tombstone：跳过远端中同 id 的活动条目（不复活）。
    */
   private static mergeMemoriesByIdAndContent(
@@ -3063,18 +3057,18 @@ export class SyncDataService {
     const finalMap = new Map<string, Memory>();
     const remoteTombs = remoteTombstones ?? new Map<string, number>();
 
-    // 1. 远端 memory：按 id 去重（保留 lastAccessedAt 更大的）
+    // 1. 远端 memory：按 id 去重（保留 updatedAt 更大的）
     //    跳过情形：
     //      - 本地 deletedMemoryIds 比 lastSyncTime 新（本地最近删过，不复活）
-    //      - 远端同时挂着 tombstone 且 deletedAt > rm.lastAccessedAt（损坏 envelope
+    //      - 远端同时挂着 tombstone 且 deletedAt > memoryModifiedAt(rm)（损坏 envelope
     //        或 race，墓碑更新 → 墓碑赢，不上 finalMap）
     for (const rm of remoteMemories) {
       const deletion = deletedMap.get(rm.id);
       if (deletion !== undefined && deletion > lastSyncTime) continue;
       const remoteTombAt = remoteTombs.get(rm.id);
-      if (remoteTombAt !== undefined && remoteTombAt > rm.lastAccessedAt) continue;
+      if (remoteTombAt !== undefined && remoteTombAt > memoryModifiedAt(rm)) continue;
       const existing = finalMap.get(rm.id);
-      if (!existing || rm.lastAccessedAt > existing.lastAccessedAt) {
+      if (!existing || memoryModifiedAt(rm) > memoryModifiedAt(existing)) {
         finalMap.set(rm.id, rm);
       }
     }
@@ -3082,31 +3076,31 @@ export class SyncDataService {
     // 2. 本地 memory：判断是否被远端墓碑显式删除，否则按 id/时间合并
     for (const local of localMemories) {
       const remoteTombAt = remoteTombs.get(local.id);
-      if (remoteTombAt !== undefined && local.lastAccessedAt < remoteTombAt) {
-        // 远端显式删除且本地未在墓碑后再访问 → 不保留
+      if (remoteTombAt !== undefined && memoryModifiedAt(local) < remoteTombAt) {
+        // 远端显式删除且本地未在墓碑后修改内容 → 不保留
         continue;
       }
       if (remoteIds.has(local.id)) {
         const existing = finalMap.get(local.id);
-        if (!existing || local.lastAccessedAt > existing.lastAccessedAt) {
+        if (!existing || memoryModifiedAt(local) > memoryModifiedAt(existing)) {
           finalMap.set(local.id, local);
         }
         continue;
       }
       // 本地独有：远端 envelope 是该书的权威列表，缺席即代表"远端不持有该 id"。
-      // 远端墓碑会精准告知具体 id 被删；其它 id 无墓碑就遵循"本地 lastAccessedAt
+      // 远端墓碑会精准告知具体 id 被删；其它 id 无墓碑就遵循"本地 updatedAt
       // 晚于 lastSyncTime → 保留"的常规启发式（首次同步 / 本地新增）。
-      const isFreshLocal = lastSyncTime === 0 || local.lastAccessedAt > lastSyncTime;
+      const isFreshLocal = lastSyncTime === 0 || memoryModifiedAt(local) > lastSyncTime;
       if (isFreshLocal || remoteMemories.length === 0) {
         finalMap.set(local.id, local);
       }
     }
 
-    // 内容去重：同 content 保留 lastAccessedAt 更大的
+    // 内容去重：同 content 保留 updatedAt 更大的
     const byContent = new Map<string, Memory>();
     for (const m of finalMap.values()) {
       const ex = byContent.get(m.content);
-      if (!ex || m.lastAccessedAt > ex.lastAccessedAt) {
+      if (!ex || memoryModifiedAt(m) > memoryModifiedAt(ex)) {
         byContent.set(m.content, m);
       }
     }
@@ -3128,6 +3122,7 @@ export class SyncDataService {
         await MemoryService.deleteMemory(bookId, local.id);
       } catch (e) {
         console.warn(`[SyncDataService] 删除 Memory ${local.id} 失败:`, e);
+        throw e;
       }
     }
 
@@ -3201,6 +3196,7 @@ export class SyncDataService {
         }
       } catch (error) {
         console.error(`[SyncDataService] applyRemoteDeletions 处理 ${key} 失败:`, error);
+        throw error;
       }
     }
   }
@@ -3238,6 +3234,7 @@ export class SyncDataService {
       await booksStore.deleteBook(bookId);
     } catch (e) {
       console.warn(`[SyncDataService] 删除本地书籍 ${bookId} 失败:`, e);
+      throw e;
     }
   }
 
@@ -3288,6 +3285,7 @@ export class SyncDataService {
         deleted += 1;
       } catch (e) {
         console.warn(`[SyncDataService] 删除 Memory ${m.id} 失败:`, e);
+        throw e;
       }
     }
     if (deleted || kept) {

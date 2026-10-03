@@ -1,6 +1,8 @@
 import type { AppSettings } from 'src/models/settings';
 import type { CoverHistoryItem, Novel } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
+import type { SyncConfig } from 'src/models/sync';
+import { canonicalStringify } from 'src/utils/canonical-json';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import {
   ENTRY_KEYS,
@@ -17,7 +19,8 @@ import {
 } from 'src/models/manifest';
 import { hashJson, hashString } from 'src/utils/content-hash';
 import { normalizeBookLanguages } from './localization/normalize';
-import { stripNovelLocalFields } from 'src/utils/sync-strip';
+import { memoryModifiedAt } from 'src/utils/memory-timestamps';
+import { normalizeMemoriesForSync, stripNovelLocalFields } from 'src/utils/sync-strip';
 
 /**
  * 构造本地 manifest 时需要的全部数据输入
@@ -63,7 +66,10 @@ export function buildMemoriesPayload(
     .filter((t) => t && typeof t.id === 'string' && t.id.length > 0 && Number.isFinite(t.deletedAt))
     .slice()
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  return cleanTombstones.length > 0 ? { memories, tombstones: cleanTombstones } : { memories };
+  const normalized = normalizeMemoriesForSync({ memories }).memories!;
+  return cleanTombstones.length > 0
+    ? { memories: normalized, tombstones: cleanTombstones }
+    : { memories: normalized };
 }
 
 /**
@@ -130,10 +136,7 @@ export async function buildLocalManifest(input: LocalManifestInput): Promise<Gis
     const envelope = buildMemoriesPayload(memories, tombs);
     entries[memoriesEntryKey(bookId)] = {
       hash: await hashJson(envelope),
-      lastEdited: maxDate([
-        ...memories.map((m) => m.lastAccessedAt),
-        ...tombs.map((t) => t.deletedAt),
-      ]),
+      lastEdited: maxDate([...memories.map(memoryModifiedAt), ...tombs.map((t) => t.deletedAt)]),
     };
   }
 
@@ -247,6 +250,27 @@ export function manifestToHashes(manifest: GistManifest): Record<string, string>
     result[key] = entry.hash;
   }
   return result;
+}
+
+/** ETag 漂移仅在条目、删除记录、布局及协议都一致时才可忽略。 */
+export function manifestMatchesKnownState(manifest: GistManifest, config: SyncConfig): boolean {
+  if (
+    manifest.pendingUpgradeFrom !== undefined ||
+    manifest.schemaVersion !== config.knownRemoteSchemaVersion
+  )
+    return false;
+  if (
+    canonicalStringify(manifestToHashes(manifest)) !==
+    canonicalStringify(config.knownRemoteHashes ?? {})
+  )
+    return false;
+  for (const [key, entry] of Object.entries(manifest.entries)) {
+    if ((entry.chunks ?? 0) !== (config.knownRemoteEntries?.[key]?.chunks ?? 0)) return false;
+  }
+  const tombstones = Object.fromEntries(
+    Object.entries(manifest.tombstones ?? {}).map(([key, value]) => [key, value.deletedAt]),
+  );
+  return canonicalStringify(tombstones) === canonicalStringify(config.knownRemoteTombstones ?? {});
 }
 
 /**

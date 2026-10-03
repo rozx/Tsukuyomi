@@ -17,6 +17,7 @@ import {
   buildLocalManifest,
   manifestToEntries,
   manifestToHashes,
+  manifestMatchesKnownState,
 } from 'src/services/sync-manifest-builder';
 import {
   normalizeMemoriesForSync,
@@ -27,7 +28,7 @@ import {
 } from 'src/utils/sync-strip';
 import type { SyncConfig } from 'src/models/sync';
 import type { Memory } from 'src/models/memory';
-import { MANIFEST_FILE_NAME, novelEntryKey } from 'src/models/manifest';
+import { MANIFEST_FILE_NAME, novelEntryKey, type GistManifest } from 'src/models/manifest';
 import { readFile, type GistFileLike } from 'src/services/gist-sync-incremental';
 import { recordStructureBaselines } from 'src/services/sync-chapter-baselines';
 import { BookService } from 'src/services/book-service';
@@ -243,13 +244,9 @@ export function useSyncExecutor() {
     const bookIds = booksStore.books.map((b) => b.id);
     const result: Record<string, Memory[]> = {};
     for (const bookId of bookIds) {
-      try {
-        const memories = await MemoryService.getAllMemories(bookId);
-        if (memories.length > 0) {
-          result[bookId] = memories;
-        }
-      } catch (e) {
-        console.warn(`[useSyncExecutor] 读取书籍 ${bookId} 的 Memory 失败:`, e);
+      const memories = await MemoryService.getAllMemories(bookId);
+      if (memories.length > 0) {
+        result[bookId] = memories;
       }
     }
     return result;
@@ -485,48 +482,13 @@ export function useSyncExecutor() {
   /**
    * 阶段 2：应用 changedEntries 并持久化已知远端状态。失败时调用 onError 并返回 false。
    */
-  const persistDownloadedManifest = async (
-    downloadResult: DownloadResultActive,
-    applyFailedKeys: string[],
-  ) => {
-    // 更新本地持久化的已知远端状态——每步独立 try/catch，单步失败不回滚前序持久化
-    if (downloadResult.manifest) {
-      try {
-        const hashes = manifestToHashes(downloadResult.manifest);
-        const entries = manifestToEntries(downloadResult.manifest);
-        // 下载失败（failedEntryKeys）或应用失败（applyFailedKeys）的条目必须保留
-        // 旧的已知远端状态：若把新远端哈希记为已知，该条目永远不会被重新拉取，
-        // 且上传阶段会把陈旧的本地副本推上去覆盖远端较新的数据
-        const failedKeys = new Set<string>([
-          ...(downloadResult.failedEntryKeys ?? []),
-          ...applyFailedKeys,
-        ]);
-        if (failedKeys.size > 0) {
-          console.warn(
-            '[useSyncExecutor] 以下条目下载/应用失败，保留旧的已知远端状态，下轮同步将重新拉取:',
-            [...failedKeys],
-          );
-          const prevHashes = settingsStore.gistSync.knownRemoteHashes ?? {};
-          const prevEntries = settingsStore.gistSync.knownRemoteEntries ?? {};
-          for (const key of failedKeys) {
-            const prevHash = prevHashes[key];
-            if (prevHash !== undefined) hashes[key] = prevHash;
-            else delete hashes[key];
-            const prevEntry = prevEntries[key];
-            if (prevEntry !== undefined) entries[key] = prevEntry;
-            else delete entries[key];
-          }
-        }
-        await settingsStore.updateKnownRemoteHashes(hashes);
-        await settingsStore.updateKnownRemoteEntries(entries);
-        if (failedKeys.size === 0)
-          await settingsStore.updateKnownRemoteSchemaVersion(
-            effectiveSchemaVersion(downloadResult.manifest),
-          );
-      } catch (error) {
-        console.error('[useSyncExecutor] 保存 knownRemoteHashes 失败:', error);
-      }
-    }
+  const persistDownloadedManifest = async (downloadResult: DownloadResultActive) => {
+    if (!downloadResult.manifest) return;
+    await settingsStore.updateKnownRemoteHashes(manifestToHashes(downloadResult.manifest));
+    await settingsStore.updateKnownRemoteEntries(manifestToEntries(downloadResult.manifest));
+    await settingsStore.updateKnownRemoteSchemaVersion(
+      effectiveSchemaVersion(downloadResult.manifest),
+    );
   };
 
   const runApplyPhase = async (
@@ -546,31 +508,20 @@ export function useSyncExecutor() {
     try {
       applyFailedKeys =
         (await SyncDataService.applyPartialRemoteData(downloadResult.changedEntries, report)) ?? [];
-      if (downloadResult.needsSchemaUpgrade && applyFailedKeys.length)
-        throw new LocalizedError(
-          'SCHEMA_UPGRADE_APPLY_FAILED',
-          'syncUi.executor.schemaUpgradeApplyFailed',
-        );
+      if (applyFailedKeys.length)
+        throw new LocalizedError('SYNC_APPLY_INCOMPLETE', 'syncUi.executor.applyIncomplete');
       if (downloadResult.deletedEntries.length > 0) {
         await SyncDataService.applyRemoteDeletions(downloadResult.deletedEntries);
       }
+      await persistDownloadedManifest(downloadResult);
+      await settingsStore.updateKnownRemoteTombstones(downloadResult.remoteTombstones);
+      // 最后推进 ETag；前面的下载、应用或持久化失败时，下一轮仍会重拉远端。
+      await settingsStore.updateLastRemoteETag(downloadResult.remoteETag);
     } catch (error) {
       const errorMsg = errText(error, 'applyUnknown');
       console.error('[useSyncExecutor] 应用失败:', errorMsg);
       onError(t('applyFailed'), errorMsg);
       return false;
-    }
-
-    await persistDownloadedManifest(downloadResult, applyFailedKeys);
-    try {
-      await settingsStore.updateKnownRemoteTombstones(downloadResult.remoteTombstones);
-    } catch (error) {
-      console.error('[useSyncExecutor] 保存 knownRemoteTombstones 失败:', error);
-    }
-    try {
-      await settingsStore.updateLastRemoteETag(downloadResult.remoteETag);
-    } catch (error) {
-      console.error('[useSyncExecutor] 保存 lastRemoteETag 失败:', error);
     }
 
     settingsStore.updateSyncProgress({
@@ -612,9 +563,9 @@ export function useSyncExecutor() {
    *
    * 失败（缺文件 / 截断且无 raw_url / 解析异常）一律返回 null —— 落回常规重试路径。
    */
-  const tryReadRemoteManifestHashes = async (
+  const tryReadRemoteManifest = async (
     files: Record<string, unknown> | undefined,
-  ): Promise<Record<string, string> | null> => {
+  ): Promise<GistManifest | null> => {
     if (!files) return null;
     try {
       const content = await readFile(
@@ -627,17 +578,10 @@ export function useSyncExecutor() {
         },
       );
       if (!content) return null;
-      return manifestToHashes(parseGistManifest(content));
+      return parseGistManifest(content);
     } catch {
       return null;
     }
-  };
-
-  /** 浅比较两组 entryKey -> hash 是否完全一致。 */
-  const hashesEqual = (a: Record<string, string>, b: Record<string, string>): boolean => {
-    const ak = Object.keys(a);
-    if (ak.length !== Object.keys(b).length) return false;
-    return ak.every((k) => a[k] === b[k]);
   };
 
   /**
@@ -653,7 +597,7 @@ export function useSyncExecutor() {
     onError: SyncExecutorOptions['onError'],
     retriesRemaining: number,
   ): Promise<
-    | { status: 'unchanged' }
+    | { status: 'unchanged'; etag?: string }
     | { status: 'retry'; files: Record<string, unknown> }
     | { status: 'abort' }
   > => {
@@ -670,14 +614,13 @@ export function useSyncExecutor() {
 
     try {
       const verify = await gistSyncService.verifyRemoteUnchanged(latestConfig);
-      if (verify.status === 'unchanged') return { status: 'unchanged' };
+      if (verify.status === 'unchanged') return { status: 'unchanged', etag: verify.etag };
 
       // ETag 报"changed"，先尝试基于 manifest 内容判定是否真的有冲突
-      const remoteHashes = await tryReadRemoteManifestHashes(verify.files);
-      const knownHashes = latestConfig.knownRemoteHashes ?? {};
-      if (remoteHashes && hashesEqual(remoteHashes, knownHashes)) {
+      const remoteManifest = await tryReadRemoteManifest(verify.files);
+      if (remoteManifest && manifestMatchesKnownState(remoteManifest, latestConfig)) {
         console.info('[useSyncExecutor] 伪 CAS：ETag 漂移但远端 manifest 内容未变，视为 unchanged');
-        return { status: 'unchanged' };
+        return { status: 'unchanged', etag: verify.etag };
       }
 
       // 真冲突
@@ -720,6 +663,7 @@ export function useSyncExecutor() {
           appSettings: bundle.appSettingsForSync,
           novels: bundle.novelsWithContent,
           coverHistory: bundle.coverHistoryForSync,
+          memories: Object.values(bundle.memoriesByBook).flat(),
         },
         makeUploadProgressHandler(prefixMsg),
       );
@@ -903,6 +847,10 @@ export function useSyncExecutor() {
       onError(t('aborted'), t('schemaUpgradeReadFailed'));
       return { success: false, restorableItems: [] };
     }
+    if (activeDownload?.failedEntryKeys?.length) {
+      onError(t('downloadFailed'), t('downloadIncomplete'));
+      return { success: false, restorableItems: [] };
+    }
 
     if (activeDownload?.needsMigration) {
       const migrated = await runLegacyMigration(
@@ -977,7 +925,7 @@ export function useSyncExecutor() {
     }
 
     return runIncrementalUpload(
-      latestConfig,
+      { ...latestConfig, lastRemoteETag: casResult.etag ?? latestConfig.lastRemoteETag ?? '' },
       bundle,
       syncSnapshotTime,
       remoteFilesSnapshot,
@@ -1151,8 +1099,9 @@ export function useSyncExecutor() {
 
     // 快照时刻取在 bundle 构建之前（与 executeSync 同语义，见 persistUploadState）
     const syncSnapshotTime = Date.now();
-    const bundle = await buildLocalSyncBundle(config);
+    let bundle: Awaited<ReturnType<typeof buildLocalSyncBundle>>;
     try {
+      bundle = await buildLocalSyncBundle(config);
       const prepared = await BookService.prepareForceBooks(
         bundle.novelsWithContent,
         remoteBooks,
@@ -1207,6 +1156,7 @@ export function useSyncExecutor() {
         },
         remoteFilesSnapshot as Parameters<typeof gistSyncService.uploadToGistIncremental>[2],
         makeUploadProgressHandler(prefixMsg),
+        { skipConcurrencyCheck: true },
       );
 
       // 持久化新的远端状态（失败不影响推送成功判定）

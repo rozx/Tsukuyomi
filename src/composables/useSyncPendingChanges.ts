@@ -6,6 +6,7 @@ import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
 import type { MessageKey } from 'src/i18n/types';
 import { translateText } from 'src/i18n/translate';
+import { memoryModifiedAt } from 'src/utils/memory-timestamps';
 
 /**
  * 一条待同步变更（UI 展示用，非权威）。
@@ -27,7 +28,7 @@ export interface PendingChangeItem {
  * 用作 UI 提示，不替代 `useSyncExecutor` 内部基于 manifest 哈希的权威判定。
  *
  * 统计范围：books / ai-models / covers / settings 的 lastEdited(addedAt)，
- * 以及 Memory CRUD / 访问时间与 SyncConfig 中的删除记录（deletedAt > lastSyncTime）。
+ * 以及 Memory 内容修改与 SyncConfig 中的删除记录（deletedAt > lastSyncTime）。
  */
 export function useSyncPendingChanges() {
   const settingsStore = useSettingsStore();
@@ -129,12 +130,12 @@ export function useSyncPendingChanges() {
       if (currentToken !== memoryRefreshToken) return;
 
       memoryPendingItems.value = memories
-        .filter((memory) => memory.lastAccessedAt > baseline)
+        .filter((memory) => memoryModifiedAt(memory) > baseline)
         .map((memory) => ({
           kind: 'memory' as const,
           action: memory.createdAt > baseline ? ('added' as const) : ('edited' as const),
           label: formatMemoryLabel(memory.summary, memory.content),
-          changedAt: memory.lastAccessedAt,
+          changedAt: memoryModifiedAt(memory),
         }));
     } catch (error) {
       if (currentToken !== memoryRefreshToken) return;
@@ -155,7 +156,7 @@ export function useSyncPendingChanges() {
   );
 
   const unsubscribeMemoryChange = MemoryService.addMemoryChangeListener((event) => {
-    if (event.detail?.action === 'embedding-updated') return;
+    if (event.detail?.action === 'embedding-updated' || event.detail?.action === 'accessed') return;
     void refreshMemoryPendingItems();
   });
   onScopeDispose(unsubscribeMemoryChange);

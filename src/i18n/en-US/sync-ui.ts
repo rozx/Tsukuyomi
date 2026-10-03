@@ -1,6 +1,7 @@
 export default {
   syncUi: {
     service: {
+      concurrentWrite: 'Remote data changed during upload. Upload stopped; sync again.',
       usernameRequired: 'GitHub username is required',
       tokenRequired: 'GitHub token is required',
       gistOnly: 'Sync type must be gist',
@@ -135,6 +136,10 @@ export default {
         '{listed}{suffix}: the paragraph structure was changed on both devices. The newer chapter was kept and paragraphs only present on the other side were appended. Review these chapters.',
       listSeparator: ', ',
       checkingRemote: 'Checking for remote changes...',
+      downloadIncomplete:
+        'Some remote data could not be read. Sync stopped; please try again later.',
+      applyIncomplete:
+        'Some remote data could not be applied. Sync state was not advanced; please try again later.',
       downloadUnknown: 'An unknown error occurred while downloading',
       downloadFailed: 'Download failed',
       migrating: 'Found a Gist with the old layout. Running a one-time migration...',

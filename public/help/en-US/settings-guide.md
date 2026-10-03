@@ -200,8 +200,11 @@ For remote corruption or device migration, replace remote visible data with loca
 
 ### Multilingual protocol and entity deletion {#settings-guide-language-sync}
 
-- The new manifest is **v4**, with a corresponding book entity protocol. Export a backup on every participating device, upgrade all clients, then sync one device at a time.
-- Protocols 1–3 upgrade after successful migration. Future protocols stop writes. Older clients' ordinary sync cannot process v4. New code cannot remotely fix already released older force-push implementations: disable their sync or upgrade first, and do not force-push to the shared Gist.
+- The new manifest is **v5**, with a corresponding book entity protocol. Export a backup on every participating device, upgrade all clients, then sync one device at a time.
+- Protocols 1–4 upgrade after successful migration. Future protocols stop writes. Older clients' ordinary sync cannot process v5. New code cannot remotely fix already released older force-push implementations: disable their sync or upgrade first, and do not force-push to the shared Gist.
+- Memory access times are used only for local ordering, LRU, and retrieval. Only content or summary edits trigger uploads. Legacy memories retain their previous timestamp as the initial content modification time.
+- Failed downloads, applies, or local reads do not mark the sync complete. Each upload batch checks the remote ETag again. The Gist API does not support atomic conditional writes, so simultaneous writes can still race.
+
 - Terms, characters, and aliases use stable identities and logical field revisions. Renaming an alias retains its identity. Different language changes merge separately; conflicts on one field use deterministic logical versions, independent of device wall clocks.
 - Entity deletion wins over late offline edits. Deletion records for entities within a book are retained indefinitely, including beyond 90 days offline. Deleting a character also prevents its old aliases from returning. Clearing a language translation clears only that slot.
 - Deleting a translation version of a paragraph leaves a deletion record, so stale copies on other devices cannot bring it back during sync. Editing a translation in place also advances its version, so merges keep the newer edit. Translation-version deletion records are cleared 90 days after the paragraph last changed; a device offline longer than that may still bring an old version back.

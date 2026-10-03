@@ -60,7 +60,8 @@ describe('upsertMemoryForSync: embeddings preservation', () => {
       [0.4, 0.5, 0.6],
     ]);
     expect(after?.embeddingModel).toBe('embeddinggemma-300m@256');
-    expect(after?.lastAccessedAt).toBe(2000);
+    expect(after?.lastAccessedAt).toBe(1500);
+    expect(after?.updatedAt).toBe(2000);
     expect(enqueueSpy).not.toHaveBeenCalled();
   });
 

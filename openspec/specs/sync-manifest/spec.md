@@ -1,6 +1,7 @@
 # sync-manifest Specification
 
 ## Purpose
+
 Define the manifest-driven Gist sync layout: a top-level `manifest.json` indexes per-entry content hashes and metadata so uploads and downloads can be incremental (only transmitting files whose hashes changed). This capability covers the file layout, hash computation, per-entry splitting (memories, ai-models, cover-history), schema versioning, and the one-time migration from the legacy single-settings layout.
 
 ## Requirements
@@ -111,7 +112,7 @@ When downloading from a Gist with `schemaVersion >= 2`, the system SHALL parse `
 
 ### Requirement: Schema version gating
 
-The manifest SHALL include a numeric `schemaVersion` field. The current version introduced by this change SHALL be `4`. This version SHALL carry the book-entity identity, logical-version and tombstone contract inside novel payloads. When the system reads a remote manifest with `schemaVersion` greater than the version known to this client, the system SHALL abort the sync and surface an error indicating the remote was written by a newer client that must be matched.
+The manifest SHALL include a numeric `schemaVersion` field. The current version supported by this client SHALL be `5`. This version SHALL carry the book-entity identity, logical-version and tombstone contract inside novel payloads. When the system reads a remote manifest with `schemaVersion` greater than the version known to this client, the system SHALL abort the sync and surface an error indicating the remote was written by a newer client that must be matched.
 
 #### Scenario: Client knows the manifest version
 
@@ -135,22 +136,22 @@ The manifest SHALL include a numeric `schemaVersion` field. The current version 
 
 #### Scenario: Complete protocol migration
 
-- **GIVEN** a supported schema 1–3 Gist contains old-format books
-- **WHEN** the upgraded client first publishes schema 4
+- **GIVEN** a supported schema 1–4 Gist contains old-format books
+- **WHEN** the upgraded client first publishes schema 5
 - **THEN** the manifest and all book files requiring migration SHALL be published in one PATCH when they fit within one PATCH byte budget; unchanged content hashes alone MUST NOT skip the protocol upgrade
 - **AND** unreadable required books or a failed PATCH SHALL prevent the migration being marked complete
 
 #### Scenario: Protocol migration larger than one PATCH
 
-- **GIVEN** a schema 1–3 Gist whose migration payload exceeds one PATCH byte budget
-- **WHEN** the upgraded client publishes schema 4
-- **THEN** the first PATCH SHALL contain only a fence `manifest.json` with `schemaVersion: 4`, `pendingUpgradeFrom` set to the previous schema and the previous entries unchanged; content SHALL then be uploaded in budgeted batches, and the final batch SHALL write the complete schema 4 manifest without `pendingUpgradeFrom` together with deletions
-- **AND** older clients SHALL stop on the fence as a newer schema, while schema 4 clients SHALL treat a manifest carrying `pendingUpgradeFrom` as still requiring the upgrade: read all entries regardless of cached hashes, record the previous schema as the known remote schema, and complete the upgrade on their next upload
+- **GIVEN** a schema 1–4 Gist whose migration payload exceeds one PATCH byte budget
+- **WHEN** the upgraded client publishes schema 5
+- **THEN** the first PATCH SHALL contain only a fence `manifest.json` with `schemaVersion: 5`, `pendingUpgradeFrom` set to the previous schema and the previous entries unchanged; content SHALL then be uploaded in budgeted batches, and the final batch SHALL write the complete schema 5 manifest without `pendingUpgradeFrom` together with deletions
+- **AND** older clients SHALL stop on the fence as a newer schema, while schema 5 clients SHALL treat a manifest carrying `pendingUpgradeFrom` as still requiring the upgrade: read all entries regardless of cached hashes, record the previous schema as the known remote schema, and complete the upgrade on their next upload
 - **AND** a Gist without any manifest (legacy layout or empty) whose payload exceeds one PATCH SHALL be uploaded in ordinary budgeted batches with the manifest in the final batch
 
 #### Scenario: Local actor metadata is not exported
 
-- **WHEN** generating the schema 4 payload
+- **WHEN** generating the schema 5 payload
 - **THEN** historical field revisions and tombstones SHALL be included, but the current installation's actor identity allocation record and local counter store SHALL NOT be copied as device configuration
 
 ### Requirement: One-time migration from legacy layout
@@ -190,3 +191,19 @@ The `SyncConfig` interface SHALL include a `knownRemoteHashes: Record<string, st
 
 - **WHEN** the app loads a `SyncConfig` created by a pre-manifest version
 - **THEN** the absent `knownRemoteHashes` SHALL default to an empty object, triggering full sync on the next cycle
+
+### Requirement: Protocol 5 and upload concurrency checks
+
+Protocol 5 SHALL separate Memory content modification time from device access time. Protocols 1–4 SHALL be upgraded before being marked current. A pending upgrade SHALL use its previous effective protocol for content validation, even when its fence declares schema 5.
+
+#### Scenario: Content does not match the current manifest
+
+- **WHEN** a current-protocol entry is deserialized and its canonical content hash differs from the manifest
+- **THEN** the entry SHALL be reported as unreadable and SHALL NOT be applied or marked known
+
+#### Scenario: Upload batches and ETag drift
+
+- **WHEN** ordinary sync uploads multiple batches
+- **THEN** it SHALL check the remote ETag immediately before each batch and stop on concurrent change, without publishing a final manifest after detecting the conflict
+- **AND** initial ETag drift MAY be ignored only when entries, chunk layout, tombstones, and protocol match the known remote state; forced overwrite SHALL explicitly bypass these checks
+- **AND** this is a best-effort check: the Gist API does not provide atomic conditional PATCH, so simultaneous writes after a check remain possible

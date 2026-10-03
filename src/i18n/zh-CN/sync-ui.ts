@@ -1,6 +1,7 @@
 export default {
   syncUi: {
     service: {
+      concurrentWrite: '远程数据在上传期间发生变化，已停止上传，请重新同步',
       usernameRequired: 'GitHub 用户名不能为空',
       tokenRequired: 'GitHub token 不能为空',
       gistOnly: '同步类型必须是 gist',
@@ -127,6 +128,8 @@ export default {
         '{listed}{suffix} 在两台设备上都修改了段落结构。已按较新的章节保留，并附加了另一方独有的段落，建议检查这些章节。',
       listSeparator: '、',
       checkingRemote: '正在检查远程变更...',
+      downloadIncomplete: '部分远程数据读取失败，已中止同步，请稍后重试',
+      applyIncomplete: '部分远程数据应用失败，未更新同步状态，请稍后重试',
       downloadUnknown: '下载时发生未知错误',
       downloadFailed: '下载失败',
       migrating: '检测到旧布局 Gist，正在执行一次性迁移...',

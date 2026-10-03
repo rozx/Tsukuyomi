@@ -19,10 +19,15 @@ function groupMemoriesByBook(memories: Memory[]): Map<string, Memory[]> {
   return byBook;
 }
 
-function pickMemoryTimestamps(memory: Memory): { createdAt?: number; lastAccessedAt?: number } {
+function pickMemoryTimestamps(memory: Memory): {
+  createdAt?: number;
+  lastAccessedAt?: number;
+  updatedAt?: number;
+} {
   return {
     ...(typeof memory.createdAt === 'number' ? { createdAt: memory.createdAt } : {}),
     ...(typeof memory.lastAccessedAt === 'number' ? { lastAccessedAt: memory.lastAccessedAt } : {}),
+    ...(typeof memory.updatedAt === 'number' ? { updatedAt: memory.updatedAt } : {}),
   };
 }
 

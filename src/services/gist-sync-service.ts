@@ -686,7 +686,7 @@ export class GistSyncService {
   }
 
   /**
-   * 将 memories 按书籍加载后扁平化返回（跳过加载失败的书籍，不中止整个上传）
+   * 将 memories 按书籍加载后扁平化返回；读取失败时禁止上传不完整快照。
    */
   private async collectMemoriesForUpload(novels: Novel[]): Promise<Memory[]> {
     const memoriesToUpload: Memory[] = [];
@@ -699,6 +699,7 @@ export class GistSyncService {
           `[GistSyncService] 加载书籍 ${novel.title} (${novel.id}) 的 Memory 失败:`,
           error,
         );
+        throw error;
       }
     }
     return memoriesToUpload;
@@ -834,7 +835,7 @@ export class GistSyncService {
     const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
       data.novels,
     );
-    const memoriesToUpload = await this.collectMemoriesForUpload(data.novels);
+    const memoriesToUpload = data.memories ?? (await this.collectMemoriesForUpload(data.novels));
 
     const files: Record<string, { content: string } | null> = {};
 
@@ -2511,6 +2512,7 @@ export class GistSyncService {
       }
     >,
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
+    options: { skipConcurrencyCheck?: boolean } = {},
   ): Promise<IncrementalUploadResult> {
     this.validateConfig(config);
     this.initializeOctokit(config);
@@ -2524,6 +2526,7 @@ export class GistSyncService {
       remoteFilesSnapshot,
       onProgress,
       this.getLocale(),
+      { checkConcurrency: !options.skipConcurrencyCheck },
     );
   }
 

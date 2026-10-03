@@ -144,6 +144,22 @@ describe('executeForceSync', () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any);
 
+  it('强制推送读取本地数据失败时保留模式并记录失败，不上传删除', async () => {
+    mockBooksStore.books = [{ id: 'book' }];
+    stubSuccessfulDownload();
+    spyOn(MemoryService, 'getAllMemories').mockRejectedValue(new Error('读取失败'));
+    const upload = stubSuccessfulUpload();
+    const result = await useSyncExecutor().executeForceSync({
+      messagePrefix: '',
+      isManualRetrieval: false,
+      onError: () => {},
+    });
+    expect(result.success).toBe(false);
+    expect(mockSettings.syncState.forceSyncMode.active).toBe(true);
+    expect(mockSettings.syncState.forceSyncMode.lastFailedAt).toBeDefined();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
   it('远端更高协议、读取失败或不完整快照时不上传，并强制读取所有远端条目', async () => {
     for (const overrides of [
       { schemaVersionTooNew: true },

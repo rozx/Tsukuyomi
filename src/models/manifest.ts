@@ -15,8 +15,9 @@ import type { Memory } from './memory';
  * - 3：memories 改为 envelope 格式 `{ memories, tombstones }`，
  *      manifest.tombstones 同时支持 `memories:<bookId>` 形式
  * - 4：书内实体稳定身份、逻辑版本、长期删除记录和多语言槽
+ * - 5：Memory 内容修改时间与设备访问时间分离
  */
-export const MANIFEST_SCHEMA_VERSION = 4;
+export const MANIFEST_SCHEMA_VERSION = 5;
 
 /** Gist 中 manifest 文件的文件名 */
 export const MANIFEST_FILE_NAME = 'manifest.json';

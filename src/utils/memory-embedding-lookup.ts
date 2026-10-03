@@ -26,6 +26,7 @@ interface MemoryStorage {
   content: string;
   summary: string;
   createdAt: number;
+  updatedAt?: number;
   lastAccessedAt: number;
   embeddings?: number[][];
   embeddingModel?: string;
@@ -42,6 +43,7 @@ export function storageToMemory(storage: MemoryStorage): Memory {
     content: storage.content,
     summary: storage.summary,
     createdAt: storage.createdAt,
+    ...(storage.updatedAt !== undefined ? { updatedAt: storage.updatedAt } : {}),
     lastAccessedAt: storage.lastAccessedAt,
   };
   if (storage.embeddings !== undefined) result.embeddings = storage.embeddings;

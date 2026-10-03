@@ -97,6 +97,37 @@ function mockFetchJson(body: unknown) {
 }
 
 describe('uploadIncremental — 未上传条目的 chunks 元数据继承', () => {
+  it('另一设备在批次之间写入时停止上传，不发布最终 manifest', async () => {
+    const patches: Record<string, unknown>[] = [];
+    const octokit = makeOctokit((params) => patches.push(params.files));
+    spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 304, headers: { etag: 'etag-v1' } }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ files: {} }), {
+          status: 200,
+          headers: { etag: 'another-device' },
+        }),
+      );
+    let failure: unknown;
+    try {
+      await uploadIncremental(
+        octokit,
+        makeConfig(),
+        makePayload({
+          novels: Array.from({ length: 11 }, (_, i) => makeNovel(`batch-${i}`)),
+        }),
+        {},
+        undefined,
+        'zh-CN',
+        { checkConcurrency: true },
+      );
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(Error);
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.[MANIFEST_FILE_NAME]).toBeUndefined();
+  });
   it('settings-only 同步时，未变化的分块小说条目在上传的 manifest 中保留 chunks 计数', async () => {
     // 场景：本地只有 settings 变化，novel:book-a 未变（hash 与 knownRemote 一致），
     // 但上次同步时它是分块布局（chunks=3）。buildLocalManifest 不输出 chunks，
@@ -329,6 +360,24 @@ describe('uploadIncremental — 纯删除同步也要清理远端文件', () => 
 });
 
 describe('downloadWithManifest — 失败条目上报', () => {
+  it('条目正文与 manifest 哈希不一致时拒绝应用', async () => {
+    const novel = makeNovel('mismatch');
+    const manifest: GistManifest = {
+      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      updatedAt: '',
+      entries: { 'novel:mismatch': { hash: '0'.repeat(64), lastEdited: '' } },
+    };
+    mockFetchJson({
+      files: {
+        'manifest.json': { content: JSON.stringify(manifest) },
+        'novel-mismatch.json': { content: JSON.stringify(novel) },
+      },
+    });
+    const result = await downloadWithManifest(makeConfig());
+    if (result.skipped) throw new Error('unexpected skipped');
+    expect(result.failedEntryKeys).toEqual(['novel:mismatch']);
+    expect(result.changedEntries).toEqual({});
+  });
   it('条目文件缺失导致反序列化失败时，应记录到 failedEntryKeys 而不是静默跳过', async () => {
     const manifest: GistManifest = {
       schemaVersion: MANIFEST_SCHEMA_VERSION,
@@ -359,6 +408,41 @@ describe('downloadWithManifest — 失败条目上报', () => {
 });
 
 describe('v4 实体协议发布', () => {
+  it('v5 升级围栏中的 v4 正文仍按旧协议读取，不能用新格式哈希拒绝迁移', async () => {
+    mockFetchJson({
+      files: {
+        'manifest.json': {
+          content: JSON.stringify({
+            schemaVersion: MANIFEST_SCHEMA_VERSION,
+            pendingUpgradeFrom: 4,
+            updatedAt: '',
+            entries: { 'novel:old-layout': { hash: 'legacy-hash', lastEdited: '' } },
+          }),
+        },
+        'novel-old-layout.json': { content: JSON.stringify(makeNovel('old-layout')) },
+      },
+    });
+    const result = await downloadWithManifest(makeConfig());
+    if (result.skipped) throw new Error('unexpected skipped');
+    expect(result.failedEntryKeys).toEqual([]);
+    expect(result.changedEntries['novel:old-layout']).toBeDefined();
+  });
+  it('v4 远端需要升级，以隔离旧客户端的 Memory 访问同步语义', async () => {
+    mockFetchJson({
+      files: {
+        'manifest.json': {
+          content: JSON.stringify({
+            schemaVersion: 4,
+            updatedAt: '',
+            entries: {},
+          }),
+        },
+      },
+    });
+    const result = await downloadWithManifest(makeConfig());
+    if (result.skipped) throw new Error('unexpected skipped');
+    expect(result.needsSchemaUpgrade).toBe(true);
+  });
   it('旧协议 hash 相同仍将必需文件和 v4 manifest 一次发布，未来协议不 PATCH', async () => {
     const payload = makePayload({
       novels: Array.from({ length: 32 }, (_, i) => makeNovel(`b${i}`)),
@@ -377,7 +461,7 @@ describe('v4 实体协议发布', () => {
     const result = await uploadIncremental(octokit, config, payload, {
       'manifest.json': { content: JSON.stringify(old) },
     });
-    expect(result.manifest.schemaVersion).toBe(4);
+    expect(result.manifest.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION);
     expect(patches).toHaveLength(1);
     expect(patches[0]!['novel-b0.json']).toBeDefined();
     expect(patches[0]!['novel-b31.json']).toBeDefined();
@@ -449,7 +533,7 @@ it('协议未知或旧版时不能用 304 跳过升级检查，确认 v4 后才�
   await downloadWithManifest(makeConfig({ knownRemoteSchemaVersion: 3 }));
   expect(new Headers(fetch.mock.calls[0]![1]?.headers).has('If-None-Match')).toBe(false);
   fetch.mockClear();
-  await downloadWithManifest(makeConfig({ knownRemoteSchemaVersion: 4 }));
+  await downloadWithManifest(makeConfig({ knownRemoteSchemaVersion: MANIFEST_SCHEMA_VERSION }));
   expect(new Headers(fetch.mock.calls[0]![1]?.headers).get('If-None-Match')).toBe('etag-v1');
 });
 
@@ -525,14 +609,14 @@ describe('大书库 v4 升级：先写围栏 manifest 再分批', () => {
     expect(patches.length).toBeGreaterThan(2);
     expect(Object.keys(patches[0]!)).toEqual([MANIFEST_FILE_NAME]);
     const fence = JSON.parse(patches[0]![MANIFEST_FILE_NAME]!.content) as GistManifest;
-    expect(fence.schemaVersion).toBe(4);
+    expect(fence.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION);
     expect(fence.pendingUpgradeFrom).toBe(3);
     expect(fence.entries).toEqual(old.entries);
     for (const batch of patches.slice(1))
       expect(batchBytes(batch)).toBeLessThanOrEqual(BUDGET * 1.1);
     const last = patches[patches.length - 1]!;
     const final = JSON.parse(last[MANIFEST_FILE_NAME]!.content) as GistManifest;
-    expect(final.schemaVersion).toBe(4);
+    expect(final.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION);
     expect(final.pendingUpgradeFrom).toBeUndefined();
     expect(patches.slice(1, -1).every((batch) => !(MANIFEST_FILE_NAME in batch))).toBe(true);
     expect(result.manifest.pendingUpgradeFrom).toBeUndefined();
@@ -551,7 +635,10 @@ describe('大书库 v4 升级：先写围栏 manifest 再分批', () => {
     const patches: Record<string, { content: string } | null>[] = [];
     await uploadIncremental(
       makeOctokit((params) => patches.push(params.files)),
-      makeConfig({ knownRemoteHashes: manifestToHashes(local), knownRemoteSchemaVersion: 4 }),
+      makeConfig({
+        knownRemoteHashes: manifestToHashes(local),
+        knownRemoteSchemaVersion: MANIFEST_SCHEMA_VERSION,
+      }),
       payload,
       { 'manifest.json': { content: JSON.stringify(fence) } },
     );

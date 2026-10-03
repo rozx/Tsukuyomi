@@ -4,7 +4,7 @@ import './setup';
 import { uploadIncremental, type UploadPayload } from '../services/gist-sync-incremental';
 import type { SyncConfig } from '../models/sync';
 import { SyncType } from '../models/sync';
-import { novelEntryKey, memoriesEntryKey } from '../models/manifest';
+import { novelEntryKey, memoriesEntryKey, MANIFEST_SCHEMA_VERSION } from '../models/manifest';
 import { buildLocalManifest, manifestToHashes } from '../services/sync-manifest-builder';
 
 function makeConfig(overrides: Partial<SyncConfig> = {}): SyncConfig {
@@ -18,7 +18,7 @@ function makeConfig(overrides: Partial<SyncConfig> = {}): SyncConfig {
     apiEndpoint: '',
     lastRemoteETag: 'etag-v1',
     knownRemoteHashes: {},
-    knownRemoteSchemaVersion: 4,
+    knownRemoteSchemaVersion: MANIFEST_SCHEMA_VERSION,
     ...overrides,
   };
 }

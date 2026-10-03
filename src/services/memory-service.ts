@@ -7,6 +7,7 @@ import type { MemoryWriteStore } from './memory-persistence';
 import { getDB } from 'src/utils/indexed-db';
 import { generateShortId } from 'src/utils/id-generator';
 import type { Memory } from 'src/models/memory';
+import { memoryModifiedAt } from 'src/utils/memory-timestamps';
 import type { ScoredMemory } from 'src/services/memory-scoring';
 import { splitTextForEmbedding } from 'src/utils/embedding-text-segments';
 
@@ -50,7 +51,9 @@ import {
 const MAX_MEMORIES_PER_BOOK = 500;
 
 /** createMemoryWithId 的可选时间戳参数 */
-type MemoryTimestamps = { createdAt?: number; lastAccessedAt?: number } | undefined;
+type MemoryTimestamps =
+  | { createdAt?: number; lastAccessedAt?: number; updatedAt?: number }
+  | undefined;
 
 /**
  * createMemoryWithId 更新分支：把传入时间戳与既有记录合并。
@@ -95,6 +98,7 @@ interface MemoryStorage {
   content: string;
   summary: string;
   createdAt: number;
+  updatedAt?: number;
   lastAccessedAt: number;
   embeddings?: number[][];
   embeddingModel?: string;
@@ -243,6 +247,7 @@ export class MemoryService {
       content: memory.content,
       summary: memory.summary,
       createdAt: memory.createdAt,
+      updatedAt: memoryModifiedAt(memory),
       lastAccessedAt: memory.lastAccessedAt,
     };
 
@@ -316,6 +321,7 @@ export class MemoryService {
       content: storage.content,
       summary: storage.summary,
       createdAt: storage.createdAt,
+      updatedAt: memoryModifiedAt(storage),
       lastAccessedAt: storage.lastAccessedAt,
     };
 
@@ -331,7 +337,7 @@ export class MemoryService {
   /**
    * 读取路径更新 lastAccessedAt 后的统一收尾：
    * - 同步进程内缓存，避免 recency 缓存短时间内仍是旧值
-   * - 派发 accessed 事件，让同步状态栏刷新待上传的 memory hash 变化
+   * - 派发 accessed 事件供本地视图刷新，同步状态栏忽略此事件
    */
   private static syncAccessTimesAfterRead(
     bookId: string,
@@ -445,6 +451,7 @@ export class MemoryService {
           content,
           summary,
           createdAt: now,
+          updatedAt: now,
           lastAccessedAt: now,
         };
 
@@ -464,9 +471,8 @@ export class MemoryService {
    * 同步专用：按远端条目原样 upsert 一个 Memory。
    *
    * 与 `createMemoryWithId` 的区别：
-   * - 不对 `createdAt` / `lastAccessedAt` 做任何钳制（min/max 合并）——远端是权威，
-   *   若本地在 apply 时把时间戳钳成别的值，会导致下一轮重新计算的 hash 与远端 manifest
-   *   不一致，触发空转上传
+   * - 保留远端 `createdAt` / `updatedAt`，本地访问时间独立保留；
+   *   上传时访问字段规范化为内容时间，不影响远端哈希
    * - 不强制写 `summary` 非空（远端导入场景允许空摘要）
    *
    * Embedding 处理（关键）：
@@ -504,7 +510,8 @@ export class MemoryService {
         content: memory.content,
         summary: memory.summary,
         createdAt: memory.createdAt,
-        lastAccessedAt: memory.lastAccessedAt,
+        updatedAt: memoryModifiedAt(memory),
+        lastAccessedAt: existing?.lastAccessedAt ?? memoryModifiedAt(memory),
       };
 
       const embeddingDecision = resolveSyncEmbeddings(memory, existing);
@@ -527,6 +534,7 @@ export class MemoryService {
       content: storage.content,
       summary: storage.summary,
       createdAt: storage.createdAt,
+      updatedAt: memoryModifiedAt(storage),
       lastAccessedAt: storage.lastAccessedAt,
     };
     if (storage.embeddings !== undefined) cachedMemory.embeddings = storage.embeddings;
@@ -548,7 +556,7 @@ export class MemoryService {
     memoryId: string,
     content: string,
     summary: string,
-    timestamps?: { createdAt?: number; lastAccessedAt?: number },
+    timestamps?: { createdAt?: number; lastAccessedAt?: number; updatedAt?: number },
   ): Promise<Memory> {
     this.assertMemoryFields(bookId, memoryId, content, summary);
 
@@ -563,13 +571,28 @@ export class MemoryService {
           ? undefined
           : await this.evictOldestMemoryIfAtCapacity(store, store.index('by-bookId'), bookId);
         const memory: MemoryStorage = existing
-          ? { ...existing, content, summary, ...mergeTimestampsForUpdate(existing, timestamps) }
+          ? {
+              ...existing,
+              content,
+              summary,
+              ...mergeTimestampsForUpdate(existing, timestamps),
+              updatedAt:
+                timestamps?.updatedAt ??
+                (existing.content !== content || existing.summary !== summary
+                  ? (timestamps?.lastAccessedAt ?? Date.now())
+                  : memoryModifiedAt(existing)),
+            }
           : {
               id: memoryId,
               bookId,
               content,
               summary,
               ...buildNewMemoryTimestamps(timestamps, Date.now()),
+              updatedAt:
+                timestamps?.updatedAt ??
+                timestamps?.lastAccessedAt ??
+                timestamps?.createdAt ??
+                Date.now(),
             };
         await store.put(memory);
         return { existing, memory, evictedId };
@@ -599,7 +622,7 @@ export class MemoryService {
       for (const id of memoryIds) {
         const memory = await store.get(id);
         if (!memory || memory.bookId !== bookId) continue;
-        const updated = { ...memory, lastAccessedAt: now };
+        const updated = { ...memory, updatedAt: memoryModifiedAt(memory), lastAccessedAt: now };
         await store.put(updated);
         result.push(updated);
       }
@@ -793,6 +816,10 @@ export class MemoryService {
           content,
           summary,
           lastAccessedAt: preserveLastAccessedAt ?? Date.now(),
+          updatedAt:
+            memory.content !== content || memory.summary !== summary
+              ? (preserveLastAccessedAt ?? Date.now())
+              : memoryModifiedAt(memory),
         };
         await store.put(updatedMemory);
         return { memory, updatedMemory };

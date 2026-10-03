@@ -176,7 +176,11 @@ export function useGistSync() {
     );
     // Memory 恢复：data 是携带 bookId 的完整 Memory，走 upsertMemoryForSync 写回 IndexedDB
     for (const memory of grouped.memories) {
-      await MemoryService.upsertMemoryForSync({ ...(memory as Memory), lastAccessedAt: now });
+      await MemoryService.upsertMemoryForSync({
+        ...(memory as Memory),
+        updatedAt: now,
+        lastAccessedAt: now,
+      });
     }
   }
 
