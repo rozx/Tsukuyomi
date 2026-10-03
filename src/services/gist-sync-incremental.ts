@@ -46,10 +46,10 @@ function progressText(
 /** 增量同步的自有错误：带稳定错误码，显示时可按任意界面语言重新渲染 */
 function syncError(
   code: string,
-  key: string,
+  key: MessageKey,
   values: Record<string, string | number> = {},
 ): LocalizedError {
-  return new LocalizedError(code, `syncUi.incremental.${key}` as MessageKey, values);
+  return new LocalizedError(code, key, values);
 }
 import { normalizeBookLanguages } from './localization/normalize';
 import { stripNovelLocalFields } from 'src/utils/sync-strip';
@@ -316,7 +316,7 @@ async function serializeEntry(
   const bookId = bookIdForNovel ?? bookIdForMemory;
 
   if (!prefix || !chunkPrefix || !bookId) {
-    throw syncError('SYNC_UNKNOWN_ENTRY', 'unknownEntry', { key: entryKey });
+    throw syncError('SYNC_UNKNOWN_ENTRY', 'syncUi.incremental.unknownEntry', { key: entryKey });
   }
 
   const singleName = `${prefix}${bookId}.json`;
@@ -794,12 +794,17 @@ export function matchFilenamesInSnapshot(entryKey: string, remoteFilenames: stri
   return remoteFilenames.filter((f) => prefixes.some((p) => f.startsWith(`${p}${bookId}`)));
 }
 
+/** GET 与 PATCH 使用相同的响应格式与 API 版本，减少 ETag 表示差异。 */
+const GIST_API_HEADERS = {
+  Accept: 'application/vnd.github+json',
+  'X-GitHub-Api-Version': '2022-11-28',
+} as const;
+
 /** 构造 GitHub Gist API 请求头（lastETag 存在时附带条件请求头） */
 function buildGistRequestHeaders(token: string, lastETag?: string): Record<string, string> {
   const headers: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
+    ...GIST_API_HEADERS,
     Authorization: `token ${token}`,
-    'X-GitHub-Api-Version': '2022-11-28',
   };
   if (lastETag) headers['If-None-Match'] = lastETag;
   return headers;
@@ -813,9 +818,14 @@ function buildNotModifiedResult(
   return { notModified: true, etag: etag || lastETag || '' };
 }
 
-/** 200 响应解析后的返回值：携带 updatedAt / files / 可选 htmlUrl */
+/** 200 响应解析后的返回值：携带文件、ETag 及最新修订版本。 */
 function buildGistDataResult(
-  data: { files?: Record<string, GistFileLike>; updated_at?: string; html_url?: string },
+  data: {
+    files?: Record<string, GistFileLike>;
+    updated_at?: string;
+    html_url?: string;
+    history?: Array<{ version?: string }>;
+  },
   etag: string,
 ): {
   notModified: false;
@@ -823,6 +833,7 @@ function buildGistDataResult(
   updatedAt: string;
   files: Record<string, GistFileLike>;
   htmlUrl?: string;
+  revision?: string;
 } {
   return {
     notModified: false,
@@ -830,6 +841,7 @@ function buildGistDataResult(
     updatedAt: data.updated_at ?? '',
     files: data.files ?? {},
     ...(data.html_url ? { htmlUrl: data.html_url } : {}),
+    ...(data.history?.[0]?.version ? { revision: data.history[0].version } : {}),
   };
 }
 
@@ -856,6 +868,7 @@ export async function conditionalGetGist(
       updatedAt: string;
       files: Record<string, GistFileLike>;
       htmlUrl?: string;
+      revision?: string;
     }
 > {
   const headers = buildGistRequestHeaders(token, lastETag);
@@ -873,7 +886,7 @@ export async function conditionalGetGist(
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw syncError('GIST_API_ERROR', 'apiError', {
+    throw syncError('GIST_API_ERROR', 'syncUi.incremental.apiError', {
       status: response.status,
       detail: text.slice(0, 200),
     });
@@ -883,6 +896,7 @@ export async function conditionalGetGist(
     files?: Record<string, GistFileLike>;
     updated_at?: string;
     html_url?: string;
+    history?: Array<{ version?: string }>;
     truncated?: boolean;
   };
 
@@ -891,7 +905,7 @@ export async function conditionalGetGist(
   // → 下载缺数据；新设备的上传 diff 甚至会把"看不见"的远端文件当作已删除
   // 批量清空。必须在这里响亮地中止。
   if (data.truncated === true) {
-    throw syncError('GIST_FILE_LIST_TRUNCATED', 'gistTruncated');
+    throw syncError('GIST_FILE_LIST_TRUNCATED', 'syncUi.incremental.gistTruncated');
   }
 
   return buildGistDataResult(data, etag);
@@ -1460,6 +1474,7 @@ async function executePatchBatches(
   let htmlUrl: string | undefined;
   let newUpdatedAt = '';
   let expectedETag = guardedConfig?.lastRemoteETag;
+  let expectedRevision: string | undefined;
 
   const runBatch = async (
     batch: Record<string, { content: string } | null>,
@@ -1473,18 +1488,24 @@ async function executePatchBatches(
         expectedETag,
       );
       if (!current.notModified) {
-        const content = isFirst
-          ? await readFile(MANIFEST_FILE_NAME, current.files, createFetchRaw())
-          : null;
-        if (!content || !manifestMatchesKnownState(parseGistManifest(content), guardedConfig))
-          throw syncError('GIST_UPDATE_CONFLICT', 'concurrentWrite');
+        if (isFirst) {
+          const content = await readFile(MANIFEST_FILE_NAME, current.files, createFetchRaw());
+          if (!content || !manifestMatchesKnownState(parseGistManifest(content), guardedConfig))
+            throw syncError('GIST_UPDATE_CONFLICT', 'syncUi.service.concurrentWrite');
+        } else if (!expectedRevision || current.revision !== expectedRevision) {
+          // 中间批次尚未发布 manifest，只能与上一批 PATCH 的修订版本比较。
+          throw syncError('GIST_UPDATE_CONFLICT', 'syncUi.service.concurrentWrite');
+        }
         expectedETag = current.etag;
+        expectedRevision = current.revision;
       }
-      if (!expectedETag) throw syncError('GIST_UPDATE_CONFLICT', 'concurrentWrite');
+      if (!expectedETag && !expectedRevision)
+        throw syncError('GIST_UPDATE_CONFLICT', 'syncUi.service.concurrentWrite');
     }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response: any = await octokit.rest.gists.update({
       gist_id: gistId,
+      headers: GIST_API_HEADERS,
       description: 'Tsukuyomi - Moonlit Translator - Manifest-Driven Sync',
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       files: batch as any,
@@ -1498,6 +1519,7 @@ async function executePatchBatches(
       if (response.data?.updated_at) newUpdatedAt = response.data.updated_at;
     }
     expectedETag = response.headers?.etag;
+    expectedRevision = response.data?.history?.[0]?.version;
   };
 
   const totalBatches = additionBatches.length;

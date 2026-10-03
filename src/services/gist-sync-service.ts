@@ -2496,8 +2496,8 @@ export class GistSyncService {
   /**
    * 增量上传：基于本地 manifest 与 knownRemoteHashes 的 diff，仅上传变化的条目
    *
-   * 注意：调用方应该在调用前完成伪 CAS 检查（conditionalGetGist），
-   * 本方法不做额外的并发检测，仅负责序列化和 PATCH。
+   * 调用方先完成伪 CAS 检查；默认还会在每个 PATCH 批次前检查远端，
+   * 批次间以刚写入的修订版本确认 ETag 变化是否代表并发写入。
    */
   async uploadToGistIncremental(
     config: SyncConfig,

@@ -97,6 +97,103 @@ function mockFetchJson(body: unknown) {
 }
 
 describe('uploadIncremental — 未上传条目的 chunks 元数据继承', () => {
+  it('批次间 ETag 不同但修订版本仍是刚写入的版本时继续上传', async () => {
+    const patches: Record<string, unknown>[] = [];
+    const octokit = makeOctokit(() => {});
+    spyOn(octokit.rest.gists, 'update').mockImplementation(
+      (params: { files: Record<string, unknown> }) => {
+        patches.push(params.files);
+        return Promise.resolve({
+          headers: { etag: `patch-etag-${patches.length}` },
+          data: { history: [{ version: `revision-${patches.length}` }] },
+        });
+      },
+    );
+    const fetch = spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 304, headers: { etag: 'etag-v1' } }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ files: {}, history: [{ version: 'revision-1' }] }), {
+          status: 200,
+          headers: { etag: 'get-etag-1' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ files: {}, history: [{ version: 'revision-2' }] }), {
+          status: 200,
+          headers: { etag: 'get-etag-2' },
+        }),
+      );
+
+    const result = await uploadIncremental(
+      octokit,
+      makeConfig(),
+      makePayload({ novels: Array.from({ length: 21 }, (_, i) => makeNovel(`batch-${i}`)) }),
+      {},
+      undefined,
+      'zh-CN',
+      { checkConcurrency: true },
+    );
+
+    expect(result.success).toBe(true);
+    expect(patches).toHaveLength(3);
+    expect(patches[2]?.[MANIFEST_FILE_NAME]).toBeDefined();
+    expect(new Headers(fetch.mock.calls[1]![1]?.headers).get('If-None-Match')).toBe('patch-etag-1');
+    expect(new Headers(fetch.mock.calls[2]![1]?.headers).get('If-None-Match')).toBe('patch-etag-2');
+    expect(result.remoteETag).toBe('patch-etag-3');
+    expect(octokit.rest.gists.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      }),
+    );
+  });
+
+  it('批次间修订变化时停止上传，即使 manifest 仍与已知状态相同', async () => {
+    const { expect: check } = await import('vitest');
+    const payload = makePayload({
+      novels: Array.from({ length: 11 }, (_, i) => makeNovel(`batch-${i}`)),
+    });
+    const knownManifest = await buildLocalManifest(makePayload());
+    const patches: Record<string, unknown>[] = [];
+    const octokit = makeOctokit(() => {});
+    spyOn(octokit.rest.gists, 'update').mockImplementation(
+      (params: { files: Record<string, unknown> }) => {
+        patches.push(params.files);
+        return Promise.resolve({
+          headers: { etag: 'patch-etag-1' },
+          data: { history: [{ version: 'our-revision' }] },
+        });
+      },
+    );
+    spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(null, { status: 304, headers: { etag: 'etag-v1' } }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            files: { [MANIFEST_FILE_NAME]: { content: JSON.stringify(knownManifest) } },
+            history: [{ version: 'another-device-revision' }],
+          }),
+          { status: 200, headers: { etag: 'another-device' } },
+        ),
+      );
+
+    await check(
+      uploadIncremental(
+        octokit,
+        makeConfig({ knownRemoteHashes: manifestToHashes(knownManifest) }),
+        payload,
+        {},
+        undefined,
+        'zh-CN',
+        { checkConcurrency: true },
+      ),
+    ).rejects.toMatchObject({ code: 'GIST_UPDATE_CONFLICT' });
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.[MANIFEST_FILE_NAME]).toBeUndefined();
+  });
+
   it('另一设备在批次之间写入时停止上传，不发布最终 manifest', async () => {
     const patches: Record<string, unknown>[] = [];
     const octokit = makeOctokit((params) => patches.push(params.files));

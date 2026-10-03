@@ -326,6 +326,44 @@ describe('结构冲突提示', () => {
   });
 });
 
+describe('上传期间的并发冲突提示', () => {
+  for (const [locale, summary, detail] of [
+    ['zh-CN', '上传失败', '远程数据在上传期间发生变化，已停止上传，请重新同步'],
+    ['zh-TW', '上傳失敗', '遠端資料在上傳期間發生變更，已停止上傳，請重新同步'],
+    ['en-US', 'Upload failed', 'Remote data changed during upload. Upload stopped; sync again.'],
+  ]) {
+    it(`${locale} 界面显示冲突说明，不泄漏翻译键`, async () => {
+      spyOn(SettingsStore, 'useSettingsStore').mockImplementation((() => ({
+        ...makeMockSettingsStore(),
+        uiLocale: locale,
+      })) as unknown as typeof SettingsStore.useSettingsStore);
+      mockBooksStore.books = [book('b1', [p('p1', '一')])];
+      stubDownloadNoChanges();
+      const update = vi.fn();
+      spyOn(
+        GistSyncService.prototype as unknown as { initializeOctokit(): void },
+        'initializeOctokit',
+      ).mockImplementation(function (this: { octokit: unknown }) {
+        this.octokit = { rest: { gists: { update } } };
+      });
+      spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ files: {} }), {
+          status: 200,
+          headers: { etag: 'another-device' },
+        }),
+      );
+      const onError = vi.fn();
+
+      const result = await useSyncExecutor().executeSync({ ...callbacks, onError });
+
+      expect(result.success).toBe(false);
+      expect(update).not.toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledWith(summary, detail);
+      expect(await baselineOf('b1-c1')).toBeUndefined();
+    });
+  }
+});
+
 it('协议升级在内容 hash 相同仍上传，读取或应用失败不发布新协议', async () => {
   stubDownloadNoChanges();
   const upload = stubUpload();
