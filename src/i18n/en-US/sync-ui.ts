@@ -102,10 +102,8 @@ export default {
     incremental: {
       unknownEntry: 'Unknown entry key: {key}',
       apiError: 'GitHub Gist API error {status}: {detail}',
-      fileLimitExceeded:
-        'This sync would create {count} files, exceeding the 300-file limit for complete Gist API listings. Reduce the number of synced books or data size and retry. No remote changes have been written.',
       gistTruncated:
-        'The Gist has more files than the GitHub API returns at once (300), so the file list is truncated and cannot be synced safely. Remove extra files from the Gist, or sync to a new Gist.',
+        'GitHub truncated the file listing (at most 300 files), and the complete sync manifest for that revision could not be read. Sync stopped to avoid missing or deleting data.',
       downloadingEntry: 'Downloading: {key}',
       checkingRemote: 'Checking for remote changes...',
       downloaded: 'Download complete',

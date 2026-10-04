@@ -95,10 +95,8 @@ export default {
     incremental: {
       unknownEntry: '未知的 entry key: {key}',
       apiError: 'GitHub Gist API 错误 {status}: {detail}',
-      fileLimitExceeded:
-        '本次同步将产生 {count} 个文件，超过 Gist 可完整读取的 300 文件上限。请减少同步书籍或数据后重试；本次尚未写入远端。',
       gistTruncated:
-        'Gist 文件数超过 GitHub API 单次返回上限（300 个），文件列表被截断，无法安全同步。请清理该 Gist 中的冗余文件，或改用新的 Gist 重新同步。',
+        'GitHub 返回的文件列表被截断（最多 300 个文件），且无法读取该修订的完整同步清单。已停止同步，避免遗漏或误删数据。',
       downloadingEntry: '正在下载: {key}',
       checkingRemote: '正在检查远程变更...',
       downloaded: '下载完成',

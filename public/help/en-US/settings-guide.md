@@ -170,7 +170,7 @@ Since v0.10.1, sync uses a **manifest**:
 - **Deletion propagation**: manifest tombstones prevent another device from pushing deleted entries back.
 - **Pending changes**: the header counts books, models, covers, settings, memories, and deletion records. Open the sync popover to inspect individual changes; memory tracking was completed in v0.11.1.
 
-> If Gist file counts exceed the API's response limit, sync stops safely and asks you to remove redundant files or use a new Gist. It does not merge or delete using an incomplete listing.
+> Above 300 files, GitHub may return only part of the file listing. The app reads the sync manifest at the same revision, resolves omitted sync files, and continues incremental sync. It stops safely if neither the manifest nor a migration inventory can be read completely.
 
 ### Chapter source and translation merge {#settings-guide-section-24}
 
@@ -202,7 +202,7 @@ For remote corruption or device migration, replace remote visible data with loca
 
 - Book metadata and content are stored separately. Chapter IDs assign content to up to 16 fixed groups per book; empty groups use no files. Adding a chapter normally uploads its group, book metadata, and manifest. Content-only edits also skip unchanged metadata. Large groups can still be chunked, but inserting or reordering chapters does not reshuffle other groups.
 - The first v6 upgrade migrates all existing books, so this upload can still be large. Interrupted migrations retain the old book content for retry. Historical restore assembles every required group and stops if any group is missing or corrupt.
-- Gist API file listings may be truncated above 300 files. Uploads preflight file counts using the remote snapshot or known layout and stop before writing if the limit would be exceeded. Fixed groups reduce file growth, but very large libraries can still reach this limit.
+- 300 is the GitHub API file-list response limit, not a library capacity limit. Larger libraries can sync through the manifest and files pinned to the same revision, with hash verification and failure handling preserved. A multi-batch legacy upgrade first saves a temporary file inventory so the original books remain readable after interruption. The inventory is removed when the final manifest is published. If neither index is available, the operation stops to protect the data.
 
 - The new manifest is **v6**, with a corresponding book entity protocol. Export a backup on every participating device, upgrade all clients, then sync one device at a time.
 - Protocols 1–5 upgrade after successful migration. Future protocols stop writes. Older clients' ordinary sync cannot process v6. New code cannot remotely fix already released older force-push implementations: disable their sync or upgrade first, and do not force-push to the shared Gist.

@@ -181,23 +181,6 @@ describe('章节小组增量同步', () => {
     expect(result.failedEntryKeys).toEqual([`chapters:book-1:${group}`]);
   });
 
-  it('无远端快照时也把已有 manifest 计入中间批次的 300 文件上限', async () => {
-    const state = fixture(0);
-    state.payload.novels = Array.from({ length: 9 }, (_, i) => ({
-      ...state.novel,
-      id: `new-${i}`,
-    }));
-    state.config.knownRemoteHashes = Object.fromEntries(
-      Array.from({ length: 290 }, (_, i) => [`novel:old-${i}`, 'old']),
-    );
-    state.config.knownRemoteEntries = Object.fromEntries(
-      Object.entries(state.config.knownRemoteHashes).map(([key, hash]) => [key, { hash }]),
-    );
-    await check(
-      uploadIncremental(state.octokit, state.config, state.payload, {}),
-    ).rejects.toMatchObject({ code: 'GIST_FILE_LIMIT_EXCEEDED' });
-    expect(state.patches).toHaveLength(0);
-  });
   it('强制覆盖无 manifest 的旧布局时清理远端独有旧分块', async () => {
     const state = fixture(0);
     state.payload.novels = [];
@@ -378,14 +361,6 @@ describe('章节小组增量同步', () => {
     expect(broken.success).toBe(false);
     expect(broken.data).toBeUndefined();
   });
-  it('写入将超过 300 文件时，在任何 PATCH 前拒绝', async () => {
-    const state = fixture();
-    for (let i = 0; i < 290; i++) state.files[`external-${i}.txt`] = { content: '保留' };
-    await check(state.upload()).rejects.toMatchObject({ code: 'GIST_FILE_LIMIT_EXCEEDED' });
-    expect(state.patches).toHaveLength(0);
-    expect(Object.keys(state.files)).toHaveLength(290);
-  });
-
   it('仅正文变化时读取一个小组和目录，其他正文保持未下载', async () => {
     const state = fixture();
     await state.upload();

@@ -35,6 +35,11 @@ import type { AppLocale } from 'src/models/locale';
 import type { MessageKey } from 'src/i18n/types';
 import { translateText } from 'src/i18n/translate';
 import { LocalizedError } from 'src/utils/localized-error';
+import {
+  completeGistFileSnapshot,
+  LEGACY_FILE_INDEX_NAME,
+  LEGACY_FILE_INDEX_FORMAT,
+} from './gist-file-snapshot';
 
 type SyncProgress = (progress: { current: number; total: number; message: string }) => void;
 
@@ -974,15 +979,8 @@ export async function conditionalGetGist(
     truncated?: boolean;
   };
 
-  // Gist 级 truncated：文件数超过 GitHub API 单次返回上限（300 个）时，
-  // 响应只包含前 300 个文件。若继续同步，窗口外的条目会静默反序列化为 null
-  // → 下载缺数据；新设备的上传 diff 甚至会把"看不见"的远端文件当作已删除
-  // 批量清空。必须在这里响亮地中止。
-  if (data.truncated === true) {
-    throw syncError('GIST_FILE_LIST_TRUNCATED', 'syncUi.incremental.gistTruncated');
-  }
-
-  return buildGistDataResult(data, etag);
+  const files = await completeGistFileSnapshot(gistId, data, filenamesForEntry);
+  return buildGistDataResult({ ...data, files }, etag);
 }
 
 /** 从 SyncConfig 解析用于 Gist API 的 token（优先 secret，其次 syncParams.token） */
@@ -1459,7 +1457,7 @@ export async function uploadIncremental(
     ? buildUpgradeBatches(allFiles, remoteManifest)
     : buildAdditionBatches(allFiles);
   appendDeletionsAndManifestToFinalBatch(additionBatches, allFiles, localManifest);
-  assertFileCountWithinLimit(additionBatches, remoteFilesSnapshot, config);
+  preserveLegacyFileIndex(additionBatches, remoteFilesSnapshot, remoteManifest);
 
   const {
     etag: newETag,
@@ -1549,30 +1547,25 @@ async function serializeEntriesIntoFiles(
 // 单批请求体字节预算：GitHub Gist PATCH 的有效请求上限经验值约为 8-10 MB，我们取 4 MB 留足余量
 const BATCH_BYTE_BUDGET = 4 * 1024 * 1024;
 
-/** 预演每批原子文件变更；迁移中间状态也必须能被 Gist API 完整读取。 */
-function assertFileCountWithinLimit(
+/** 先保存旧布局目录，防止中间批次跨过 API 列表上限后无法读取或重试。 */
+function preserveLegacyFileIndex(
   batches: Array<Record<string, { content: string } | null>>,
   remoteFiles: Record<string, GistFileLike>,
-  config: SyncConfig,
+  remoteManifest: GistManifest | undefined,
 ): void {
-  const snapshotNames = Object.keys(remoteFiles);
-  const names = new Set(
-    snapshotNames.length
-      ? snapshotNames
-      : Object.entries(config.knownRemoteEntries ?? {}).flatMap(([key, entry]) =>
-          filenamesForEntry(key, entry.chunks, config.knownRemoteSchemaVersion ?? 5),
-        ),
-  );
-  if (Object.keys(config.knownRemoteEntries ?? {}).length > 0) names.add(MANIFEST_FILE_NAME);
-  for (const batch of batches) {
-    for (const [name, file] of Object.entries(batch)) {
-      if (file === null) names.delete(name);
-      else names.add(name);
-    }
-    if (names.size > 300)
-      throw syncError('GIST_FILE_LIMIT_EXCEEDED', 'syncUi.incremental.fileLimitExceeded', {
-        count: names.size,
-      });
+  const names = Object.keys(remoteFiles);
+  if (!remoteManifest && names.length > 0 && batches.length > 1) {
+    const files = names.filter(
+      (name) => name !== LEGACY_FILE_INDEX_NAME && name !== MANIFEST_FILE_NAME,
+    );
+    batches.unshift({
+      [LEGACY_FILE_INDEX_NAME]: {
+        content: JSON.stringify({ format: LEGACY_FILE_INDEX_FORMAT, files }),
+      },
+    });
+    batches[batches.length - 1]![LEGACY_FILE_INDEX_NAME] = null;
+  } else if (remoteFiles[LEGACY_FILE_INDEX_NAME]) {
+    batches[batches.length - 1]![LEGACY_FILE_INDEX_NAME] = null;
   }
 }
 

@@ -19,6 +19,7 @@ import {
   deserializeEntry,
   diagnoseRevisionEntryFailure,
   readFile,
+  filenamesForEntry,
   type IncrementalDownloadResult,
   type IncrementalUploadResult,
   type UploadPayload,
@@ -34,6 +35,7 @@ import {
   parseGistManifest,
 } from 'src/utils/manifest-protocol';
 import { assembleChapterGroups } from './sync-chapter-layout';
+import { completeGistFileSnapshot } from './gist-file-snapshot';
 import { hashJson } from 'src/utils/content-hash';
 import { normalizeBookLanguages } from './localization/normalize';
 import type { AppLocale } from 'src/models/locale';
@@ -1474,10 +1476,10 @@ export class GistSyncService {
       const skipResult = this.maybeSkipDownload(lastRemoteUpdatedAt, remoteUpdatedAt);
       if (skipResult) return skipResult;
 
-      const gistFiles = response.data.files;
-      if (!gistFiles) {
+      if (!response.data.files) {
         throw this.fail('GIST_EMPTY', 'gistEmpty');
       }
+      const gistFiles = await completeGistFileSnapshot(gistId, response.data, filenamesForEntry);
       await this.assertGistProtocol(gistFiles);
 
       const result: GistSyncData = { aiModels: [], novels: [] };
@@ -2218,7 +2220,12 @@ export class GistSyncService {
         gist_id: gistId,
         sha: commit.version,
       });
-      const currentFilesMap = revisionResponse.data.files || {};
+      const currentFilesMap = await completeGistFileSnapshot(
+        gistId,
+        revisionResponse.data,
+        filenamesForEntry,
+        commit.version,
+      );
 
       // 列表最新在前：最后一个索引是最早的 commit，所有文件视为新增
       if (commitIndex === allCommits.length - 1) {
@@ -2244,11 +2251,13 @@ export class GistSyncService {
           gist_id: gistId,
           sha: previousCommit.version,
         });
-        return this.diffRevisionFiles(
-          commit,
-          currentFilesMap,
-          previousRevisionResponse.data.files || {},
+        const previousFilesMap = await completeGistFileSnapshot(
+          gistId,
+          previousRevisionResponse.data,
+          filenamesForEntry,
+          previousCommit.version,
         );
+        return this.diffRevisionFiles(commit, currentFilesMap, previousFilesMap);
       } catch {
         return Object.keys(currentFilesMap).map((filename) => ({
           filename,
@@ -2362,15 +2371,24 @@ export class GistSyncService {
    * 共用前置：校验配置 / 初始化 Octokit / 取出 gistId，再按指定 sha 拉取 revision。
    * 供 getGistRevision / downloadFromGistRevision 等复用。
    */
-  private fetchGistRevisionRaw(
+  private async fetchGistRevisionRaw(
     config: SyncConfig,
     version: string,
   ): ReturnType<Octokit['rest']['gists']['getRevision']> {
     const { octokit, gistId } = this.prepareGistClient(config);
-    return octokit.rest.gists.getRevision({
+    const response = await octokit.rest.gists.getRevision({
       gist_id: gistId,
       sha: version,
     });
+    if (response.data.files || response.data.truncated) {
+      response.data.files = (await completeGistFileSnapshot(
+        gistId,
+        response.data,
+        filenamesForEntry,
+        version,
+      )) as NonNullable<typeof response.data.files>;
+    }
+    return response;
   }
 
   async getGistRevision(

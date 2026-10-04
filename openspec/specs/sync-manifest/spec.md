@@ -210,7 +210,7 @@ Protocol 5 SHALL separate Memory content modification time from device access ti
 
 ### Requirement: Stable chapter group storage
 
-Protocol 6 SHALL separate novel metadata and chapter content. Chapters SHALL be assigned to 16 stable per-book groups by their IDs, independent of directory order or chapter count. Only nonempty groups SHALL have entries. Group payloads SHALL be independently canonicalized, compressed and chunked. File count SHALL be checked before any write, including intermediate migration states; a write exceeding 300 files SHALL fail with an actionable localized error.
+Protocol 6 SHALL separate novel metadata and chapter content. Chapters SHALL be assigned to 16 stable per-book groups by their IDs, independent of directory order or chapter count. Only nonempty groups SHALL have entries. Group payloads SHALL be independently canonicalized, compressed and chunked. The GitHub API file-list response limit SHALL NOT impose a 300-file library capacity limit; truncated listings SHALL be resolved using an authoritative manifest at the exact snapshot revision before merging or deleting data.
 
 #### Scenario: Append or insert one chapter
 
@@ -265,3 +265,31 @@ Migration SHALL read protocols 1–5 and publish protocol 6 only after its metad
 
 - **WHEN** a user restores either a pre-v6 revision or a v6 revision
 - **THEN** the complete book contents, translations and metadata SHALL be reconstructed before local replacement
+
+### Requirement: Complete indexed snapshots beyond API listing limits
+
+When the Gist API truncates its file listing, the system SHALL retrieve the manifest at the current snapshot revision or explicitly requested historical revision and use its declared layout to resolve omitted managed files. The manifest itself need not appear in the API listing. Raw file URLs SHALL be pinned to the same revision even when API-provided raw URLs point to earlier file revisions. Unsupported, missing or corrupt manifests and missing or corrupt required payloads SHALL stop synchronization or restore before incomplete data is confirmed. For multi-batch upgrades from an unindexed legacy layout, the client SHALL first persist a temporary inventory of existing files, read that inventory at the snapshot revision if the manifest is absent, and delete it together with the final manifest publication. Truncated legacy data without either index SHALL NOT be treated as an empty library.
+
+#### Scenario: Large multi-book library
+
+- **WHEN** an indexed library contains more than 300 files
+- **THEN** uploads, new-device downloads, incremental edits, deletions and historical restores SHALL retain all indexed data even when the API omits the manifest and some book files
+- **AND** adding one chapter SHALL retain the existing small-group upload behavior
+
+#### Scenario: Revision identity and unchanged snapshots
+
+- **WHEN** raw URLs reference a file's older revision or a later current revision exists during historical restore
+- **THEN** all omitted files SHALL be read from the selected snapshot revision
+- **WHEN** a conditional request returns 304
+- **THEN** the client SHALL skip payload reads as before
+
+#### Scenario: Incomplete indexed snapshot
+
+- **WHEN** an omitted file cannot be read, its hash fails validation, or the exact snapshot revision and manifest cannot be established
+- **THEN** the client SHALL report failure without inferring deletions from the truncated API listing or confirming incomplete data
+
+#### Scenario: Interrupted legacy migration crosses the listing limit
+
+- **WHEN** an old layout without a manifest is being migrated and intermediate uploads exceed 300 files
+- **THEN** its original files SHALL remain discoverable through the temporary inventory, including after an interruption
+- **AND** resuming the migration SHALL preserve every original book and remove the temporary inventory only with final manifest publication
