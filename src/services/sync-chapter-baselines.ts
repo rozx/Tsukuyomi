@@ -45,7 +45,7 @@ export async function putChapterBaselines(entries: readonly ChapterBaselineInput
 
 /**
  * 以书籍内联正文计算各章结构指纹并写入基准，只写还没有基准或基准不同的章节。
- * 没有内联正文（或正文为空）的章节不写：无法确认其结构，下次按没有基准处理。
+ * 没有内联正文的章节不写；显式空数组也是已确认的空结构。
  * 写入失败只记录日志，不影响同步。
  */
 export async function recordStructureBaselines(novels: readonly Novel[]): Promise<boolean> {
@@ -54,7 +54,7 @@ export async function recordStructureBaselines(novels: readonly Novel[]): Promis
     for (const novel of novels) {
       for (const volume of novel.volumes ?? []) {
         for (const chapter of volume.chapters ?? []) {
-          if (!Array.isArray(chapter.content) || chapter.content.length === 0) continue;
+          if (!Array.isArray(chapter.content)) continue;
           entries.push({
             chapterId: chapter.id,
             bookId: novel.id,

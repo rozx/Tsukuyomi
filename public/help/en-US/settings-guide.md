@@ -200,8 +200,12 @@ For remote corruption or device migration, replace remote visible data with loca
 
 ### Multilingual protocol and entity deletion {#settings-guide-language-sync}
 
-- The new manifest is **v5**, with a corresponding book entity protocol. Export a backup on every participating device, upgrade all clients, then sync one device at a time.
-- Protocols 1–4 upgrade after successful migration. Future protocols stop writes. Older clients' ordinary sync cannot process v5. New code cannot remotely fix already released older force-push implementations: disable their sync or upgrade first, and do not force-push to the shared Gist.
+- Book metadata and content are stored separately. Chapter IDs assign content to up to 16 fixed groups per book; empty groups use no files. Adding a chapter normally uploads its group, book metadata, and manifest. Content-only edits also skip unchanged metadata. Large groups can still be chunked, but inserting or reordering chapters does not reshuffle other groups.
+- The first v6 upgrade migrates all existing books, so this upload can still be large. Interrupted migrations retain the old book content for retry. Historical restore assembles every required group and stops if any group is missing or corrupt.
+- Gist API file listings may be truncated above 300 files. Uploads preflight file counts using the remote snapshot or known layout and stop before writing if the limit would be exceeded. Fixed groups reduce file growth, but very large libraries can still reach this limit.
+
+- The new manifest is **v6**, with a corresponding book entity protocol. Export a backup on every participating device, upgrade all clients, then sync one device at a time.
+- Protocols 1–5 upgrade after successful migration. Future protocols stop writes. Older clients' ordinary sync cannot process v6. New code cannot remotely fix already released older force-push implementations: disable their sync or upgrade first, and do not force-push to the shared Gist.
 - Memory access times are used only for local ordering, LRU, and retrieval. Only content or summary edits trigger uploads. Legacy memories retain their previous timestamp as the initial content modification time.
 - Failed downloads, applies, or local reads do not mark the sync complete. Each upload batch checks the remote ETag again. The Gist API does not support atomic conditional writes, so simultaneous writes can still race.
 

@@ -10,6 +10,9 @@ import {
   ENTRY_KEYS,
   parseMemoriesEntryKey,
   parseNovelEntryKey,
+  parseChapterGroupEntryKey,
+  novelEntryKey,
+  type ChapterGroupPayload,
   type GistManifest,
   type ManifestDiff,
   type ManifestEntry,
@@ -21,6 +24,7 @@ import {
   buildMemoriesPayload,
   diffManifests,
   manifestMatchesKnownState,
+  filenameToEntryKey,
 } from 'src/services/sync-manifest-builder';
 import {
   effectiveSchemaVersion,
@@ -52,11 +56,16 @@ function syncError(
   return new LocalizedError(code, key, values);
 }
 import { normalizeBookLanguages } from './localization/normalize';
-import { stripNovelLocalFields } from 'src/utils/sync-strip';
 import { compressString, decompressString } from 'src/utils/compression';
 import { deserializeDates } from 'src/utils/serialize-dates';
 import { canonicalStringify } from 'src/utils/canonical-json';
 import { hashJson } from 'src/utils/content-hash';
+import {
+  assembleChapterGroups,
+  missingLocalChapterGroups,
+  splitBookForSync,
+  validateChapterGroup,
+} from './sync-chapter-layout';
 
 /**
  * 单文件大小上限（压缩后字节）。超出需要分块。GitHub 实际 1MB，留 100KB 余量。
@@ -103,6 +112,51 @@ const FILE_NAMES = {
   MEMORIES_PREFIX: 'memories-',
   MEMORIES_CHUNK_PREFIX: 'memories-chunk-',
 } as const;
+
+function aggregateFilename(
+  entryKey: string,
+  schemaVersion = MANIFEST_SCHEMA_VERSION,
+): string | undefined {
+  const name =
+    entryKey === ENTRY_KEYS.SETTINGS
+      ? FILE_NAMES.SETTINGS
+      : entryKey === ENTRY_KEYS.AI_MODELS
+        ? FILE_NAMES.AI_MODELS
+        : entryKey === ENTRY_KEYS.COVER_HISTORY
+          ? FILE_NAMES.COVER_HISTORY
+          : undefined;
+  return name && schemaVersion >= 6 ? `v6-${name}` : name;
+}
+
+/** 文件布局由协议决定；迁移使用新文件名，旧版完整书籍保留到最终发布。 */
+function entryFileLayout(entryKey: string, schemaVersion = MANIFEST_SCHEMA_VERSION) {
+  const bookId = parseNovelEntryKey(entryKey);
+  if (bookId)
+    return {
+      id: bookId,
+      prefix: schemaVersion >= 6 ? 'book-' : FILE_NAMES.NOVEL_PREFIX,
+      chunkPrefix: schemaVersion >= 6 ? 'book-chunk-' : FILE_NAMES.NOVEL_CHUNK_PREFIX,
+    };
+  const group = parseChapterGroupEntryKey(entryKey);
+  if (group)
+    return {
+      id: `${group.bookId}_${group.groupId}`,
+      prefix: 'chapters-',
+      chunkPrefix: 'chapters-chunk-',
+    };
+  const memoryId = parseMemoriesEntryKey(entryKey);
+  return memoryId
+    ? {
+        id: memoryId,
+        prefix:
+          schemaVersion >= 6 ? `v6-${FILE_NAMES.MEMORIES_PREFIX}` : FILE_NAMES.MEMORIES_PREFIX,
+        chunkPrefix:
+          schemaVersion >= 6
+            ? `v6-${FILE_NAMES.MEMORIES_CHUNK_PREFIX}`
+            : FILE_NAMES.MEMORIES_CHUNK_PREFIX,
+      }
+    : null;
+}
 
 /**
  * 压缩后的 Gist 文件体格式
@@ -204,7 +258,8 @@ export type EntryValue =
   | { kind: 'settings'; value: AppSettings }
   | { kind: 'ai-models'; value: AIModel[] }
   | { kind: 'cover-history'; value: CoverHistoryItem[] }
-  | { kind: 'novel'; bookId: string; value: Novel }
+  | { kind: 'novel'; bookId: string; value: Novel; unchangedChapterIds?: string[] }
+  | { kind: 'chapters'; bookId: string; value: ChapterGroupPayload }
   | { kind: 'memories'; bookId: string; value: MemoriesPayload };
 
 /**
@@ -309,42 +364,19 @@ async function serializeEntry(
   const files: Record<string, { content: string }> = {};
   const filenamesForCleanup: string[] = [];
 
-  // 决定文件名基础
-  const bookIdForNovel = parseNovelEntryKey(entryKey);
-  const bookIdForMemory = parseMemoriesEntryKey(entryKey);
-
-  if (entryKey === ENTRY_KEYS.SETTINGS) {
-    files[FILE_NAMES.SETTINGS] = { content: compressed };
-    filenamesForCleanup.push(FILE_NAMES.SETTINGS);
-    return { files, chunks: 0, filenamesForCleanup };
-  }
-  if (entryKey === ENTRY_KEYS.AI_MODELS) {
-    files[FILE_NAMES.AI_MODELS] = { content: compressed };
-    filenamesForCleanup.push(FILE_NAMES.AI_MODELS);
-    return { files, chunks: 0, filenamesForCleanup };
-  }
-  if (entryKey === ENTRY_KEYS.COVER_HISTORY) {
-    files[FILE_NAMES.COVER_HISTORY] = { content: compressed };
-    filenamesForCleanup.push(FILE_NAMES.COVER_HISTORY);
+  const aggregate = aggregateFilename(entryKey);
+  if (aggregate) {
+    files[aggregate] = { content: compressed };
+    filenamesForCleanup.push(aggregate);
     return { files, chunks: 0, filenamesForCleanup };
   }
 
-  // novel 与 memories 同构：超过单文件上限时分块
-  const prefix = bookIdForNovel
-    ? FILE_NAMES.NOVEL_PREFIX
-    : bookIdForMemory
-      ? FILE_NAMES.MEMORIES_PREFIX
-      : null;
-  const chunkPrefix = bookIdForNovel
-    ? FILE_NAMES.NOVEL_CHUNK_PREFIX
-    : bookIdForMemory
-      ? FILE_NAMES.MEMORIES_CHUNK_PREFIX
-      : null;
-  const bookId = bookIdForNovel ?? bookIdForMemory;
-
-  if (!prefix || !chunkPrefix || !bookId) {
+  // 元数据、章节小组与 memories 共用压缩后的文件大小限制。
+  const layout = entryFileLayout(entryKey);
+  if (!layout) {
     throw syncError('SYNC_UNKNOWN_ENTRY', 'syncUi.incremental.unknownEntry', { key: entryKey });
   }
+  const { prefix, chunkPrefix, id: bookId } = layout;
 
   const singleName = `${prefix}${bookId}.json`;
   const metaName = `${prefix}${bookId}.meta.json`;
@@ -479,29 +511,43 @@ export async function deserializeEntry(
   manifestEntry: ManifestEntry,
   gistFiles: Record<string, GistFileLike>,
   fetchRaw: (url: string) => Promise<string>,
+  schemaVersion = MANIFEST_SCHEMA_VERSION,
 ): Promise<EntryValue | null> {
   if (entryKey === ENTRY_KEYS.SETTINGS) {
-    const raw = await readAndParseSingleFile(FILE_NAMES.SETTINGS, gistFiles, fetchRaw);
+    const raw = await readAndParseSingleFile(
+      aggregateFilename(entryKey, schemaVersion)!,
+      gistFiles,
+      fetchRaw,
+    );
     if (raw === null) return null;
     return { kind: 'settings', value: deserializeDates(raw) as AppSettings };
   }
   if (entryKey === ENTRY_KEYS.AI_MODELS) {
-    const raw = await readAndParseSingleFile(FILE_NAMES.AI_MODELS, gistFiles, fetchRaw);
+    const raw = await readAndParseSingleFile(
+      aggregateFilename(entryKey, schemaVersion)!,
+      gistFiles,
+      fetchRaw,
+    );
     if (raw === null) return null;
     return { kind: 'ai-models', value: deserializeDates(raw) as AIModel[] };
   }
   if (entryKey === ENTRY_KEYS.COVER_HISTORY) {
-    const raw = await readAndParseSingleFile(FILE_NAMES.COVER_HISTORY, gistFiles, fetchRaw);
+    const raw = await readAndParseSingleFile(
+      aggregateFilename(entryKey, schemaVersion)!,
+      gistFiles,
+      fetchRaw,
+    );
     if (raw === null) return null;
     return { kind: 'cover-history', value: deserializeDates(raw) as CoverHistoryItem[] };
   }
 
   const novelBookId = parseNovelEntryKey(entryKey);
   if (novelBookId) {
+    const layout = entryFileLayout(entryKey, schemaVersion)!;
     const raw = await readBookEntryContent(
       novelBookId,
-      FILE_NAMES.NOVEL_PREFIX,
-      FILE_NAMES.NOVEL_CHUNK_PREFIX,
+      layout.prefix,
+      layout.chunkPrefix,
       manifestEntry.chunks ?? 0,
       gistFiles,
       fetchRaw,
@@ -512,12 +558,30 @@ export async function deserializeEntry(
     return { kind: 'novel', bookId: novelBookId, value: book };
   }
 
+  const group = parseChapterGroupEntryKey(entryKey);
+  if (group && schemaVersion >= 6) {
+    const layout = entryFileLayout(entryKey)!;
+    const raw = await readBookEntryContent(
+      layout.id,
+      layout.prefix,
+      layout.chunkPrefix,
+      manifestEntry.chunks ?? 0,
+      gistFiles,
+      fetchRaw,
+    );
+    if (raw === null) return null;
+    const value = deserializeDates(raw) as ChapterGroupPayload;
+    validateChapterGroup(value, group.bookId, group.groupId);
+    return { kind: 'chapters', bookId: group.bookId, value };
+  }
+
   const memoryBookId = parseMemoriesEntryKey(entryKey);
   if (memoryBookId) {
+    const layout = entryFileLayout(entryKey, schemaVersion)!;
     const raw = await readBookEntryContent(
       memoryBookId,
-      FILE_NAMES.MEMORIES_PREFIX,
-      FILE_NAMES.MEMORIES_CHUNK_PREFIX,
+      layout.prefix,
+      layout.chunkPrefix,
       manifestEntry.chunks ?? 0,
       gistFiles,
       fetchRaw,
@@ -696,26 +760,14 @@ export function diagnoseRevisionEntryFailure(
   entryKey: string,
   manifestEntry: ManifestEntry,
   gistFiles: Record<string, GistFileLike>,
+  schemaVersion = MANIFEST_SCHEMA_VERSION,
 ): SyncFailureReason {
-  if (entryKey === ENTRY_KEYS.SETTINGS) {
-    return describeSingleFileFailure(FILE_NAMES.SETTINGS, gistFiles);
-  }
-  if (entryKey === ENTRY_KEYS.AI_MODELS) {
-    return describeSingleFileFailure(FILE_NAMES.AI_MODELS, gistFiles);
-  }
-  if (entryKey === ENTRY_KEYS.COVER_HISTORY) {
-    return describeSingleFileFailure(FILE_NAMES.COVER_HISTORY, gistFiles);
-  }
+  const aggregate = aggregateFilename(entryKey, schemaVersion);
+  if (aggregate) return describeSingleFileFailure(aggregate, gistFiles);
 
-  const novelBookId = parseNovelEntryKey(entryKey);
-  const memoryBookId = parseMemoriesEntryKey(entryKey);
-  const bookId = novelBookId ?? memoryBookId;
-  if (!bookId) return reason('unknownEntry');
-
-  const prefix = novelBookId ? FILE_NAMES.NOVEL_PREFIX : FILE_NAMES.MEMORIES_PREFIX;
-  const chunkPrefix = novelBookId
-    ? FILE_NAMES.NOVEL_CHUNK_PREFIX
-    : FILE_NAMES.MEMORIES_CHUNK_PREFIX;
+  const layout = entryFileLayout(entryKey, schemaVersion);
+  if (!layout) return reason('unknownEntry');
+  const { prefix, chunkPrefix, id: bookId } = layout;
   const chunks = manifestEntry.chunks ?? 0;
 
   return chunks === 0
@@ -768,20 +820,17 @@ export async function readFile(
  * @param entryKey 条目键
  * @param chunks 上次已知的 chunk 数（来自 `config.knownRemoteEntries`）；0/undefined 表示单文件布局
  */
-export function filenamesForEntry(entryKey: string, chunks?: number): string[] {
-  if (entryKey === ENTRY_KEYS.SETTINGS) return [FILE_NAMES.SETTINGS];
-  if (entryKey === ENTRY_KEYS.AI_MODELS) return [FILE_NAMES.AI_MODELS];
-  if (entryKey === ENTRY_KEYS.COVER_HISTORY) return [FILE_NAMES.COVER_HISTORY];
+export function filenamesForEntry(
+  entryKey: string,
+  chunks?: number,
+  schemaVersion = MANIFEST_SCHEMA_VERSION,
+): string[] {
+  const aggregate = aggregateFilename(entryKey, schemaVersion);
+  if (aggregate) return [aggregate];
 
-  const novelBookId = parseNovelEntryKey(entryKey);
-  const memoryBookId = parseMemoriesEntryKey(entryKey);
-  const bookId = novelBookId ?? memoryBookId;
-  if (!bookId) return [];
-
-  const prefix = novelBookId ? FILE_NAMES.NOVEL_PREFIX : FILE_NAMES.MEMORIES_PREFIX;
-  const chunkPrefix = novelBookId
-    ? FILE_NAMES.NOVEL_CHUNK_PREFIX
-    : FILE_NAMES.MEMORIES_CHUNK_PREFIX;
+  const layout = entryFileLayout(entryKey, schemaVersion);
+  if (!layout) return [];
+  const { prefix, chunkPrefix, id: bookId } = layout;
 
   if (!chunks || chunks === 0) {
     return [`${prefix}${bookId}.json`];
@@ -799,25 +848,24 @@ export function filenamesForEntry(entryKey: string, chunks?: number): string[] {
  * 用在迁移场景或 `knownRemoteEntries` 不可用时，发现被持久化状态遗漏的遗留文件。
  */
 export function matchFilenamesInSnapshot(entryKey: string, remoteFilenames: string[]): string[] {
-  if (entryKey === ENTRY_KEYS.SETTINGS) {
-    return remoteFilenames.filter((f) => f === FILE_NAMES.SETTINGS);
-  }
-  if (entryKey === ENTRY_KEYS.AI_MODELS) {
-    return remoteFilenames.filter((f) => f === FILE_NAMES.AI_MODELS);
-  }
-  if (entryKey === ENTRY_KEYS.COVER_HISTORY) {
-    return remoteFilenames.filter((f) => f === FILE_NAMES.COVER_HISTORY);
-  }
-  const novelBookId = parseNovelEntryKey(entryKey);
-  const memoryBookId = parseMemoriesEntryKey(entryKey);
-  const bookId = novelBookId ?? memoryBookId;
-  if (!bookId) return [];
-
-  const prefixes = novelBookId
-    ? [FILE_NAMES.NOVEL_PREFIX, FILE_NAMES.NOVEL_CHUNK_PREFIX]
-    : [FILE_NAMES.MEMORIES_PREFIX, FILE_NAMES.MEMORIES_CHUNK_PREFIX];
-
-  return remoteFilenames.filter((f) => prefixes.some((p) => f.startsWith(`${p}${bookId}`)));
+  const aggregate = aggregateFilename(entryKey);
+  if (aggregate)
+    return remoteFilenames.filter(
+      (name) => name === aggregate || name === aggregateFilename(entryKey, 5),
+    );
+  const layouts = [entryFileLayout(entryKey, 5), entryFileLayout(entryKey, 6)];
+  return remoteFilenames.filter((name) =>
+    layouts.some((layout) => {
+      if (!layout) return false;
+      const { prefix, chunkPrefix, id } = layout;
+      return (
+        name === `${prefix}${id}.json` ||
+        name === `${prefix}${id}.meta.json` ||
+        (name.startsWith(`${chunkPrefix}${id}`) &&
+          /^[_#-]\d+\.json$/.test(name.slice(`${chunkPrefix}${id}`.length)))
+      );
+    }),
+  );
 }
 
 /** GET 与 PATCH 使用相同的响应格式与 API 版本，减少 ETag 表示差异。 */
@@ -1066,11 +1114,17 @@ async function readChangedEntries(
     });
     let value: EntryValue | null = null;
     try {
-      value = await deserializeEntry(key, entry, files, fetchRaw);
+      value = await deserializeEntry(
+        key,
+        entry,
+        files,
+        fetchRaw,
+        effectiveSchemaVersion(remoteManifest),
+      );
       // 旧协议可能在规范化时改变表示；新协议的上传与读取必须完全一致。
       if (
         value &&
-        effectiveSchemaVersion(remoteManifest) >= MANIFEST_SCHEMA_VERSION &&
+        effectiveSchemaVersion(remoteManifest) >= 5 &&
         (await hashJson(value.value)) !== entry.hash
       ) {
         console.error(`[gist-sync-incremental] 条目 ${key} 与 manifest 哈希不一致`);
@@ -1114,6 +1168,7 @@ export async function downloadWithManifest(
   config: SyncConfig,
   onProgress?: SyncProgress,
   locale: AppLocale = 'zh-CN',
+  localBooks?: readonly Novel[],
 ): Promise<IncrementalDownloadResult> {
   const gistId = config.syncParams.gistId;
   if (!gistId) {
@@ -1169,7 +1224,16 @@ export async function downloadWithManifest(
   const toRead = needsSchemaUpgrade
     ? Object.keys(remoteManifest.entries)
     : [...diff.changed, ...diff.added];
-  const { changedEntries, failedEntryKeys } = await readChangedEntries(
+  if (effectiveSchemaVersion(remoteManifest) >= 6) {
+    for (const key of [...toRead, ...diff.deleted]) {
+      const group = parseChapterGroupEntryKey(key);
+      if (group) {
+        const bookKey = novelEntryKey(group.bookId);
+        if (remoteManifest.entries[bookKey] && !toRead.includes(bookKey)) toRead.push(bookKey);
+      }
+    }
+  }
+  let { changedEntries, failedEntryKeys } = await readChangedEntries(
     toRead,
     remoteManifest,
     files,
@@ -1177,6 +1241,35 @@ export async function downloadWithManifest(
     onProgress,
     locale,
   );
+  if (effectiveSchemaVersion(remoteManifest) >= 6 && failedEntryKeys.length === 0 && localBooks) {
+    const missingGroups = missingLocalChapterGroups(changedEntries, localBooks);
+    if (missingGroups.length) {
+      const supplement = await readChangedEntries(
+        missingGroups,
+        remoteManifest,
+        files,
+        fetchRaw,
+        onProgress,
+        locale,
+      );
+      Object.assign(changedEntries, supplement.changedEntries);
+      failedEntryKeys.push(...supplement.failedEntryKeys);
+      toRead.push(...missingGroups);
+    }
+  }
+  if (effectiveSchemaVersion(remoteManifest) >= 6 && failedEntryKeys.length === 0) {
+    try {
+      changedEntries = assembleChapterGroups(
+        changedEntries,
+        remoteManifest,
+        config.knownRemoteHashes,
+      );
+    } catch (error) {
+      console.error('[gist-sync-incremental] 章节小组组装失败:', error);
+      failedEntryKeys = [...toRead];
+      changedEntries = {};
+    }
+  }
 
   onProgress?.({
     current: toRead.length,
@@ -1209,9 +1302,24 @@ export async function downloadWithManifest(
   };
 }
 
-/**
- * 增量上传：基于 local manifest 与 knownRemoteHashes 的 diff，仅上传变化的 entry
- */
+/** 普通同步与强制镜像分别使用已知基准和当前远端全集。 */
+function uploadComparisonManifest(
+  config: SyncConfig,
+  remoteManifest: GistManifest | undefined,
+  files: Record<string, GistFileLike>,
+  overwrite = false,
+): GistManifest {
+  if (!overwrite) return buildKnownAsManifest(config.knownRemoteHashes);
+  if (remoteManifest) return remoteManifest;
+  const hashes: Record<string, string> = {};
+  for (const filename of Object.keys(files)) {
+    const key = filenameToEntryKey(filename);
+    if (key) hashes[key] = '';
+  }
+  return buildKnownAsManifest(hashes);
+}
+
+/** 增量上传：基于 local manifest 与已知远端的 diff，仅上传变化的条目。 */
 export async function uploadIncremental(
   octokit: Octokit,
   config: SyncConfig,
@@ -1219,7 +1327,11 @@ export async function uploadIncremental(
   remoteFilesSnapshot: Record<string, GistFileLike>,
   onProgress?: SyncProgress,
   locale: AppLocale = 'zh-CN',
-  options: { checkConcurrency?: boolean; preparedManifest?: GistManifest } = {},
+  options: {
+    checkConcurrency?: boolean;
+    preparedManifest?: GistManifest;
+    overwrite?: boolean;
+  } = {},
 ): Promise<IncrementalUploadResult> {
   const gistId = config.syncParams.gistId;
   if (!gistId) throw new LocalizedError('GIST_ID_MISSING', 'syncUi.service.gistIdMissing');
@@ -1262,23 +1374,17 @@ export async function uploadIncremental(
           ]),
         ),
       }
-    : await buildLocalManifest({
-        appSettings: payload.appSettings,
-        aiModels: payload.aiModels,
-        coverHistory: payload.coverHistory,
-        novels: payload.novels,
-        memoriesByBook: payload.memoriesByBook,
-        ...(payload.memoryTombstonesByBook
-          ? { memoryTombstonesByBook: payload.memoryTombstonesByBook }
-          : {}),
-        ...(payload.tombstones ? { tombstones: payload.tombstones } : {}),
-      });
+    : await buildLocalManifest(payload);
 
   const knownEntries = config.knownRemoteEntries ?? {};
-  const diff = diffManifests(localManifest, buildKnownAsManifest(config.knownRemoteHashes));
-  const toUpload = upgrading
-    ? Object.keys(localManifest.entries)
-    : [...diff.changed, ...diff.added];
+  const diff = diffManifests(
+    localManifest,
+    uploadComparisonManifest(config, remoteManifest, remoteFilesSnapshot, options.overwrite),
+  );
+  const toUpload =
+    upgrading || options.overwrite
+      ? Object.keys(localManifest.entries)
+      : [...diff.changed, ...diff.added];
   const toDelete = diff.deleted;
 
   // buildLocalManifest 不输出 chunks，序列化阶段也只会给本轮上传的条目补 chunks。
@@ -1308,7 +1414,9 @@ export async function uploadIncremental(
   // - remoteFilenames 扫描可能发现被持久化状态遗漏的遗留文件（迁移、外部编辑等）
   const resolveStaleFilenames = (entryKey: string): string[] => {
     const known = knownEntries[entryKey];
-    const fromKnown = filenamesForEntry(entryKey, known?.chunks);
+    const fromKnown = known
+      ? filenamesForEntry(entryKey, known.chunks, config.knownRemoteSchemaVersion ?? 5)
+      : [];
     const fromSnapshot = matchFilenamesInSnapshot(entryKey, remoteFilenames);
     const merged = Array.from(new Set([...fromKnown, ...fromSnapshot]));
     // 若有远端文件快照，仅保留确实存在于 Gist 上的文件；其它过时的 knownEntries
@@ -1351,6 +1459,7 @@ export async function uploadIncremental(
     ? buildUpgradeBatches(allFiles, remoteManifest)
     : buildAdditionBatches(allFiles);
   appendDeletionsAndManifestToFinalBatch(additionBatches, allFiles, localManifest);
+  assertFileCountWithinLimit(additionBatches, remoteFilesSnapshot, config);
 
   const {
     etag: newETag,
@@ -1400,9 +1509,10 @@ async function serializeEntriesIntoFiles(
   onProgress: SyncProgress | undefined,
   locale: AppLocale,
 ): Promise<void> {
+  const bookEntries = new Map(payload.novels.flatMap((book) => [...splitBookForSync(book)]));
   for (let i = 0; i < toUpload.length; i++) {
     const entryKey = toUpload[i]!;
-    const payloadValue = getPayloadForEntry(entryKey, payload);
+    const payloadValue = bookEntries.get(entryKey) ?? getPayloadForEntry(entryKey, payload);
     if (payloadValue === null) continue;
 
     // manifest 阶段占 5%；序列化线性占 5→PREP_END
@@ -1438,6 +1548,33 @@ async function serializeEntriesIntoFiles(
 
 // 单批请求体字节预算：GitHub Gist PATCH 的有效请求上限经验值约为 8-10 MB，我们取 4 MB 留足余量
 const BATCH_BYTE_BUDGET = 4 * 1024 * 1024;
+
+/** 预演每批原子文件变更；迁移中间状态也必须能被 Gist API 完整读取。 */
+function assertFileCountWithinLimit(
+  batches: Array<Record<string, { content: string } | null>>,
+  remoteFiles: Record<string, GistFileLike>,
+  config: SyncConfig,
+): void {
+  const snapshotNames = Object.keys(remoteFiles);
+  const names = new Set(
+    snapshotNames.length
+      ? snapshotNames
+      : Object.entries(config.knownRemoteEntries ?? {}).flatMap(([key, entry]) =>
+          filenamesForEntry(key, entry.chunks, config.knownRemoteSchemaVersion ?? 5),
+        ),
+  );
+  if (Object.keys(config.knownRemoteEntries ?? {}).length > 0) names.add(MANIFEST_FILE_NAME);
+  for (const batch of batches) {
+    for (const [name, file] of Object.entries(batch)) {
+      if (file === null) names.delete(name);
+      else names.add(name);
+    }
+    if (names.size > 300)
+      throw syncError('GIST_FILE_LIMIT_EXCEEDED', 'syncUi.incremental.fileLimitExceeded', {
+        count: names.size,
+      });
+  }
+}
 
 /**
  * 协议升级的批次：整个书库装得进一个字节预算时仍一次原子 PATCH（不受文件数限制）。
@@ -1628,12 +1765,6 @@ function getPayloadForEntry(entryKey: string, payload: UploadPayload): unknown {
   if (entryKey === ENTRY_KEYS.SETTINGS) return payload.appSettings;
   if (entryKey === ENTRY_KEYS.AI_MODELS) return payload.aiModels;
   if (entryKey === ENTRY_KEYS.COVER_HISTORY) return payload.coverHistory;
-
-  const novelId = parseNovelEntryKey(entryKey);
-  if (novelId) {
-    const book = payload.novels.find((n) => n.id === novelId);
-    return book ? stripNovelLocalFields(normalizeBookLanguages(book)) : null;
-  }
 
   const memBookId = parseMemoriesEntryKey(entryKey);
   if (memBookId) {

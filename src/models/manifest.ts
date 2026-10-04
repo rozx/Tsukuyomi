@@ -5,6 +5,7 @@
  * 客户端基于 manifest 决定哪些文件需要上传/下载，实现选择性增量同步。
  */
 import type { Memory } from './memory';
+import type { Chapter } from './novel';
 
 /**
  * 本版本客户端支持的 manifest schema 版本
@@ -16,8 +17,9 @@ import type { Memory } from './memory';
  *      manifest.tombstones 同时支持 `memories:<bookId>` 形式
  * - 4：书内实体稳定身份、逻辑版本、长期删除记录和多语言槽
  * - 5：Memory 内容修改时间与设备访问时间分离
+ * - 6：书籍元数据与固定章节正文小组分离
  */
-export const MANIFEST_SCHEMA_VERSION = 5;
+export const MANIFEST_SCHEMA_VERSION = 6;
 
 /** Gist 中 manifest 文件的文件名 */
 export const MANIFEST_FILE_NAME = 'manifest.json';
@@ -103,6 +105,7 @@ export const ENTRY_KEYS = {
   COVER_HISTORY: 'cover-history',
   NOVEL_PREFIX: 'novel:',
   MEMORIES_PREFIX: 'memories:',
+  CHAPTERS_PREFIX: 'chapters:',
 } as const;
 
 /**
@@ -117,6 +120,24 @@ export function novelEntryKey(bookId: string): string {
  */
 export function memoriesEntryKey(bookId: string): string {
   return `${ENTRY_KEYS.MEMORIES_PREFIX}${bookId}`;
+}
+
+export function chapterGroupEntryKey(bookId: string, groupId: string): string {
+  return `${ENTRY_KEYS.CHAPTERS_PREFIX}${bookId}:${groupId}`;
+}
+
+export function parseChapterGroupEntryKey(key: string): { bookId: string; groupId: string } | null {
+  if (!key.startsWith(ENTRY_KEYS.CHAPTERS_PREFIX)) return null;
+  const separator = key.lastIndexOf(':');
+  const bookId = key.slice(ENTRY_KEYS.CHAPTERS_PREFIX.length, separator);
+  const groupId = key.slice(separator + 1);
+  return bookId && /^[0-9a-f]$/.test(groupId) ? { bookId, groupId } : null;
+}
+
+export interface ChapterGroupPayload {
+  bookId: string;
+  groupId: string;
+  chapters: Array<Pick<Chapter, 'id' | 'content' | 'originalContent'>>;
 }
 
 /**

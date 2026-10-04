@@ -150,7 +150,10 @@ function mergeNotes(primaryNotes: Novel['notes'], secondaryNotes: Novel['notes']
   });
 }
 
-async function loadChapterContentForNovelMerge(chapter: Chapter | undefined): Promise<Paragraph[]> {
+async function loadChapterContentForNovelMerge(
+  chapter: Chapter | undefined,
+  explicitEmpty = false,
+): Promise<Paragraph[]> {
   if (!chapter) {
     return [];
   }
@@ -159,7 +162,7 @@ async function loadChapterContentForNovelMerge(chapter: Chapter | undefined): Pr
     chapter.content !== undefined &&
     chapter.content !== null &&
     Array.isArray(chapter.content) &&
-    chapter.content.length > 0
+    (chapter.content.length > 0 || explicitEmpty || chapter.contentLoaded === true)
   ) {
     return chapter.content;
   }
@@ -187,6 +190,7 @@ interface StructureMergeContext {
   report?: SyncMergeReport | undefined;
   bookId: string;
   bookTitle: string;
+  unchangedRemoteChapterIds?: ReadonlySet<string>;
 }
 
 /**
@@ -199,7 +203,7 @@ interface StructureMergeContext {
 type StructureSource = 'local' | 'remote' | 'unchanged' | 'conflict' | 'unknown';
 
 function inlineContent(chapter: Chapter): Paragraph[] | undefined {
-  return Array.isArray(chapter.content) && chapter.content.length > 0 ? chapter.content : undefined;
+  return Array.isArray(chapter.content) ? chapter.content : undefined;
 }
 
 function chapterOriginalTitle(chapter: Chapter): string {
@@ -218,9 +222,10 @@ async function resolveStructureSource(
   structure: StructureMergeContext | undefined,
 ): Promise<StructureSource> {
   if (!structure || localChapter.id !== remoteChapter.id) return 'unknown';
+  if (structure.unchangedRemoteChapterIds?.has(remoteChapter.id)) return 'unchanged';
   const base = structure.baselines(localChapter.id);
   const remoteContent = inlineContent(remoteChapter);
-  if (!base || localContent.length === 0 || !remoteContent) return 'unknown';
+  if (!base || !remoteContent) return 'unknown';
   const [localHash, remoteHash] = await Promise.all([
     chapterStructureHash(localContent),
     chapterStructureHash(remoteContent),
@@ -348,7 +353,7 @@ async function mergeNovelChapters(
       );
 
       const localContent = await loadChapterContentForNovelMerge(localChapter);
-      const remoteContent = await loadChapterContentForNovelMerge(remoteChapter);
+      const remoteContent = await loadChapterContentForNovelMerge(remoteChapter, true);
 
       if (localContent.length === 0 && remoteContent.length === 0) {
         return mergedTitle === winningChapter.title
@@ -617,10 +622,10 @@ function mergeParagraphTranslations(
   appendSecondaryOnly = true,
 ): Paragraph[] {
   if (!remoteParagraphs || remoteParagraphs.length === 0) {
-    return localParagraphs;
+    return preferRemoteSelection && !appendSecondaryOnly ? [] : localParagraphs;
   }
   if (!localParagraphs || localParagraphs.length === 0) {
-    return remoteParagraphs;
+    return !preferRemoteSelection && !appendSecondaryOnly ? [] : remoteParagraphs;
   }
 
   const primary = preferRemoteSelection ? remoteParagraphs : localParagraphs;
@@ -2809,7 +2814,11 @@ export class SyncDataService {
             );
             break;
           case 'novel':
-            await SyncDataService.applyPartialNovelEntry((entry as { value: Novel }).value, report);
+            await SyncDataService.applyPartialNovelEntry(
+              (entry as { value: Novel }).value,
+              report,
+              (entry as { unchangedChapterIds?: string[] }).unchangedChapterIds,
+            );
             break;
           case 'memories': {
             // 兼容两种 entry.value 形态：v3+ envelope 或旧 Memory[]（legacy 路径 / 测试 fixture）
@@ -2985,6 +2994,7 @@ export class SyncDataService {
   private static async applyPartialNovelEntry(
     remoteNovel: Novel,
     report?: SyncMergeReport,
+    unchangedChapterIds: string[] = [],
   ): Promise<void> {
     const booksStore = useBooksStore();
     const gistSync = GlobalConfig.getGistSyncSnapshot();
@@ -2998,12 +3008,43 @@ export class SyncDataService {
       );
       const deletedAt = deletedNovelMap.get(remoteNovel.id);
       if (deletedAt !== undefined && deletedAt > lastSyncTime) return;
+      if (unchangedChapterIds.length) throw new Error('LOCAL_CHAPTER_GROUPS_MISSING');
       await booksStore.bulkAddBooks([remoteNovel]);
       await recordStructureBaselines([remoteNovel]);
       return;
     }
 
     const structure = await loadStructureMergeContext(localNovel, report);
+    const downloadedNovel = remoteNovel;
+    if (unchangedChapterIds.length) {
+      const unchanged = new Set(unchangedChapterIds);
+      structure.unchangedRemoteChapterIds = unchanged;
+      const localChapters = new Map(
+        (localNovel.volumes ?? []).flatMap((volume) =>
+          (volume.chapters ?? []).map((chapter) => [chapter.id, chapter] as const),
+        ),
+      );
+      remoteNovel = {
+        ...remoteNovel,
+        volumes: await Promise.all(
+          (remoteNovel.volumes ?? []).map(async (volume) => ({
+            ...volume,
+            chapters: await Promise.all(
+              (volume.chapters ?? []).map(async (chapter) => {
+                const local = localChapters.get(chapter.id);
+                if (!unchanged.has(chapter.id)) return chapter;
+                if (!local) throw new Error('LOCAL_CHAPTER_GROUPS_MISSING');
+                return {
+                  ...chapter,
+                  content: await loadChapterContentForNovelMerge(local),
+                  originalContent: local.originalContent,
+                };
+              }),
+            ),
+          })),
+        ),
+      };
+    }
 
     const localTime = localNovel.lastEdited ? new Date(localNovel.lastEdited).getTime() : 0;
     const remoteTime = remoteNovel.lastEdited ? new Date(remoteNovel.lastEdited).getTime() : 0;
@@ -3015,7 +3056,7 @@ export class SyncDataService {
         structure,
       );
       await booksStore.bulkAddBooks([merged]);
-      await recordStructureBaselines([remoteNovel]);
+      await recordStructureBaselines([downloadedNovel]);
       return;
     }
 
@@ -3029,7 +3070,7 @@ export class SyncDataService {
         structure,
       );
       await booksStore.bulkAddBooks([mergedNovel]);
-      await recordStructureBaselines([remoteNovel]);
+      await recordStructureBaselines([downloadedNovel]);
     } catch (e) {
       console.warn(`[SyncDataService] 合并远端翻译失败 (novel:${remoteNovel.id})，保留本地:`, e);
       throw e;

@@ -92,10 +92,10 @@ describe('uploadIncremental — batch payload structure', () => {
     expect(patches.length).toBe(1);
     const only = patches[0]!;
     expect(only['manifest.json']).toBeTruthy();
-    expect(only['novel-book-a.json']).toBeNull();
-    expect(only['novel-book-b.json']).toBeNull();
-    expect(only['memories-book-a.json']).toBeNull();
-    expect(only['memories-book-b.json']).toBeNull();
+    expect(only['book-book-a.json']).toBeNull();
+    expect(only['book-book-b.json']).toBeNull();
+    expect(only['v6-memories-book-a.json']).toBeNull();
+    expect(only['v6-memories-book-b.json']).toBeNull();
   });
 
   it('single PATCH when there are neither uploads nor deletions (manifest only)', async () => {
@@ -175,9 +175,9 @@ describe('uploadIncremental — batch payload structure', () => {
     // Everything fits in one batch; merged into a single atomic PATCH
     expect(patches.length).toBe(1);
     const only = patches[0]!;
-    expect(only['novel-new-book.json']).toBeTruthy();
+    expect(only['book-new-book.json']).toBeTruthy();
     expect(only['manifest.json']).toBeTruthy();
-    expect(only['novel-old-book.json']).toBeNull();
+    expect(only['book-old-book.json']).toBeNull();
   });
 
   it('multiple content batches: only the LAST batch carries manifest + deletions (no standalone null batch)', async () => {
@@ -234,12 +234,12 @@ describe('uploadIncremental — batch payload structure', () => {
 
     // First batch: pure content, no manifest, no deletions
     expect(patches[0]!['manifest.json']).toBeFalsy();
-    expect(patches[0]!['novel-phantom-book.json']).toBeUndefined();
+    expect(patches[0]!['book-phantom-book.json']).toBeUndefined();
 
     // Last batch: contains manifest + phantom deletion + remaining content
     const last = patches[patches.length - 1]!;
     expect(last['manifest.json']).toBeTruthy();
-    expect(last['novel-phantom-book.json']).toBeNull();
+    expect(last['book-phantom-book.json']).toBeNull();
   });
 
   it('filters out deletions of files absent from remote snapshot (avoids GitHub 422)', async () => {
@@ -297,7 +297,7 @@ describe('uploadIncremental — batch payload structure', () => {
 
     // None of the non-existent chunk/meta files should appear as deletions
     for (const batch of patches) {
-      expect(batch['novel-book-a.meta.json']).toBeUndefined();
+      expect(batch['book-book-a.meta.json']).toBeUndefined();
       for (let i = 0; i < 5; i++) {
         expect(batch[`novel-chunk-book-a_${i}.json`]).toBeUndefined();
       }

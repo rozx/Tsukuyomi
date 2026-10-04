@@ -50,7 +50,7 @@ describe('Gist 下载性能', () => {
         if (chunksPerBook > 1) manifest.entries[novelEntryKey(novel.id)]!.chunks = chunksPerBook;
         for (let i = 0; i < chunksPerBook; i++) {
           const filename =
-            chunksPerBook === 1 ? `novel-${novel.id}.json` : `novel-chunk-${novel.id}_${i}.json`;
+            chunksPerBook === 1 ? `book-${novel.id}.json` : `book-chunk-${novel.id}_${i}.json`;
           const url = `https://raw.test/${filename}`;
           files[filename] = { truncated: true, raw_url: url };
           rawFiles.set(url, json.slice(i * chunkSize, (i + 1) * chunkSize));

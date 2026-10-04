@@ -1,10 +1,4 @@
-# sync-manifest Specification
-
-## Purpose
-
-Define the manifest-driven Gist sync layout: a top-level `manifest.json` indexes per-entry content hashes and metadata so uploads and downloads can be incremental (only transmitting files whose hashes changed). This capability covers the file layout, hash computation, per-entry splitting (memories, ai-models, cover-history), schema versioning, and the one-time migration from the legacy single-settings layout.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Gist manifest file as authoritative index
 
@@ -38,39 +32,6 @@ The system SHALL compute content hashes using SHA-256 over the JSON string produ
 
 - **WHEN** any field inside a novel (paragraph text, translation, chapter metadata, etc.) is modified locally
 - **THEN** the recomputed hash SHALL differ from the stored remote hash, marking the affected chapter group and/or novel metadata for upload
-
-### Requirement: Per-book memory files
-
-The system SHALL store each book's memories in a dedicated file `v6-memories-<bookId>.json` rather than embedding them in `v6-tsukuyomi-settings.json`. Large memory collections SHALL be chunked using the same `>1MB` rule used for novels, producing `v6-memories-chunk-<bookId>_N.json` files with a companion `v6-memories-<bookId>.meta.json` metadata file.
-
-#### Scenario: Upload memories for single book
-
-- **WHEN** the user adds or edits memories for one book and triggers sync
-- **THEN** only `v6-memories-<bookId>.json` for that book plus `manifest.json` SHALL be transmitted; other books' memory files SHALL NOT be touched
-
-#### Scenario: Download book with >1MB of memories
-
-- **WHEN** downloading a book whose memories file exceeds 1 MB and is thus chunked
-- **THEN** the system SHALL read all `v6-memories-chunk-<bookId>_N.json` files based on the count recorded in `v6-memories-<bookId>.meta.json` and reassemble them before deserializing
-
-#### Scenario: Delete book removes memory file
-
-- **WHEN** a book is deleted locally (and the deletion propagates via existing deletion-record mechanism)
-- **THEN** the next sync SHALL include `v6-memories-<bookId>.json` (and its chunks/meta if present) as `{ content: null }` in the PATCH payload to remove them from the Gist
-
-### Requirement: Split ai-models and cover-history files
-
-The system SHALL store AI models in `v6-ai-models.json` and cover history in `v6-cover-history.json` as independent top-level files. `v6-tsukuyomi-settings.json` SHALL contain only the `appSettings` object, not `aiModels`, `coverHistory`, or `memories`.
-
-#### Scenario: Edit only AI model
-
-- **WHEN** the user edits an AI model and triggers sync
-- **THEN** only `v6-ai-models.json` and `manifest.json` SHALL be in the PATCH payload; `v6-tsukuyomi-settings.json`, `v6-cover-history.json`, and all novel/memories files SHALL be skipped
-
-#### Scenario: Edit only app setting
-
-- **WHEN** the user changes an app setting (theme, language, etc.) and triggers sync
-- **THEN** only `v6-tsukuyomi-settings.json` and `manifest.json` SHALL be in the PATCH payload
 
 ### Requirement: Incremental upload based on manifest diff
 
@@ -154,44 +115,6 @@ The manifest SHALL include a numeric `schemaVersion` field. The current version 
 - **WHEN** generating the schema 6 payload
 - **THEN** historical field revisions and tombstones SHALL be included, but the current installation's actor identity allocation record and local counter store SHALL NOT be copied as device configuration
 
-### Requirement: One-time migration from legacy layout
-
-When the system detects a non-empty remote Gist that lacks `manifest.json`, the system SHALL execute a one-time migration: (1) download remote data using the legacy path, (2) merge with local data using existing merge logic, (3) re-serialize to the new layout (split files + manifest), (4) upload as a single atomic PATCH that writes new files and deletes legacy-only files. Subsequent syncs SHALL use the new path.
-
-#### Scenario: First sync after upgrade with existing data
-
-- **WHEN** the user upgrades and triggers a sync against a pre-existing Gist with legacy layout
-- **THEN** the system SHALL perform a legacy-style download, regenerate the layout, and produce a single PATCH that both writes the new files and removes legacy `settings.json` fields now moved out (memories, aiModels, coverHistory) plus any files no longer in the new layout
-
-#### Scenario: Migration PATCH fails midway
-
-- **WHEN** the migration PATCH fails (network error, API error)
-- **THEN** the local state SHALL be preserved unchanged, the remote Gist SHALL be reported as "migration pending" via error message, and the next sync attempt SHALL retry the migration
-
-#### Scenario: Migration succeeds
-
-- **WHEN** the migration PATCH completes successfully
-- **THEN** `SyncConfig.lastRemoteETag` and `SyncConfig.knownRemoteHashes` SHALL be populated from the PATCH response, and future sync cycles SHALL bypass the legacy code paths
-
-### Requirement: Persist known remote hashes in SyncConfig
-
-The `SyncConfig` interface SHALL include a `knownRemoteHashes: Record<string, string>` field mapping manifest entry keys to their last-known remote hash. This field SHALL be updated after every successful sync (upload or download) to reflect the remote manifest state. A missing or empty map SHALL be treated as "no known remote state" and trigger a full upload or full download.
-
-#### Scenario: Hash map updated after upload
-
-- **WHEN** an upload completes successfully
-- **THEN** `knownRemoteHashes` SHALL be replaced with the hashes from the just-uploaded manifest
-
-#### Scenario: Hash map updated after partial download
-
-- **WHEN** a download successfully applies changes for a subset of entries
-- **THEN** `knownRemoteHashes` SHALL be updated only for those entries that were successfully parsed and merged, leaving untouched entries' hashes as they were
-
-#### Scenario: Legacy config upgrade
-
-- **WHEN** the app loads a `SyncConfig` created by a pre-manifest version
-- **THEN** the absent `knownRemoteHashes` SHALL default to an empty object, triggering full sync on the next cycle
-
 ### Requirement: Protocol 5 and upload concurrency checks
 
 Protocol 5 SHALL separate Memory content modification time from device access time. Protocols 1–5 SHALL be upgraded to protocol 6 before being marked current. A pending upgrade SHALL use its previous effective protocol for content validation, even when its fence declares schema 6.
@@ -207,6 +130,41 @@ Protocol 5 SHALL separate Memory content modification time from device access ti
 - **THEN** it SHALL check the remote ETag immediately before each batch and stop on concurrent change, without publishing a final manifest after detecting the conflict
 - **AND** initial ETag drift MAY be ignored only when entries, chunk layout, tombstones, and protocol match the known remote state; forced overwrite SHALL explicitly bypass these checks
 - **AND** this is a best-effort check: the Gist API does not provide atomic conditional PATCH, so simultaneous writes after a check remain possible
+
+### Requirement: Per-book memory files
+
+The system SHALL store each book's memories in a dedicated file `v6-memories-<bookId>.json` rather than embedding them in `v6-tsukuyomi-settings.json`. Large memory collections SHALL be chunked using the same `>1MB` rule used for novels, producing `v6-memories-chunk-<bookId>_N.json` files with a companion `v6-memories-<bookId>.meta.json` metadata file.
+
+#### Scenario: Upload memories for single book
+
+- **WHEN** the user adds or edits memories for one book and triggers sync
+- **THEN** only `v6-memories-<bookId>.json` for that book plus `manifest.json` SHALL be transmitted; other books' memory files SHALL NOT be touched
+
+#### Scenario: Download book with >1MB of memories
+
+- **WHEN** downloading a book whose memories file exceeds 1 MB and is thus chunked
+- **THEN** the system SHALL read all `v6-memories-chunk-<bookId>_N.json` files based on the count recorded in `v6-memories-<bookId>.meta.json` and reassemble them before deserializing
+
+#### Scenario: Delete book removes memory file
+
+- **WHEN** a book is deleted locally (and the deletion propagates via existing deletion-record mechanism)
+- **THEN** the next sync SHALL include `v6-memories-<bookId>.json` (and its chunks/meta if present) as `{ content: null }` in the PATCH payload to remove them from the Gist
+
+### Requirement: Split ai-models and cover-history files
+
+The system SHALL store AI models in `v6-ai-models.json` and cover history in `v6-cover-history.json` as independent top-level files. `v6-tsukuyomi-settings.json` SHALL contain only the `appSettings` object, not `aiModels`, `coverHistory`, or `memories`.
+
+#### Scenario: Edit only AI model
+
+- **WHEN** the user edits an AI model and triggers sync
+- **THEN** only `v6-ai-models.json` and `manifest.json` SHALL be in the PATCH payload; `v6-tsukuyomi-settings.json`, `v6-cover-history.json`, and all novel/memories files SHALL be skipped
+
+#### Scenario: Edit only app setting
+
+- **WHEN** the user changes an app setting (theme, language, etc.) and triggers sync
+- **THEN** only `v6-tsukuyomi-settings.json` and `manifest.json` SHALL be in the PATCH payload
+
+## ADDED Requirements
 
 ### Requirement: Stable chapter group storage
 

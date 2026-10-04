@@ -25,7 +25,7 @@ The interface, help docs, and README are available in Simplified Chinese, Tradit
 - **Per-book target language**: choose Simplified Chinese, Traditional Chinese, or English in the book's Translation settings. New books start with the interface language at creation time. Translations, volume and chapter titles, and term / character names are stored per language and never overwrite each other.
 - **Any source language**: the AI detects the source language paragraph by paragraph; paragraphs already in the target language can be kept as-is.
 - **Firecrawl fetch fallback**: when a site blocks proxy access, fetching falls back to Firecrawl (works without a key), replacing the old automatic proxy switching. Book update checks now read only the catalog and compare chapter text on demand.
-- **Sync protocol v5**: deleted terms, characters, aliases, and translation versions are no longer brought back by stale data from other devices. Memory access times stay local, so reading memories does not trigger uploads. **If you sync across devices, back up first, upgrade every device to a version supporting v5, then sync them one at a time.**
+- **Sync protocol v6**: book metadata and chapter content sync separately. Chapters use stable groups based on their IDs, so adding or editing one chapter normally uploads only its group, changed metadata, and the manifest. Entity deletion protection and local-only memory access times are preserved. **For multiple devices, back up first, upgrade every device to a version supporting v6, then sync them one at a time. The first upgrade performs a full migration.**
 
 [v0.17.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.17.0.md) · [Settings guide](public/help/en-US/settings-guide.md)
 

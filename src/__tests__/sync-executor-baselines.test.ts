@@ -159,6 +159,36 @@ afterEach(() => {
 });
 
 describe('执行器写入章节结构基准', () => {
+  it('下载时传入当前本地目录，以便补读已删除章节的正文组', async () => {
+    mockBooksStore.books = [book('b1', [])];
+    mockBooksStore.books[0]!.volumes![0]!.chapters = [];
+    const download = stubDownloadNoChanges();
+    stubUpload();
+    expect((await useSyncExecutor().executeSync(callbacks)).success).toBe(true);
+    expect(download.mock.calls[0]![2]).toEqual(mockBooksStore.books);
+  });
+  it('v6 元数据一致但正文组未获远端确认时不能写入该章节基准', async () => {
+    mockBooksStore.books = [book('b1', [p('p1', '尚未确认')]), book('b2', [p('p2', '已确认')])];
+    stubDownloadNoChanges();
+    stubUpload().mockImplementation((async (_config: unknown, payload: unknown) => {
+      const manifest = await buildLocalManifest(
+        payload as Parameters<typeof buildLocalManifest>[0],
+      );
+      for (const [key, entry] of Object.entries(manifest.entries)) {
+        if (key.startsWith('chapters:b1:')) entry.hash = 'different-remote-content';
+      }
+      return {
+        remoteETag: 'new',
+        remoteUpdatedAt: '',
+        manifest,
+        uploadedEntries: Object.keys(manifest.entries),
+        deletedEntries: [],
+      };
+    }) as never);
+    await useSyncExecutor().executeSync(callbacks);
+    expect(await baselineOf('b1-c1')).toBeUndefined();
+    expect(await baselineOf('b2-c1')).toBe(await chapterStructureHash([p('p2', '已确认')]));
+  });
   it('伪 CAS 等待期间编辑嵌套设置，不应改变已经哈希的上传快照', async () => {
     const localSettings = {
       lastEdited: new Date(0),

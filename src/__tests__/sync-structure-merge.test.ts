@@ -174,6 +174,50 @@ describe('同步段落结构裁决：复现现有错误', () => {
 });
 
 describe('同步段落结构裁决：其余规则', () => {
+  it('本地已删章节且远端只改标题时，缺失正文必须中止应用', async () => {
+    books = [novel([], LAST_SYNC + 1000)];
+    const remote = novel([chapter('c1', undefined, LAST_SYNC + 2000)], LAST_SYNC + 2000);
+    remote.volumes![0]!.chapters![0]!.title = '另一设备修改的标题';
+    const failed = await SyncDataService.applyPartialRemoteData({
+      'novel:b1': { kind: 'novel', bookId: 'b1', value: remote, unchangedChapterIds: ['c1'] },
+    });
+    expect(failed).toEqual(['novel:b1']);
+    expect(bulkAddBooks).not.toHaveBeenCalled();
+    expect((await getChapterBaselines(['c1'])).has('c1')).toBe(false);
+  });
+
+  it('v6 未下载的小组保留本地未上传正文和原始文本，且不推进其结构基准', async () => {
+    const base = [p('p1', '原文')];
+    await baseline('c1', base);
+    const localChapter = {
+      ...chapter('c1', [p('p1', '本地修订', ['本地译文'])], 2000),
+      originalContent: '本地原始文本',
+    };
+    books = [novel([localChapter], 2000)];
+    const remote = novel([chapter('c1', undefined, 3000)], 3000);
+    const report: SyncMergeReport = { structureConflicts: [] };
+    const failed = await SyncDataService.applyPartialRemoteData(
+      {
+        'novel:b1': { kind: 'novel', bookId: 'b1', value: remote, unchangedChapterIds: ['c1'] },
+      },
+      report,
+    );
+    expect(failed).toEqual([]);
+    expect(savedContent()[0]!.text).toBe('本地修订');
+    expect(saved().volumes![0]!.chapters![0]!.originalContent).toBe('本地原始文本');
+    expect(report.structureConflicts).toEqual([]);
+    expect((await getChapterBaselines(['c1'])).get('c1')).toBe(await chapterStructureHash(base));
+  });
+
+  it('远端明确清空正文时不能从本地重新填回段落', async () => {
+    const base = [p('p1', '应清空')];
+    await baseline('c1', base);
+    books = [novel([chapter('c1', base, 1000)], 1000)];
+    await applyRemote(novel([chapter('c1', [], 2000)], 2000));
+    expect(savedContent()).toEqual([]);
+    expect((await getChapterBaselines(['c1'])).get('c1')).toBe(await chapterStructureHash([]));
+  });
+
   it('原文相同的段落合并双方译文', async () => {
     books = [novel([chapter('c1', [p('p5', '五', ['本地译'])], 1000)], 1000)];
     const remote = novel([chapter('c1', [p('p5', '五', ['远端译'])], 2000)], 2000);

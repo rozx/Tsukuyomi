@@ -173,19 +173,19 @@ describe('gist-sync-incremental: parseMemoriesEnvelope', () => {
 
 describe('gist-sync-incremental: filenamesForEntry (C1 fix)', () => {
   it('aggregated entries map to a single fixed filename', () => {
-    expect(filenamesForEntry('settings')).toEqual(['tsukuyomi-settings.json']);
-    expect(filenamesForEntry('ai-models')).toEqual(['ai-models.json']);
-    expect(filenamesForEntry('cover-history')).toEqual(['cover-history.json']);
+    expect(filenamesForEntry('settings', undefined, 5)).toEqual(['tsukuyomi-settings.json']);
+    expect(filenamesForEntry('ai-models', undefined, 5)).toEqual(['ai-models.json']);
+    expect(filenamesForEntry('cover-history', undefined, 5)).toEqual(['cover-history.json']);
   });
 
   it('novel/memories with no chunks map to a single .json', () => {
-    expect(filenamesForEntry('novel:abc')).toEqual(['novel-abc.json']);
-    expect(filenamesForEntry('novel:abc', 0)).toEqual(['novel-abc.json']);
-    expect(filenamesForEntry('memories:xyz')).toEqual(['memories-xyz.json']);
+    expect(filenamesForEntry('novel:abc', undefined, 5)).toEqual(['novel-abc.json']);
+    expect(filenamesForEntry('novel:abc', 0, 5)).toEqual(['novel-abc.json']);
+    expect(filenamesForEntry('memories:xyz', undefined, 5)).toEqual(['memories-xyz.json']);
   });
 
   it('novel/memories with chunks enumerate meta + all chunk files deterministically', () => {
-    const novelFiles = filenamesForEntry('novel:abc', 3);
+    const novelFiles = filenamesForEntry('novel:abc', 3, 5);
     expect(novelFiles).toEqual([
       'novel-abc.meta.json',
       'novel-chunk-abc_0.json',
@@ -193,7 +193,7 @@ describe('gist-sync-incremental: filenamesForEntry (C1 fix)', () => {
       'novel-chunk-abc_2.json',
     ]);
 
-    const memoryFiles = filenamesForEntry('memories:xyz', 2);
+    const memoryFiles = filenamesForEntry('memories:xyz', 2, 5);
     expect(memoryFiles).toEqual([
       'memories-xyz.meta.json',
       'memories-chunk-xyz_0.json',

@@ -28,7 +28,13 @@ import type {
   GistFileLike,
   SyncFailureReason,
 } from 'src/services/gist-sync-incremental';
-import { ManifestProtocolError, parseGistManifest } from 'src/utils/manifest-protocol';
+import {
+  effectiveSchemaVersion,
+  ManifestProtocolError,
+  parseGistManifest,
+} from 'src/utils/manifest-protocol';
+import { assembleChapterGroups } from './sync-chapter-layout';
+import { hashJson } from 'src/utils/content-hash';
 import { normalizeBookLanguages } from './localization/normalize';
 import type { AppLocale } from 'src/models/locale';
 import type { MessageKey } from 'src/i18n/types';
@@ -1749,24 +1755,39 @@ export class GistSyncService {
 
     const entries = Object.entries(manifest.entries).sort(([a], [b]) => a.localeCompare(b));
     const failures: Array<{ entryKey: string; reason: string }> = [];
+    const parsedEntries: Record<string, EntryValue> = {};
+    const schemaVersion = effectiveSchemaVersion(manifest);
     for (const [entryKey, manifestEntry] of entries) {
-      const entry = await deserializeEntry(entryKey, manifestEntry, gistFiles, fetchRaw);
+      const entry = await deserializeEntry(
+        entryKey,
+        manifestEntry,
+        gistFiles,
+        fetchRaw,
+        schemaVersion,
+      );
       if (!entry) {
         failures.push({
           entryKey,
           reason: this.describeReason(
-            diagnoseRevisionEntryFailure(entryKey, manifestEntry, gistFiles),
+            diagnoseRevisionEntryFailure(entryKey, manifestEntry, gistFiles, schemaVersion),
           ),
         });
         continue;
       }
-      this.assignRevisionEntry(result, entry);
+      if (schemaVersion >= 5 && (await hashJson(entry.value)) !== manifestEntry.hash) {
+        failures.push({ entryKey, reason: 'MANIFEST_HASH_MISMATCH' });
+        continue;
+      }
+      parsedEntries[entryKey] = entry;
     }
 
     // 任何 entry 反序列化失败(chunk 截断且 raw_url 拿不到、内容缺失等)都必须抛错：
     // 上游 overwriteFromSnapshot 会先清空本地再写入快照，若静默跳过会导致本地数据被
     // 不完整快照覆盖——恰好就是用户看到的"本地书被删但 Gist 该版本仍然存在"。
     this.throwIfRevisionEntriesFailed(failures, this.text('revisionScope'));
+    const assembled =
+      schemaVersion >= 6 ? assembleChapterGroups(parsedEntries, manifest) : parsedEntries;
+    for (const entry of Object.values(assembled)) this.assignRevisionEntry(result, entry);
 
     return result;
   }
@@ -2488,9 +2509,10 @@ export class GistSyncService {
   async downloadFromGistWithManifest(
     config: SyncConfig,
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
+    localBooks?: readonly Novel[],
   ): Promise<IncrementalDownloadResult> {
     this.validateConfig(config);
-    return downloadWithManifest(config, onProgress, this.getLocale());
+    return downloadWithManifest(config, onProgress, this.getLocale(), localBooks);
   }
 
   /**
@@ -2529,6 +2551,7 @@ export class GistSyncService {
       this.getLocale(),
       {
         checkConcurrency: !options.skipConcurrencyCheck,
+        overwrite: options.skipConcurrencyCheck === true,
         ...(options.preparedManifest ? { preparedManifest: options.preparedManifest } : {}),
       },
     );

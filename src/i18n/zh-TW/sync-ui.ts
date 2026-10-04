@@ -95,6 +95,8 @@ export default {
     incremental: {
       unknownEntry: '未知的 entry key：{key}',
       apiError: 'GitHub Gist API 錯誤 {status}：{detail}',
+      fileLimitExceeded:
+        '本次同步將產生 {count} 個檔案，超過 Gist 可完整讀取的 300 檔案上限。請減少同步書籍或資料後重試；本次尚未寫入遠端。',
       gistTruncated:
         'Gist 檔案數超過 GitHub API 單次回傳上限（300 個），檔案清單被截斷，無法安全同步。請清理該 Gist 中的多餘檔案，或改用新的 Gist 重新同步。',
       downloadingEntry: '正在下載：{key}',

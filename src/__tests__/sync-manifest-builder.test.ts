@@ -296,8 +296,8 @@ describe('manifest TTL constants', () => {
     expect(TOMBSTONE_TTL_DAYS).toBe(90);
   });
 
-  it('MANIFEST_SCHEMA_VERSION is 5 (memory content timestamps)', () => {
-    expect(MANIFEST_SCHEMA_VERSION).toBe(5);
+  it('MANIFEST_SCHEMA_VERSION is 6 (chapter groups)', () => {
+    expect(MANIFEST_SCHEMA_VERSION).toBe(6);
   });
 });
 

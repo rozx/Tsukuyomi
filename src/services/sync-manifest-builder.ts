@@ -9,6 +9,7 @@ import {
   MANIFEST_SCHEMA_VERSION,
   TOMBSTONE_TTL_MS,
   memoriesEntryKey,
+  chapterGroupEntryKey,
   novelEntryKey,
   type GistManifest,
   type ManifestDiff,
@@ -18,9 +19,9 @@ import {
   type Tombstone,
 } from 'src/models/manifest';
 import { hashJson, hashString } from 'src/utils/content-hash';
-import { normalizeBookLanguages } from './localization/normalize';
 import { memoryModifiedAt } from 'src/utils/memory-timestamps';
-import { normalizeMemoriesForSync, stripNovelLocalFields } from 'src/utils/sync-strip';
+import { normalizeMemoriesForSync } from 'src/utils/sync-strip';
+import { splitBookForSync } from './sync-chapter-layout';
 
 /**
  * 构造本地 manifest 时需要的全部数据输入
@@ -116,10 +117,12 @@ export async function buildLocalManifest(input: LocalManifestInput): Promise<Gis
 
   // 每本书
   for (const novel of input.novels) {
-    entries[novelEntryKey(novel.id)] = {
-      hash: await hashJson(stripNovelLocalFields(normalizeBookLanguages(novel))),
-      lastEdited: new Date(novel.lastEdited ?? 0).toISOString(),
-    };
+    for (const [key, value] of splitBookForSync(novel)) {
+      entries[key] = {
+        hash: await hashJson(value),
+        lastEdited: new Date(novel.lastEdited ?? 0).toISOString(),
+      };
+    }
   }
 
   // 每本书的 memories：始终序列化为 envelope 形式，hash 基于 envelope。
@@ -335,13 +338,25 @@ export async function rebuildManifestFromFiles(
  * 根据文件名约定推断 entry key。
  * 返回 null 表示这不是我们识别的 Tsukuyomi 文件（如第三方文件，忽略）。
  */
-function filenameToEntryKey(filename: string): string | null {
+export function filenameToEntryKey(filename: string): string | null {
+  if (filename.startsWith('v6-')) filename = filename.slice(3);
   if (filename === 'manifest.json') return null; // manifest 本身不记录自己
   if (filename === 'settings.json' || filename === 'tsukuyomi-settings.json') {
     return ENTRY_KEYS.SETTINGS;
   }
   if (filename === 'ai-models.json') return ENTRY_KEYS.AI_MODELS;
   if (filename === 'cover-history.json') return ENTRY_KEYS.COVER_HISTORY;
+
+  const chapterMatch = filename.match(
+    /^chapters-(?:chunk-)?(.+)_([0-9a-f])(?:_\d+)?(?:\.meta)?\.json$/,
+  );
+  if (chapterMatch?.[1] && chapterMatch[2])
+    return chapterGroupEntryKey(chapterMatch[1], chapterMatch[2]);
+
+  const bookChunk = filename.match(/^book-chunk-(.+)_\d+\.json$/);
+  if (bookChunk?.[1]) return novelEntryKey(bookChunk[1]);
+  const book = filename.match(/^book-(.+?)(?:\.meta)?\.json$/);
+  if (book?.[1]) return novelEntryKey(book[1]);
 
   // novel-chunk-<id>_N.json (or _/#/- separator variants) — must check before plain novel-
   if (filename.startsWith('novel-chunk-')) {

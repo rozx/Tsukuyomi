@@ -474,7 +474,7 @@ describe('uploadIncremental — 纯删除同步也要清理远端文件', () => 
     expect(patches.length).toBe(1);
     const only = patches[0]!;
     expect(only['manifest.json']).toBeTruthy();
-    expect(only['novel-book-a.json']).toBeNull();
+    expect(only['book-book-a.json']).toBeNull();
   });
 });
 
@@ -582,8 +582,8 @@ describe('v4 实体协议发布', () => {
     });
     expect(result.manifest.schemaVersion).toBe(MANIFEST_SCHEMA_VERSION);
     expect(patches).toHaveLength(1);
-    expect(patches[0]!['novel-b0.json']).toBeDefined();
-    expect(patches[0]!['novel-b31.json']).toBeDefined();
+    expect(patches[0]!['book-b0.json']).toBeDefined();
+    expect(patches[0]!['book-b31.json']).toBeDefined();
     const future = { ...manifest, schemaVersion: 99 };
     let error: unknown;
     try {
@@ -671,7 +671,7 @@ it('缺少 manifest 的旧布局迁移也必须一次发布全部文件与 v4 �
   );
   expect(patches).toHaveLength(1);
   expect(patches[0]!['manifest.json']).toBeDefined();
-  expect(patches[0]!['novel-legacy24.json']).toBeDefined();
+  expect(patches[0]!['book-legacy24.json']).toBeDefined();
 });
 
 it('已知未来协议但缺少远端快照时不能重建低版本 manifest', async () => {
@@ -762,7 +762,7 @@ describe('大书库 v4 升级：先写围栏 manifest 再分批', () => {
       { 'manifest.json': { content: JSON.stringify(fence) } },
     );
     expect(patches).toHaveLength(1);
-    expect(patches[0]!['novel-small.json']).toBeDefined();
+    expect(patches[0]!['book-small.json']).toBeDefined();
     const final = JSON.parse(patches[0]![MANIFEST_FILE_NAME]!.content) as GistManifest;
     expect(final.pendingUpgradeFrom).toBeUndefined();
   });

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { compressString } from 'src/utils/compression';
 import { serializeDates } from 'src/utils/serialize-dates';
 import { GistSyncService } from 'src/services/gist-sync-service';
-import { MANIFEST_SCHEMA_VERSION } from 'src/models/manifest';
+// 以下手工 fixture 是哈希校验引入前的 v4 整书布局；v6 恢复由 sync-chapter-groups 测试覆盖。
 import { SyncType, type SyncConfig } from 'src/models/sync';
 
 function makeConfig(): SyncConfig {
@@ -139,7 +139,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
     const coverHistoryContent = await gzipJson(coverHistory);
     const novelContent = await gzipJson(novel);
     const manifest = {
-      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      schemaVersion: 4,
       updatedAt: '2026-04-22T10:05:00.000Z',
       entries: {
         settings: {
@@ -222,7 +222,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
     const config = makeConfig();
 
     const manifest = {
-      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      schemaVersion: 4,
       updatedAt: '2026-04-22T10:05:00.000Z',
       entries: {
         settings: {
@@ -337,7 +337,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
           'manifest.json': {
             filename: 'manifest.json',
             content: JSON.stringify({
-              schemaVersion: MANIFEST_SCHEMA_VERSION,
+              schemaVersion: 4,
               updatedAt: '2026-04-22T10:05:00.000Z',
             }),
             truncated: false,
@@ -362,7 +362,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
       taskDefaultModels: { translation: 'model-1' },
     };
     const manifest = {
-      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      schemaVersion: 4,
       updatedAt: '2026-04-22T10:05:00.000Z',
       entries: {
         settings: {
@@ -423,7 +423,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
     const chunk1 = novelContent.slice(half);
 
     const manifest = {
-      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      schemaVersion: 4,
       updatedAt: '2026-04-22T10:05:00.000Z',
       // manifest 声明 chunks 未知(旧 revision),实际有 2 个 chunk 文件
       entries: {
@@ -479,7 +479,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
     const half = Math.ceil(novelContent.length / 2);
 
     const manifest = {
-      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      schemaVersion: 4,
       updatedAt: '2026-04-22T10:05:00.000Z',
       entries: {
         'novel:book-1': {
@@ -526,7 +526,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
     const config = makeConfig();
 
     const manifest = {
-      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      schemaVersion: 4,
       updatedAt: '2026-04-22T10:05:00.000Z',
       entries: {
         'novel:book-1': {
@@ -568,7 +568,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
     const config = makeConfig();
 
     const manifest = {
-      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      schemaVersion: 4,
       updatedAt: '2026-04-22T10:05:00.000Z',
       entries: {
         'ai-models': {
@@ -626,7 +626,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
       },
     ];
     const manifest = {
-      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      schemaVersion: 4,
       updatedAt: '2026-04-22T10:05:00.000Z',
       entries: {
         'memories:book-2': {
@@ -684,7 +684,7 @@ describe('GistSyncService.downloadFromGistRevision', () => {
     const firstChunk = novelContent.slice(0, splitIndex);
     const secondChunk = novelContent.slice(splitIndex);
     const manifest = {
-      schemaVersion: MANIFEST_SCHEMA_VERSION,
+      schemaVersion: 4,
       updatedAt: '2026-04-22T10:05:00.000Z',
       entries: {
         'novel:book-1': {

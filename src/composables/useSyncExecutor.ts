@@ -28,7 +28,13 @@ import {
 } from 'src/utils/sync-strip';
 import type { SyncConfig } from 'src/models/sync';
 import type { Memory } from 'src/models/memory';
-import { MANIFEST_FILE_NAME, novelEntryKey, type GistManifest } from 'src/models/manifest';
+import {
+  MANIFEST_FILE_NAME,
+  novelEntryKey,
+  chapterGroupEntryKey,
+  type GistManifest,
+} from 'src/models/manifest';
+import { chapterGroupId } from 'src/services/sync-chapter-layout';
 import { readFile, type GistFileLike } from 'src/services/gist-sync-incremental';
 import { recordStructureBaselines } from 'src/services/sync-chapter-baselines';
 import { BookService } from 'src/services/book-service';
@@ -419,6 +425,7 @@ export function useSyncExecutor() {
       const result = await gistSyncService.downloadFromGistWithManifest(
         config,
         makeDownloadProgressHandler(prefixMsg),
+        booksStore.books,
       );
       return { ok: true, result };
     } catch (error) {
@@ -711,8 +718,8 @@ export function useSyncExecutor() {
   };
 
   /**
-   * 同步完全成功后写入章节结构基准：本地条目哈希等于最终已知远端哈希的书，
-   * 说明远端正是本次 bundle 中的内容。用 bundle（上传时序列化的那份数据）计算，
+   * 同步完全成功后写入章节结构基准：逐章节确认所在正文组的哈希与最终远端一致，
+   * 不能仅凭书籍元数据一致就认定正文已同步。用 bundle（上传时序列化的那份数据）计算，
    * 不读取当前本地数据，避免上传期间的本地修改被误记为远端结构。
    * 覆盖两种情况：上传成功（远端哈希 = 本次上传的 manifest），以及无需上传时
    * 为本地与远端逐字一致、但升级前还没有基准的书补写。
@@ -723,11 +730,17 @@ export function useSyncExecutor() {
     remoteHashes: Record<string, string> | 'all',
   ): Promise<boolean> => {
     const localHashes = manifestToHashes(bundle.localManifest);
-    const synced = bundle.novelsWithContent.filter((novel) => {
-      if (remoteHashes === 'all') return true;
-      const key = novelEntryKey(novel.id);
-      return localHashes[key] !== undefined && localHashes[key] === remoteHashes[key];
-    });
+    const synced = bundle.novelsWithContent.map((novel) => ({
+      ...novel,
+      volumes: (novel.volumes ?? []).map((volume) => ({
+        ...volume,
+        chapters: (volume.chapters ?? []).filter((chapter) => {
+          if (remoteHashes === 'all') return true;
+          const key = chapterGroupEntryKey(novel.id, chapterGroupId(chapter.id));
+          return localHashes[key] !== undefined && localHashes[key] === remoteHashes[key];
+        }),
+      })),
+    }));
     return recordStructureBaselines(synced);
   };
 
