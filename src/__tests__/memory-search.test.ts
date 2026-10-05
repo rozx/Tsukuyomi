@@ -3,6 +3,7 @@ import './setup';
 import type { Memory } from '../models/memory';
 import { EmbeddingService } from '../services/embedding-service';
 import { MemoryService } from '../services/memory-service';
+import { useSettingsStore } from '../stores/settings';
 
 function makeMemory(overrides: Partial<Memory>): Memory {
   return {
@@ -19,6 +20,20 @@ function makeMemory(overrides: Partial<Memory>): Memory {
 describe('MemoryService - 生产记忆搜索', () => {
   afterEach(() => {
     mock.restore();
+  });
+
+  test('已加载模型关闭总开关后，工具搜索只使用关键词', async () => {
+    useSettingsStore().settings.enableLocalEmbedding = false;
+    spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue([
+      makeMemory({ id: 'keyword', summary: '敬语规则', lastAccessedAt: Date.now() }),
+    ]);
+    spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
+    const embed = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([
+      new Float32Array([1, 0]),
+    ]);
+    const results = await MemoryService.searchMemoriesWithScores('book-search', '敬语规则');
+    expect(embed).not.toHaveBeenCalled();
+    expect(results[0]?.breakdown.scoringMode).toBe('fallback');
   });
 
   test('语义服务未就绪时走同一关键词评分，旧的精准记忆胜过新的弱匹配', async () => {

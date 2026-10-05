@@ -348,10 +348,10 @@ describe('memory-scoring - selectByBudget', () => {
     expect(result.map((m) => m.id)).toEqual(['a', 'c']);
   });
 
-  test('首条就超预算时仍选入(避免空返回)', () => {
-    const list = [scored('big', 'x'.repeat(5000), 5.0)];
+  test('超预算的首条被跳过，后续可容纳的记忆仍能选入', () => {
+    const list = [scored('big', 'x'.repeat(5000), 5.0), scored('small', '摘要', 4.99)];
     const result = selectByBudget(list, 100, 25, 0.3, LOOSE_TOPK, LOOSE_DELTA);
-    expect(result).toHaveLength(1);
+    expect(result.map((memory) => memory.id)).toEqual(['small']);
   });
 
   test('默认参数下 top-K + delta 收缩压制"全员高分"', () => {
@@ -855,7 +855,6 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     });
     expect(result.map((s) => s.memory.id)).toEqual(['a', 'b', 'c']);
   });
-
 });
 
 describe('memory-scoring - calculateQueryKeywordScore (CJK 部分匹配)', () => {

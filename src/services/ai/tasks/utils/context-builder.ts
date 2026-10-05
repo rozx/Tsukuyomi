@@ -16,6 +16,7 @@ import type { Memory } from 'src/models/memory';
 import {
   scoreMemoriesBatch,
   selectByBudget,
+  selectMemoriesWithinBudget,
   DEFAULT_CHAR_BUDGET,
   HARD_ITEM_CAP,
   DEFAULT_MIN_SCORE,
@@ -33,6 +34,7 @@ import { useBooksStore } from 'src/stores/books';
 import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
 import { splitTextForEmbedding } from 'src/utils/embedding-text-segments';
 import { MEMORY_EMBEDDING_VERSION } from 'src/utils/memory-embedding-lookup';
+import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
 
 /**
  * 获取章节第一个“非空”段落的 ID（用于判断任务是否从章节中间开始）
@@ -244,16 +246,40 @@ export function buildPostOutputPrompt(_taskType: TaskType, taskId?: string): str
  * 遗留 LRU 实现:纯粹的"最近访问时间"兜底。
  * 保留作为新打分路径出错或无可用数据时的 fallback。
  */
-function formatMemoryContext(memories: Memory[]): string {
-  const lines = memories.map((memory) => `  - [${memory.id}] ${memory.summary}`);
+function memoryContextPrefix(): string {
   return (
     '\n\n' +
     agentText('aiContext.heading', {
       label: agentText('aiContext.memories'),
     }) +
-    '\n' +
-    lines.join('\n')
+    '\n'
   );
+}
+
+function formatMemoryLine(memory: Memory): string {
+  return `  - [${memory.id}] ${memory.summary}`;
+}
+
+function memoryContextCost(memory: Memory): number {
+  return formatMemoryLine(memory).length + 1;
+}
+
+function memoryContentBudget(charBudget: number): number {
+  // 每条按尾随换行计费，实际 join 最后一条没有换行，补回一个字符。
+  return Math.max(0, charBudget - memoryContextPrefix().length + 1);
+}
+
+function budgetFallbackMemories(memories: Memory[]): Memory[] {
+  return selectMemoriesWithinBudget(
+    memories,
+    memoryContentBudget(readMemoryInjectionBudget().charBudget),
+    HARD_ITEM_CAP,
+    memoryContextCost,
+  );
+}
+
+function formatMemoryContext(memories: Memory[]): string {
+  return memories.length ? memoryContextPrefix() + memories.map(formatMemoryLine).join('\n') : '';
 }
 
 export async function getRelatedMemoriesForChunkLegacy(
@@ -270,7 +296,7 @@ export async function getRelatedMemoriesForChunkLegacy(
       false,
     );
     if (recentMemories.length === 0) return '';
-    return formatMemoryContext(recentMemories);
+    return formatMemoryContext(budgetFallbackMemories(recentMemories));
   } catch (error) {
     console.warn('Failed to get related memories (legacy fallback):', error);
     return '';
@@ -282,17 +308,13 @@ export async function getRelatedMemoriesForChunkLegacy(
 // ============================================================================
 
 /**
- * 任务级 chunk embedding 缓存:同一任务中不同分块会重复读取同一 chunkText,
- * 避免反复调用 transformers.js。键 = 原始文本,值 = 各分段的归一化向量数组。
- *
- * 调用方应在任务结束时调用 `clearChunkEmbeddingCache()`。
+ * 查询向量统一由 EmbeddingService 缓存，自动注入、工具查询与预览共享分段结果。
+ * 此入口用于显式清理查询缓存和生产评分旁路。
  */
-const CHUNK_CACHE_MAX_SIZE = 50;
 const MEMORY_QUERY_EMBED_BATCH_SIZE = 4;
-const chunkEmbeddingCache = new Map<string, Float32Array[]>();
 
 export function clearChunkEmbeddingCache(): void {
-  chunkEmbeddingCache.clear();
+  EmbeddingService.clearQueryCache();
   lastScoreBreakdownsByBook.clear();
 }
 
@@ -325,15 +347,14 @@ async function computeChunkEmbeddings(chunkText: string): Promise<Float32Array[]
   let enableSemantic = true;
   try {
     const settings = useSettingsStore();
-    enableSemantic = settings.settings?.memoryInjection?.enableSemantic !== false;
+    enableSemantic =
+      isLocalEmbeddingEffectivelyEnabled(settings.settings.enableLocalEmbedding) &&
+      settings.settings.memoryInjection?.enableSemantic !== false;
   } catch {
-    // store 初始化失败时保持默认启用
+    enableSemantic = false;
   }
   if (!enableSemantic) return [];
   if (!EmbeddingService.isReady()) return [];
-
-  const cached = chunkEmbeddingCache.get(chunkText);
-  if (cached !== undefined) return cached;
 
   try {
     const segments = splitTextForEmbedding(chunkText);
@@ -345,15 +366,9 @@ async function computeChunkEmbeddings(chunkText: string): Promise<Float32Array[]
         if (vector) vectors.push(vector);
       }
     }
-    if (chunkEmbeddingCache.size >= CHUNK_CACHE_MAX_SIZE) {
-      const oldest = chunkEmbeddingCache.keys().next().value;
-      if (oldest !== undefined) chunkEmbeddingCache.delete(oldest);
-    }
-    chunkEmbeddingCache.set(chunkText, vectors);
     return vectors;
   } catch (error) {
     console.warn('[context-builder] 计算 chunk embeddings 失败:', error);
-    chunkEmbeddingCache.set(chunkText, []);
     return [];
   }
 }
@@ -483,7 +498,15 @@ async function selectMemoriesByScore(
   });
 
   const { charBudget, minScore } = readMemoryInjectionBudget();
-  const memories = selectByBudget(scored, charBudget, HARD_ITEM_CAP, minScore);
+  const memories = selectByBudget(
+    scored,
+    memoryContentBudget(charBudget),
+    HARD_ITEM_CAP,
+    minScore,
+    undefined,
+    undefined,
+    memoryContextCost,
+  );
   const breakdowns = collectBreakdownsForMemories(memories, scored);
 
   return {
@@ -514,7 +537,9 @@ export async function selectRelevantMemoriesForChunk(
     );
   } catch (error) {
     console.warn('[context-builder] 混合相关性打分失败,退回最近记忆:', error);
-    const memories = await MemoryService.getRecentMemories(bookId, 15, 'lastAccessedAt', false);
+    const memories = budgetFallbackMemories(
+      await MemoryService.getRecentMemories(bookId, 15, 'lastAccessedAt', false),
+    );
     return { memories, breakdowns: {}, fromFallback: true, totalMemoryCount: memories.length };
   }
 }

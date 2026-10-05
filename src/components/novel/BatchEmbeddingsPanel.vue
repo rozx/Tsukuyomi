@@ -76,6 +76,21 @@ function countBookChapters(id: string): number {
 }
 
 type StatBreakdown = { embedded: number; total: number; stale: number };
+let statsTimer: ReturnType<typeof setTimeout> | undefined;
+let statsRunning = false;
+let statsDirty = true;
+let statsRequest = 0;
+let disposed = false;
+
+/** 合并同批事件，抽屉关闭时只记录待刷新，不读取全书向量。 */
+function scheduleStatsRefresh(): void {
+  statsDirty = true;
+  if (disposed || !drawerVisible.value || statsRunning || statsTimer) return;
+  statsTimer = setTimeout(() => {
+    statsTimer = undefined;
+    void refreshStats();
+  }, 100);
+}
 
 async function loadChapterBreakdown(id: string, total: number): Promise<StatBreakdown> {
   try {
@@ -127,19 +142,33 @@ function resetStats(): void {
 }
 
 async function refreshStats(): Promise<void> {
+  if (disposed || !drawerVisible.value) return;
+  if (statsRunning) {
+    statsDirty = true;
+    return;
+  }
   const id = bookId.value;
   if (!id) {
     resetStats();
     return;
   }
-  const chapTotal = countBookChapters(id);
-  const [chapter, memory] = await Promise.all([
-    loadChapterBreakdown(id, chapTotal),
-    loadMemoryBreakdown(id),
-  ]);
-  chapterStats.value = { embedded: chapter.embedded, total: chapter.total };
-  memoryStats.value = { embedded: memory.embedded, total: memory.total };
-  staleCounts.value = { chapter: chapter.stale, memory: memory.stale };
+  const request = statsRequest;
+  statsRunning = true;
+  statsDirty = false;
+  try {
+    const chapTotal = countBookChapters(id);
+    const [chapter, memory] = await Promise.all([
+      loadChapterBreakdown(id, chapTotal),
+      loadMemoryBreakdown(id),
+    ]);
+    if (disposed || request !== statsRequest || bookId.value !== id || !drawerVisible.value) return;
+    chapterStats.value = { embedded: chapter.embedded, total: chapter.total };
+    memoryStats.value = { embedded: memory.embedded, total: memory.total };
+    staleCounts.value = { chapter: chapter.stale, memory: memory.stale };
+  } finally {
+    statsRunning = false;
+    if (statsDirty) scheduleStatsRefresh();
+  }
 }
 
 // 订阅 EmbeddingQueue 进度事件
@@ -150,10 +179,10 @@ onMounted(() => {
       progress.value = (e.detail as EmbeddingQueueProgress) ?? EmbeddingQueue.getProgress();
     }),
     EmbeddingQueue.addEventListener('batch-complete', () => {
-      void refreshStats();
+      scheduleStatsRefresh();
     }),
     EmbeddingQueue.addEventListener('idle', () => {
-      void refreshStats();
+      scheduleStatsRefresh();
     }),
     EmbeddingService.addEventListener('status-changed', () => {
       embeddingStatus.value = EmbeddingService.getStatus();
@@ -164,18 +193,25 @@ onMounted(() => {
       activeBackend.value = EmbeddingService.getActiveBackend();
     }),
     MemoryService.addMemoryChangeListener((e) => {
-      if (e.detail?.bookId === bookId.value) void refreshStats();
+      if (e.detail?.bookId === bookId.value && e.detail.action !== 'accessed')
+        scheduleStatsRefresh();
     }),
   );
-  void refreshStats();
+  scheduleStatsRefresh();
 });
 onUnmounted(() => {
+  disposed = true;
+  ++statsRequest;
+  if (statsTimer) clearTimeout(statsTimer);
   unsubscribers.forEach((u) => u());
   unsubscribers.length = 0;
 });
 
-watch(bookId, () => {
-  void refreshStats();
+watch([bookId, drawerVisible], () => {
+  ++statsRequest;
+  if (statsTimer) clearTimeout(statsTimer);
+  statsTimer = undefined;
+  scheduleStatsRefresh();
 });
 
 const totalChapters = computed(() => {
@@ -272,7 +308,6 @@ const statusLabel = computed(() => {
 // 抽屉本身不需要锚点，参数忽略即可。
 // refreshStats 会击 IndexedDB + 迭代 chapters/memories，关闭抽屉时不需要做这份工作。
 const toggle = (_event?: Event, _target?: Element) => {
-  if (!drawerVisible.value) void refreshStats();
   drawerVisible.value = !drawerVisible.value;
 };
 

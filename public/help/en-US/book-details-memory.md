@@ -120,7 +120,7 @@ Without embeddings:
 
 ### Character budget {#book-details-memory-section-17}
 
-Highest scores fill the budget greedily, default 2000 characters. Memories below the configured minimum relevance (default 0.30) are omitted.
+Memories are selected in score order within the character budget, default 2000 characters, including the memory heading, IDs, summaries, and line breaks. Records that exceed the remaining budget are skipped; error fallback obeys the same limit. Normal relevance selection omits memories below the configured minimum score (default 0.30).
 
 ### Semantic retrieval {#book-details-memory-section-18}
 

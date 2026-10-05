@@ -6,7 +6,9 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 // ============================================================================
 // 必须在 import EmbeddingService 之前 mock,确保动态 import 命中 mock 版本
 let mockPipelineImpl: ((input: unknown, options?: unknown) => Promise<unknown>) | null = null;
-let mockPipelineFactory: ((task: string, model: string, options: unknown) => Promise<unknown>) | null = null;
+let mockPipelineFactory:
+  | ((task: string, model: string, options: unknown) => Promise<unknown>)
+  | null = null;
 
 mock.module('@huggingface/transformers', () => ({
   pipeline: (task: string, model: string, options: unknown) => {
@@ -19,11 +21,7 @@ mock.module('@huggingface/transformers', () => ({
 }));
 
 // 必须在 mock 之后 import
-import {
-  EmbeddingService,
-  MODEL_VERSION,
-  DIMENSIONS,
-} from 'src/services/embedding-service';
+import { EmbeddingService, MODEL_VERSION, DIMENSIONS } from 'src/services/embedding-service';
 
 function makeFloat32(values: number[]): Float32Array {
   return new Float32Array(values);
@@ -56,6 +54,74 @@ describe('EmbeddingService - 懒加载与状态', () => {
 
   afterEach(() => {
     EmbeddingService.__resetForTesting();
+  });
+
+  test('单条与批量查询共享正在计算及已完成的向量，文档推理独立', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let calls = 0;
+    mockPipelineImpl = async (input) => {
+      calls += 1;
+      entered.resolve();
+      await release.promise;
+      return fakePooledOutput(Array.isArray(input) ? input.length : 1, 0.5);
+    };
+    await EmbeddingService.init();
+    const first = EmbeddingService.embed('共享查询', 'query');
+    await entered.promise;
+    const second = EmbeddingService.embedBatch(['共享查询', '共享查询'], 'query');
+    release.resolve();
+    const [vector, batch] = await Promise.all([first, second]);
+    expect(calls).toBe(1);
+    expect(batch).toEqual([vector, vector]);
+    expect(await EmbeddingService.embed('共享查询', 'query')).toEqual(vector);
+    expect(calls).toBe(1);
+    await EmbeddingService.embed('共享查询', 'document');
+    expect(calls).toBe(2);
+    await EmbeddingService.reload();
+    await EmbeddingService.embed('共享查询', 'query');
+    expect(calls).toBe(3);
+  });
+
+  test('前台查询优先于等待中的后台推理，模型调用不会重叠', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const inputs: string[] = [];
+    let active = 0;
+    let peak = 0;
+    mockPipelineImpl = async (input) => {
+      const text = String(input);
+      inputs.push(text);
+      active += 1;
+      peak = Math.max(peak, active);
+      if (text === '后台一') {
+        entered.resolve();
+        await release.promise;
+      }
+      active -= 1;
+      return fakePooledOutput(1, 0.5);
+    };
+    await EmbeddingService.init();
+    const first = EmbeddingService.embed('后台一', 'document');
+    await entered.promise;
+    const second = EmbeddingService.embed('后台二', 'document');
+    const query = EmbeddingService.embed('前台查询', 'query');
+    release.resolve();
+    await Promise.all([first, second, query]);
+    expect(peak).toBe(1);
+    expect(inputs).toEqual(['后台一', '前台查询', '后台二']);
+  });
+
+  test('失败的查询向量不会占据缓存，下一次请求可以重试', async () => {
+    let calls = 0;
+    mockPipelineImpl = async () => {
+      if (++calls === 1) throw new Error('temporary inference failure');
+      return fakePooledOutput(1, 0.5);
+    };
+    await EmbeddingService.init();
+    expect(await EmbeddingService.embed('重试查询', 'query')).toBeNull();
+    expect(await EmbeddingService.embed('重试查询', 'query')).not.toBeNull();
+    expect(calls).toBe(2);
   });
 
   test('初始状态为 idle,isReady=false', () => {
@@ -93,11 +159,7 @@ describe('EmbeddingService - 懒加载与状态', () => {
       return async () => fakePooledOutput(1, 0.5);
     };
 
-    await Promise.all([
-      EmbeddingService.init(),
-      EmbeddingService.init(),
-      EmbeddingService.init(),
-    ]);
+    await Promise.all([EmbeddingService.init(), EmbeddingService.init(), EmbeddingService.init()]);
 
     expect(callCount).toBe(1);
     expect(EmbeddingService.getStatus()).toBe('ready');
@@ -287,9 +349,10 @@ describe('EmbeddingService - cosineSimilarity', () => {
   });
 
   test('正交向量返回 0', () => {
-    expect(
-      EmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([0, 1])),
-    ).toBeCloseTo(0, 5);
+    expect(EmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([0, 1]))).toBeCloseTo(
+      0,
+      5,
+    );
   });
 
   test('任一为空返回 0', () => {
@@ -299,15 +362,11 @@ describe('EmbeddingService - cosineSimilarity', () => {
   });
 
   test('维度不匹配返回 0', () => {
-    expect(
-      EmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([1, 0, 0])),
-    ).toBe(0);
+    expect(EmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([1, 0, 0]))).toBe(0);
   });
 
   test('反向向量 clamp 到 0', () => {
-    expect(
-      EmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([-1, 0])),
-    ).toBe(0);
+    expect(EmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([-1, 0]))).toBe(0);
   });
 });
 

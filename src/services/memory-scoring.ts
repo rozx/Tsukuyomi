@@ -674,6 +674,7 @@ export function selectByBudget(
   minScore: number = DEFAULT_MIN_SCORE,
   topK: number = DEFAULT_TOP_K,
   relativeDelta: number = DEFAULT_RELATIVE_DELTA,
+  getCost: (memory: Memory) => number = (memory) => (memory.summary ?? '').length,
 ): Memory[] {
   if (!scoredMemories || scoredMemories.length === 0) return [];
 
@@ -682,14 +683,28 @@ export function selectByBudget(
   // top-K + delta 窗口依然能把"全员膨胀"压回到少数几条真正突出的记忆
   const ranked = filterByRelativeRanking(absoluteFiltered, topK, relativeDelta);
 
+  return selectMemoriesWithinBudget(
+    ranked.map((item) => item.memory),
+    charBudget,
+    hardCap,
+    getCost,
+  );
+}
+
+/** 按既有顺序填充预算；超长项跳过，避免阻挡后续可容纳的记忆。 */
+export function selectMemoriesWithinBudget(
+  memories: Memory[],
+  charBudget: number,
+  hardCap: number = HARD_ITEM_CAP,
+  getCost: (memory: Memory) => number = (memory) => (memory.summary ?? '').length,
+): Memory[] {
   const selected: Memory[] = [];
   let usedChars = 0;
-
-  for (const item of ranked) {
+  for (const memory of memories) {
     if (selected.length >= hardCap) break;
-    const cost = (item.memory.summary ?? '').length;
-    if (usedChars + cost > charBudget && selected.length > 0) break;
-    selected.push(item.memory);
+    const cost = getCost(memory);
+    if (usedChars + cost > charBudget) continue;
+    selected.push(memory);
     usedChars += cost;
   }
 

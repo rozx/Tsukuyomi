@@ -204,9 +204,7 @@ describe('EmbeddingQueue - 入队与批处理', () => {
         return texts.map(() => new Float32Array([0.1]));
       },
     );
-    const embedChapterSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(
-      undefined,
-    );
+    const embedChapterSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(true);
 
     EmbeddingQueue.enqueueMemory('a');
     EmbeddingQueue.enqueueChapter('ch-1');
@@ -472,7 +470,7 @@ describe('EmbeddingQueue - chapter kind', () => {
   });
 
   test('enqueueChapter 入队后调用 ChapterEmbeddingService.embedChapter', async () => {
-    const embedSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(undefined);
+    const embedSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(true);
 
     EmbeddingQueue.enqueueChapter('ch-1');
     await waitForIdle();
@@ -481,8 +479,35 @@ describe('EmbeddingQueue - chapter kind', () => {
     expect(embedSpy.mock.calls[0]?.[0]).toBe('ch-1');
   });
 
+  test('章节批次暂停时保留任务且不记为完成，继续后重新执行', async () => {
+    const paused = Promise.withResolvers<void>();
+    let calls = 0;
+    const embed = spyOn(ChapterEmbeddingService, 'embedChapter').mockImplementation(
+      async (_chapterId, shouldContinue) => {
+        calls += 1;
+        if (calls === 1) {
+          EmbeddingQueue.pause();
+          expect(await shouldContinue!()).toBe(false);
+          paused.resolve();
+          return false;
+        }
+        return true;
+      },
+    );
+    EmbeddingQueue.enqueueChapter('paused-chapter', 'book-1');
+    await paused.promise;
+    while (EmbeddingQueue.isRunning()) await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(EmbeddingQueue.getProgress().breakdown.chapter).toMatchObject({
+      pending: 1,
+      completed: 0,
+    });
+    EmbeddingQueue.resume();
+    await waitForIdle();
+    expect(embed).toHaveBeenCalledTimes(2);
+  });
+
   test('重复 enqueueChapter 同一 id 不会重复处理', async () => {
-    const embedSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(undefined);
+    const embedSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(true);
 
     EmbeddingQueue.enqueueChapter('ch-dup');
     EmbeddingQueue.enqueueChapter('ch-dup');
@@ -505,6 +530,7 @@ describe('EmbeddingQueue - chapter kind', () => {
     spyOn(ChapterEmbeddingService, 'embedChapter').mockImplementation(async () => {
       markEmbedStarted();
       await block;
+      return true;
     });
 
     EmbeddingQueue.enqueueChapter('ch-0');
@@ -530,9 +556,7 @@ describe('EmbeddingQueue - chapter kind', () => {
     const embedBatchSpy = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([
       new Float32Array([0.1]),
     ]);
-    const embedChapterSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(
-      undefined,
-    );
+    const embedChapterSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(true);
 
     // chapter 在前,memory 在后,memory 应独立合批
     EmbeddingQueue.enqueueChapter('ch-A');
@@ -567,6 +591,7 @@ describe('EmbeddingQueue - chapter kind', () => {
     });
     spyOn(ChapterEmbeddingService, 'embedChapter').mockImplementation(async () => {
       await block;
+      return true;
     });
 
     EmbeddingQueue.enqueueMemory('m1');
@@ -588,7 +613,7 @@ describe('EmbeddingQueue - chapter kind', () => {
       'ch-need-1',
       'ch-need-2',
     ]);
-    const embedSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(undefined);
+    const embedSpy = spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(true);
 
     const added = await EmbeddingQueue.enqueueChapterBacklog('book-1');
     expect(added).toBe(2);
@@ -604,7 +629,7 @@ describe('EmbeddingQueue - chapter kind', () => {
       'ch-A',
       'ch-B',
     ]);
-    spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(undefined);
+    spyOn(ChapterEmbeddingService, 'embedChapter').mockResolvedValue(true);
 
     // 先暂停队列,手动入队 ch-A,此时 ch-A 在 pending 中
     EmbeddingQueue.pause();
@@ -688,6 +713,7 @@ describe('EmbeddingQueue - chapter kind', () => {
   test('chapter 批失败不影响后续队列', async () => {
     spyOn(ChapterEmbeddingService, 'embedChapter').mockImplementation(async (id: string) => {
       if (id === 'ch-bad') throw new Error('boom');
+      return true;
     });
 
     let errorCount = 0;

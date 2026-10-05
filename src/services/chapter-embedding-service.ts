@@ -2,11 +2,11 @@
  * ChapterEmbeddingService — 章节级多向量嵌入
  *
  * 职责:
- * - 切 chunk(按段落边界,目标 ~1500 字符)
+ * - 切 chunk(按段落边界,目标 ~100 字符)
  * - 拼接原文+译文作为嵌入输入
  * - 为每章额外生成一条 `kind: 'title'` chunk(章节标题 + 首段,截到 300 字),
  *   作为标题型 query 的语义锚点
- * - 调 EmbeddingService.embedBatch 生成向量(content + title 一并送入,共用模型 warmup)
+ * - 调 EmbeddingService.embedBatch 生成向量(content + title 按最多八条分批)
  * - 原子替换 chapter-embeddings store 中该章节的所有 chunk(按 kind 分别清旧)
  * - 提供 queryChapters 做混合检索:语义置信度 + RRF 排名和关键词排名融合,
  *   章节级 semantic 取 max(title, content_max/top3 blend)
@@ -22,14 +22,14 @@
 
 import { getDB } from 'src/utils/indexed-db';
 import type { TsukuyomiDB } from 'src/utils/indexed-db';
-import type { IDBPTransaction } from 'idb';
+import type { IDBPDatabase, IDBPTransaction } from 'idb';
 import type { AppLocale } from 'src/models/locale';
 import { getLanguageTranslation, getNameTranslation } from './localization/selection';
 import { hashString } from 'src/utils/content-hash';
 import { LocalizedError } from 'src/utils/localized-error';
 import { normalizeChapterLanguages } from './localization/normalize';
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
-import type { Novel, Paragraph } from 'src/models/novel';
+import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { ChapterEmbedding, ChapterEmbeddingKind } from 'src/models/chapter-embedding';
 import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
 import { loadChapterContent } from 'src/utils/chapter-content-loader';
@@ -265,6 +265,7 @@ export function isChapterChunkStale(chunk: ChapterEmbedding): boolean {
 }
 /** preview 前缀长度(给 query_chapter 返回用) */
 export const PREVIEW_CHARS = 200;
+const CHAPTER_EMBED_BATCH_SIZE = 8;
 /** title chunk 嵌入输入字符上限(标题 + 首段拼接后截断) */
 export const TITLE_INPUT_MAX_CHARS = 300;
 /** title chunk 永远只有一条,chunkIndex 固定为 0 */
@@ -588,10 +589,13 @@ function chapterInputState(
   chapterId: string,
   record: { content: string } | undefined,
   language: AppLocale = book?.targetLanguage ?? 'zh-CN',
+  knownChapter?: Chapter,
 ): ChapterInputState | null {
-  const chapter = book?.volumes
-    ?.flatMap((volume) => volume.chapters ?? [])
-    .find((value) => value.id === chapterId);
+  const chapter =
+    knownChapter ??
+    book?.volumes
+      ?.flatMap((volume) => volume.chapters ?? [])
+      .find((value) => value.id === chapterId);
   if (!chapter) return null;
   const paragraphs = normalizeChapterLanguages(
     record ? JSON.parse(record.content) : (chapter.content ?? []),
@@ -635,18 +639,118 @@ async function loadChapterInput(
   return state ? { ...state, inputSignature: await hashString(state.serialized) } : null;
 }
 
-/** 查询的书籍、正文输入及向量来自同一只读事务，不混用等待前元数据。 */
+interface ChapterQuerySnapshot {
+  book: Novel | undefined;
+  chunks: ChapterEmbedding[];
+  hasUnavailableInput: boolean;
+}
+interface CachedChapterQuery {
+  revision: number;
+  promise: Promise<ChapterQuerySnapshot>;
+}
+// 只保留最近查询的书籍/目标，避免多部长篇小说的完整向量同时常驻。
+const QUERY_SNAPSHOT_LIMIT = 1;
+const querySnapshots = new WeakMap<IDBPDatabase<TsukuyomiDB>, Map<string, CachedChapterQuery>>();
+let activeQueryDatabase: IDBPDatabase<TsukuyomiDB> | undefined;
+let cacheChannel: BroadcastChannel | undefined;
+
+/** 派生向量不递增书籍修订号，通过通知同步其他窗口的缓存失效。 */
+function chapterCacheChannel(): BroadcastChannel | undefined {
+  if (cacheChannel) return cacheChannel;
+  try {
+    if (typeof window === 'undefined' || !window.BroadcastChannel) return undefined;
+    cacheChannel = new window.BroadcastChannel('tsukuyomi:chapter-embedding-cache');
+    cacheChannel.onmessage = (event: MessageEvent<unknown>) => {
+      const notice = event.data as { bookId?: unknown } | null;
+      if (activeQueryDatabase && typeof notice?.bookId === 'string') {
+        invalidateQuerySnapshot(activeQueryDatabase, notice.bookId, false);
+      }
+    };
+  } catch {
+    // 无跨窗口通道时仍可使用本窗口缓存。
+  }
+  return cacheChannel;
+}
+
+function invalidateQuerySnapshot(
+  db: IDBPDatabase<TsukuyomiDB>,
+  bookId: string,
+  broadcast = true,
+): void {
+  const cache = querySnapshots.get(db);
+  for (const key of cache?.keys() ?? []) {
+    if (key.startsWith(`${bookId}:`)) cache!.delete(key);
+  }
+  if (broadcast) {
+    try {
+      chapterCacheChannel()?.postMessage({ bookId });
+    } catch {
+      /* 不影响已提交的向量。 */
+    }
+  }
+}
+
+/** 书籍修订号与快照来自同一事务；派生向量写入另行失效，数据库重建自然隔离缓存。 */
 async function loadQuerySnapshot(bookId: string, language: AppLocale) {
   const db = await getDB();
-  const tx = db.transaction(['books', 'chapter-contents', 'chapter-embeddings'], 'readonly');
+  activeQueryDatabase = db;
+  chapterCacheChannel();
+  const tx = db.transaction(
+    ['books', 'chapter-contents', 'chapter-embeddings', 'book-revisions'],
+    'readonly',
+  );
+  const revision = await tx.objectStore('book-revisions').get(bookId);
+  let cache = querySnapshots.get(db);
+  if (!cache) {
+    cache = new Map();
+    querySnapshots.set(db, cache);
+  }
+  const key = `${bookId}:${language}:${CHAPTER_MODEL_VERSION}`;
+  const cached = cache.get(key);
+  if (revision && cached?.revision === revision.revision) {
+    cache.delete(key);
+    cache.set(key, cached);
+    await tx.done;
+    return cached.promise;
+  }
+  const promise = buildQuerySnapshot(tx, bookId, language);
+  // 旧数据库没有修订记录时不缓存，保持历史数据读路径的完整校验。
+  if (revision) {
+    const entry = { revision: revision.revision, promise };
+    cache.set(key, entry);
+    if (cache.size > QUERY_SNAPSHOT_LIMIT) cache.delete(cache.keys().next().value!);
+    const discard = () => {
+      if (cache.get(key) === entry) cache.delete(key);
+    };
+    void promise.then((snapshot) => {
+      if (!snapshot.chunks.length) discard();
+    }, discard);
+  }
+  return promise;
+}
+
+type QuerySnapshotTransaction = IDBPTransaction<
+  TsukuyomiDB,
+  ['books', 'chapter-contents', 'chapter-embeddings', 'book-revisions'],
+  'readonly'
+>;
+
+async function buildQuerySnapshot(
+  tx: QuerySnapshotTransaction,
+  bookId: string,
+  language: AppLocale,
+): Promise<ChapterQuerySnapshot> {
   const [book, rows] = await Promise.all([
     tx.objectStore('books').get(bookId),
     tx.objectStore('chapter-embeddings').index('by-bookId').getAll(bookId),
   ]);
   const inputs = new Map<string, ChapterInputState>();
-  for (const chapter of book?.volumes?.flatMap((volume) => volume.chapters ?? []) ?? []) {
-    const record = await tx.objectStore('chapter-contents').get(chapter.id);
-    const state = chapterInputState(book, chapter.id, record, language);
+  const chapters = book?.volumes?.flatMap((volume) => volume.chapters ?? []) ?? [];
+  const records = await Promise.all(
+    chapters.map((chapter) => tx.objectStore('chapter-contents').get(chapter.id)),
+  );
+  for (const [index, chapter] of chapters.entries()) {
+    const state = chapterInputState(book, chapter.id, records[index], language, chapter);
     if (state) inputs.set(chapter.id, state);
   }
   await tx.done;
@@ -726,12 +830,15 @@ export class ChapterEmbeddingService {
       const db = await getDB();
       const tx = db.transaction('chapter-embeddings', 'readwrite');
       const index = tx.store.index('by-chapterId');
+      const affectedBooks = new Set<string>();
       let cursor = await index.openCursor(chapterId);
       while (cursor) {
+        affectedBooks.add(cursor.value.bookId);
         await cursor.delete();
         cursor = await cursor.continue();
       }
       await tx.done;
+      for (const bookId of affectedBooks) invalidateQuerySnapshot(db, bookId);
     } catch (error) {
       console.warn(`[ChapterEmbeddingService] deleteChunksForChapter(${chapterId}) 失败:`, error);
     }
@@ -802,6 +909,7 @@ export class ChapterEmbeddingService {
       }
 
       await tx.done;
+      invalidateQuerySnapshot(db, bookId);
     } catch (error) {
       console.error(`[ChapterEmbeddingService] writeChunksForChapter(${chapterId}) 失败:`, error);
       throw error;
@@ -835,6 +943,7 @@ export class ChapterEmbeddingService {
       cursor = await cursor.continue();
     }
     await tx.done;
+    invalidateQuerySnapshot(db, lookup.bookId);
   }
 
   /**
@@ -842,8 +951,11 @@ export class ChapterEmbeddingService {
    * - 章节不存在 / 段落为空:清空该章 chunk(可能之前存在)
    * - EmbeddingService 未就绪:抛错,由调用方(EmbeddingQueue)决定重试
    */
-  static async embedChapter(chapterId: string): Promise<void> {
-    if (!chapterId) return;
+  static async embedChapter(
+    chapterId: string,
+    shouldContinue: () => Promise<boolean> = () => Promise.resolve(true),
+  ): Promise<boolean> {
+    if (!chapterId) return true;
 
     // 定位 book 与 chapter title(直接扫 IndexedDB books,
     // 避免 import stores/books 形成循环依赖)
@@ -851,22 +963,33 @@ export class ChapterEmbeddingService {
     if (!lookup) {
       // 章节已不存在(可能已被删除),顺便清一下残留
       await this.deleteChunksForChapter(chapterId);
-      return;
+      return true;
     }
     const { bookId } = lookup;
     const snapshot = await loadChapterInput(bookId, chapterId);
-    if (!snapshot) return;
+    if (!snapshot) return true;
     const { contentDrafts, titleInput, batchInputs } = snapshot;
     if (batchInputs.length === 0) {
       await this.writeChunksForChapter(chapterId, bookId, [], snapshot);
-      return;
+      return true;
     }
 
     if (!EmbeddingService.isReady()) {
       throw new Error('EmbeddingService 未就绪');
     }
 
-    const vectors = await EmbeddingService.embedBatch(batchInputs, 'document');
+    const vectors: Array<Float32Array | null> = [];
+    for (let offset = 0; offset < batchInputs.length; offset += CHAPTER_EMBED_BATCH_SIZE) {
+      if (!(await shouldContinue())) return false;
+      vectors.push(
+        ...(await EmbeddingService.embedBatch(
+          batchInputs.slice(offset, offset + CHAPTER_EMBED_BATCH_SIZE),
+          'document',
+        )),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    if (!(await shouldContinue())) return false;
 
     const chunks: Array<{
       kind: ChapterEmbeddingKind;
@@ -905,6 +1028,7 @@ export class ChapterEmbeddingService {
     }
 
     await this.writeChunksForChapter(chapterId, bookId, chunks, snapshot);
+    return true;
   }
 
   /**

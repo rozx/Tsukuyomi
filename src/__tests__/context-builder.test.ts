@@ -14,6 +14,7 @@ import { EmbeddingService } from 'src/services/embedding-service';
 import { MEMORY_EMBEDDING_VERSION } from 'src/utils/memory-embedding-lookup';
 import type { Memory } from 'src/models/memory';
 import type { Terminology, CharacterSetting } from 'src/models/novel';
+import { useSettingsStore } from '../stores/settings';
 
 function makeMemory(id: string, overrides: Partial<Memory> = {}): Memory {
   const mem: Memory = {
@@ -48,6 +49,7 @@ const characters: CharacterSetting[] = [
 
 describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
   beforeEach(() => {
+    useSettingsStore().settings.enableLocalEmbedding = true;
     clearChunkEmbeddingCache();
     clearLastScoreBreakdowns();
   });
@@ -56,6 +58,25 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
     mock.restore();
     clearChunkEmbeddingCache();
     clearLastScoreBreakdowns();
+  });
+
+  test('模型仍就绪时关闭总开关，注入降级且不再计算查询向量', async () => {
+    useSettingsStore().settings.enableLocalEmbedding = false;
+    spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue([
+      makeMemory('keyword', {
+        summary: '魔法',
+        embeddings: [[1, 0]],
+        embeddingModel: MEMORY_EMBEDDING_VERSION,
+      }),
+    ]);
+    spyOn(EmbeddingService, 'isReady').mockReturnValue(true);
+    const embed = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([
+      new Float32Array([1, 0]),
+    ]);
+    const selected = await selectRelevantMemoriesForChunk('book-1', '魔法', terms);
+    expect(embed).not.toHaveBeenCalled();
+    expect(selected.memories.map((memory) => memory.id)).toEqual(['keyword']);
+    expect(selected.breakdowns.keyword?.scoringMode).toBe('fallback');
   });
 
   test('高关键词覆盖的记忆被选中，弱匹配不用于凑数', async () => {
@@ -121,6 +142,39 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
     const result = await getRelatedMemoriesForChunk('book-1', 'some text');
 
     expect(result).toContain('[legacy]');
+  });
+
+  test('注入预算包含标题、ID 和换行，超长首条不会挤掉后续短摘要', async () => {
+    useSettingsStore().settings.memoryInjection!.charBudget = 500;
+    spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue([
+      makeMemory('too-large', { summary: `魔法${'长'.repeat(600)}` }),
+      makeMemory('fits', { summary: `魔法${'短'.repeat(470)}` }),
+      makeMemory('overflow', { summary: '魔法补充' }),
+    ]);
+    spyOn(EmbeddingService, 'isReady').mockReturnValue(false);
+    const prompt = await getRelatedMemoriesForChunk('book-1', '魔法', 15, undefined, terms);
+    expect(prompt.length).toBeLessThanOrEqual(500);
+    expect(prompt).not.toContain('[too-large]');
+    expect(prompt).toContain('[fits]');
+  });
+
+  test('异常兜底和 legacy 注入也遵守完整提示词预算', async () => {
+    useSettingsStore().settings.memoryInjection!.charBudget = 500;
+    spyOn(MemoryService, 'getAllBookMemories').mockRejectedValue(new Error('db error'));
+    spyOn(MemoryService, 'getRecentMemories').mockResolvedValue([
+      makeMemory('oversize', { summary: '长'.repeat(600) }),
+      makeMemory('fallback-a', { summary: '甲'.repeat(300) }),
+      makeMemory('fallback-b', { summary: '乙'.repeat(300) }),
+    ]);
+    const selected = await selectRelevantMemoriesForChunk('book-1', 'text');
+    expect(selected.memories.map((memory) => memory.id)).toEqual(['fallback-a']);
+    for (const getPrompt of [getRelatedMemoriesForChunk, getRelatedMemoriesForChunkLegacy]) {
+      const prompt = await getPrompt('book-1', 'text');
+      expect(prompt.length).toBeLessThanOrEqual(500);
+      expect(prompt).toContain('[fallback-a]');
+      expect(prompt).not.toContain('[oversize]');
+      expect(prompt).not.toContain('[fallback-b]');
+    }
   });
 
   test('空书籍 / 空文本返回空字符串', async () => {

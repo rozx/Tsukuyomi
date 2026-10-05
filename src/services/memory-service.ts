@@ -10,6 +10,7 @@ import type { Memory } from 'src/models/memory';
 import { memoryModifiedAt } from 'src/utils/memory-timestamps';
 import type { ScoredMemory } from 'src/services/memory-scoring';
 import { splitTextForEmbedding } from 'src/utils/embedding-text-segments';
+import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
 
 type MemoryStore = MemoryWriteStore;
 type MemoryBookIdIndex = IDBPIndex<
@@ -710,7 +711,10 @@ export class MemoryService {
       let expectedModelVersion: string | undefined;
       try {
         const { EmbeddingService } = await import('src/services/embedding-service');
-        if (EmbeddingService.isReady()) {
+        if (
+          isLocalEmbeddingEffectivelyEnabled(useSettingsStore().settings.enableLocalEmbedding) &&
+          EmbeddingService.isReady()
+        ) {
           const querySegments = splitTextForEmbedding(queryText, {
             targetChars: 800,
             maxSegments: 4,

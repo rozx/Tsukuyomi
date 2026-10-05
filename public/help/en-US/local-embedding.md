@@ -89,7 +89,7 @@ The active queue shows:
 - ETA based on the latest five batch durations
 - Current book ID, even while viewing another book
 
-Memory batches use `BATCH_SIZE = 8`. Each chapter is processed separately, with its chunks in one inference batch, to control memory peaks.
+Memory and chapter vectors are computed in batches of at most eight inputs. Interactive queries take priority over waiting background batches. Chapters can pause between batches; unfinished chapters remain queued and restart on resume, with results saved only after the whole chapter finishes. Panel statistics are read while the drawer is open, with updates from the same batch combined.
 
 ---
 

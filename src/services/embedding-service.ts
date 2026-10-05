@@ -12,10 +12,7 @@
  */
 
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
-import {
-  createCustomEventSubscriber,
-  dispatchCustomEvent,
-} from 'src/utils/dispatch-custom-event';
+import { createCustomEventSubscriber, dispatchCustomEvent } from 'src/utils/dispatch-custom-event';
 
 export const MODEL_ID = 'onnx-community/gte-multilingual-base';
 // 模型 id + 截取维度 + 输入方案 + pooling 方案共同构成 embedding 空间身份,任一变化必须 bump 版本号,
@@ -84,7 +81,6 @@ export interface EmbeddingProgressEvent {
   aggregatePercent?: number;
 }
 
- 
 type FeatureExtractionPipeline = (
   input: string | string[],
   options?: Record<string, unknown>,
@@ -95,6 +91,11 @@ type FeatureExtractionPipeline = (
  * 单例 Service。浏览器只需要一份 pipeline 实例。
  */
 export class EmbeddingService {
+  private static readonly QUERY_CACHE_LIMIT = 128;
+  private static readonly queryCache = new Map<string, Promise<Float32Array | null>>();
+  private static readonly inferenceQueue: Array<{ task: EmbeddingTask; run: () => Promise<void> }> =
+    [];
+  private static inferenceRunning = false;
   private static pipeline: FeatureExtractionPipeline | null = null;
   private static status: EmbeddingStatus = 'idle';
   private static initPromise: Promise<void> | null = null;
@@ -307,9 +308,7 @@ export class EmbeddingService {
         // - WebGPU 支持: q4f16 (~567MB, 推理 5-10x 快于 WASM)
         // - WASM 回落:  q8  (~614MB, 兼容性最好)
         const config = this.pickConfig();
-        console.info(
-          `[EmbeddingService] 使用后端 ${config.device} + dtype ${config.dtype}`,
-        );
+        console.info(`[EmbeddingService] 使用后端 ${config.device} + dtype ${config.dtype}`);
         const extractor = await pipeline('feature-extraction', MODEL_ID, {
           dtype: config.dtype,
           device: config.device,
@@ -352,7 +351,11 @@ export class EmbeddingService {
           const delay = this.RETRY_DELAYS[this.retryCount] ?? 20000;
           this.retryCount++;
           this.setStatus('loading'); // 保持 loading 状态表示仍在尝试
-          this.dispatch('error', { error: this.lastError, retrying: true, retryCount: this.retryCount });
+          this.dispatch('error', {
+            error: this.lastError,
+            retrying: true,
+            retryCount: this.retryCount,
+          });
           console.info(`[EmbeddingService] 将在 ${delay / 1000}s 后重试...`);
           await new Promise((r) => setTimeout(r, delay));
           this.initPromise = null;
@@ -383,6 +386,7 @@ export class EmbeddingService {
    * 模型文件已被浏览器 Cache API 缓存,重新加载不需要重新下载。
    */
   static async reload(): Promise<void> {
+    this.clearQueryCache();
     this.pipeline = null;
     this.status = 'idle';
     this.initPromise = null;
@@ -409,12 +413,23 @@ export class EmbeddingService {
       // 不主动 init — 调用方应先显式 warmup/init
       return null;
     }
-    try {
+    if (task === 'query') {
+      const cached = this.getCachedQuery(text);
+      if (cached) return cached;
+      return this.cacheQuery(text, this.embedSingle(text, task));
+    }
+    return this.embedSingle(text, task);
+  }
 
-      const output = await this.pipeline!(prepareTaskText(text, task), {
-        pooling: POOLING,
-        normalize: false, // 我们手动取 DIMENSIONS 维并做 L2 归一化
-      });
+  private static async embedSingle(
+    text: string,
+    task: EmbeddingTask,
+  ): Promise<Float32Array | null> {
+    const pipeline = this.pipeline!;
+    try {
+      const output = await this.scheduleInference(task, () =>
+        pipeline(prepareTaskText(text, task), { pooling: POOLING, normalize: false }),
+      );
       return this.extractFirstVector(output);
     } catch (error) {
       console.warn('[EmbeddingService] embed 失败:', error);
@@ -434,7 +449,103 @@ export class EmbeddingService {
   ): Promise<Array<Float32Array | null>> {
     if (!texts || texts.length === 0) return [];
     if (!this.isReady()) return texts.map(() => null);
+    if (task === 'query') return this.embedQueryBatch(texts);
+    return this.embedUncachedBatch(texts, task);
+  }
 
+  /** 查询只缓存向量，记忆/章节的评分始终使用当前数据。失败结果可重新计算。 */
+  static clearQueryCache(): void {
+    this.queryCache.clear();
+  }
+
+  private static queryKey(text: string): string {
+    return `${MODEL_VERSION}:query:${text}`;
+  }
+
+  private static getCachedQuery(text: string): Promise<Float32Array | null> | undefined {
+    const key = this.queryKey(text);
+    const cached = this.queryCache.get(key);
+    if (cached) {
+      this.queryCache.delete(key);
+      this.queryCache.set(key, cached);
+    }
+    return cached;
+  }
+
+  private static cacheQuery(
+    text: string,
+    promise: Promise<Float32Array | null>,
+  ): Promise<Float32Array | null> {
+    const key = this.queryKey(text);
+    this.queryCache.set(key, promise);
+    if (this.queryCache.size > this.QUERY_CACHE_LIMIT) {
+      const oldest = this.queryCache.keys().next().value;
+      if (oldest !== undefined) this.queryCache.delete(oldest);
+    }
+    void promise.then((vector) => {
+      if (!vector && this.queryCache.get(key) === promise) this.queryCache.delete(key);
+    });
+    return promise;
+  }
+
+  private static async embedQueryBatch(texts: string[]): Promise<Array<Float32Array | null>> {
+    const jobs: Array<{ text: string; resolve: (vector: Float32Array | null) => void }> = [];
+    const pending = texts.map((text) => {
+      if (!text?.trim()) return Promise.resolve(null);
+      const cached = this.getCachedQuery(text);
+      if (cached) return cached;
+      const deferred = Promise.withResolvers<Float32Array | null>();
+      jobs.push({ text, resolve: deferred.resolve });
+      return this.cacheQuery(text, deferred.promise);
+    });
+    if (jobs.length) {
+      const vectors = await this.embedUncachedBatch(
+        jobs.map((job) => job.text),
+        'query',
+      );
+      jobs.forEach((job, index) => job.resolve(vectors[index] ?? null));
+    }
+    return Promise.all(pending);
+  }
+
+  /** 同一 pipeline 串行执行；查询可在后台批次之间优先运行。 */
+  private static scheduleInference<T>(task: EmbeddingTask, work: () => Promise<T>): Promise<T> {
+    const result = new Promise<T>((resolve, reject) => {
+      this.inferenceQueue.push({
+        task,
+        run: async () => {
+          try {
+            resolve(await work());
+          } catch (error) {
+            reject(error instanceof Error ? error : new Error(String(error)));
+          }
+        },
+      });
+    });
+    void this.drainInferenceQueue();
+    return result;
+  }
+
+  private static async drainInferenceQueue(): Promise<void> {
+    if (this.inferenceRunning) return;
+    this.inferenceRunning = true;
+    try {
+      while (this.inferenceQueue.length) {
+        const queryIndex = this.inferenceQueue.findIndex((job) => job.task === 'query');
+        const [job] = this.inferenceQueue.splice(queryIndex < 0 ? 0 : queryIndex, 1);
+        await job!.run();
+        // 给页面交互和队列暂停留出机会。
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    } finally {
+      this.inferenceRunning = false;
+    }
+  }
+
+  private static async embedUncachedBatch(
+    texts: string[],
+    task: EmbeddingTask,
+  ): Promise<Array<Float32Array | null>> {
     // 过滤空文本但保留位置映射
     const indexed: Array<{ idx: number; text: string }> = [];
     texts.forEach((t, idx) => {
@@ -443,14 +554,16 @@ export class EmbeddingService {
     if (indexed.length === 0) return texts.map(() => null);
 
     const result: Array<Float32Array | null> = texts.map(() => null);
+    const pipeline = this.pipeline!;
     try {
-
-      const output = await this.pipeline!(
-        indexed.map((e) => prepareTaskText(e.text, task)),
-        {
-          pooling: POOLING,
-          normalize: false,
-        },
+      const output = await this.scheduleInference(task, () =>
+        pipeline(
+          indexed.map((e) => prepareTaskText(e.text, task)),
+          {
+            pooling: POOLING,
+            normalize: false,
+          },
+        ),
       );
       const vectors = this.extractBatchVectors(output, indexed.length);
       indexed.forEach((entry, i) => {
@@ -552,6 +665,7 @@ export class EmbeddingService {
    * 测试专用:重置内部状态。
    */
   static __resetForTesting(): void {
+    this.clearQueryCache();
     this.pipeline = null;
     this.status = 'idle';
     this.initPromise = null;

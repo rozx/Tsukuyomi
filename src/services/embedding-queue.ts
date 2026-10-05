@@ -501,7 +501,7 @@ export class EmbeddingQueue {
       if (head.kind === 'memory') {
         await this.processMemoryBatch(batchItems.map((item) => item.id));
       } else {
-        await this.processChapter(batchItems[0]!.id);
+        if (!(await this.processChapter(batchItems[0]!))) return;
       }
     } catch (error) {
       console.warn('[EmbeddingQueue] 批处理失败,继续下一批:', error);
@@ -644,12 +644,19 @@ export class EmbeddingQueue {
   /**
    * 处理单个 chapter(内部切 chunk、batch embed、原子写入)
    */
-  private static async processChapter(chapterId: string): Promise<void> {
-    try {
-      await ChapterEmbeddingService.embedChapter(chapterId);
-    } finally {
-      this.completed.chapter += 1;
+  private static async processChapter(item: QueueItem): Promise<boolean> {
+    const completed = await ChapterEmbeddingService.embedChapter(
+      item.id,
+      async () => !this.paused && (await this.isLocalEmbeddingEnabled()),
+    );
+    if (completed === false) {
+      if (!this.pending.some((pending) => pending.kind === 'chapter' && pending.id === item.id)) {
+        this.pending.unshift(item);
+      }
+      return false;
     }
+    this.completed.chapter += 1;
+    return true;
   }
 
   // ==========================================================================
