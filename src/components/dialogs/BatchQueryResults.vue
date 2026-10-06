@@ -16,12 +16,12 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="flex items-center justify-between text-xs text-moon/60">
+  <div class="results-heading">
     <span>
       {{ t('embeddingUi.queryResults', { target: targetLabel }) }}
-      <span class="opacity-70">({{ results.length }})</span>
+      <span class="results-count">{{ results.length }}</span>
     </span>
-    <span class="opacity-70">{{
+    <span class="results-hint">{{
       t('embeddingUi.clickResult', {
         action:
           lastTarget === 'chapter'
@@ -31,37 +31,35 @@ const emit = defineEmits<{
     }}</span>
   </div>
 
-  <div
-    v-if="results.length === 0"
-    class="text-sm text-moon/60 italic py-4 text-center border border-white/5 rounded"
-  >
-    {{ t('embeddingUi.noMatches') }}
+  <div v-if="results.length === 0" class="results-empty" role="status">
+    <i class="pi pi-search" aria-hidden="true" />
+    <span>{{ t('embeddingUi.noMatches') }}</span>
   </div>
 
-  <ul v-else class="flex flex-col gap-2 m-0 p-0 list-none min-w-0">
+  <ul v-else class="results-list">
     <li
       v-for="(item, idx) in results"
       :key="idx"
       role="button"
       tabindex="0"
-      class="flex flex-col gap-1 p-3 bg-white/5 rounded border border-white/5 result-row cursor-pointer transition-colors min-w-0 overflow-hidden"
+      class="result-row"
       @click="emit('select', item)"
       @keydown.enter.prevent="emit('select', item)"
       @keydown.space.prevent="emit('select', item)"
     >
-      <div class="flex items-center justify-between gap-3 min-w-0">
-        <span class="font-medium text-moon-100 truncate min-w-0 flex-1">
-          {{ idx + 1 }}.
+      <div class="result-heading">
+        <span class="result-rank">{{ idx + 1 }}</span>
+        <span class="result-title" :title="item.title">
           {{
             item.title ||
             t(item.kind === 'chapter' ? 'embeddingUi.noTitle' : 'embeddingUi.noSummary')
           }}
         </span>
-        <span class="font-mono text-xs text-primary-400 shrink-0">
+        <span class="result-score" :title="t('embeddingUi.queryScore')">
           {{ item.score.toFixed(3) }}
         </span>
       </div>
-      <div v-if="item.preview" class="text-sm text-moon/70 line-clamp-3 preview-text">
+      <div v-if="item.preview" class="line-clamp-3 preview-text">
         {{ item.preview }}
       </div>
     </li>
@@ -69,15 +67,135 @@ const emit = defineEmits<{
 </template>
 
 <style scoped>
+.results-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  color: var(--moon-opacity-75);
+  font-size: 11px;
+}
+
+.results-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 5px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--white-opacity-6);
+  color: var(--moon-opacity-70);
+  font-variant-numeric: tabular-nums;
+}
+
+.results-hint {
+  color: var(--moon-opacity-45);
+  font-size: 10px;
+}
+
+.results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.result-row {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-width: 0;
+  padding: 13px 14px;
+  background: var(--white-opacity-3);
+  border: 1px solid var(--white-opacity-8);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease;
+}
+
+.result-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.result-rank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--white-opacity-5);
+  color: var(--moon-opacity-50);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.result-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--moon-opacity-90);
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-score {
+  flex-shrink: 0;
+  padding: 3px 6px;
+  border: 1px solid rgba(109, 136, 168, 0.18);
+  border-radius: 6px;
+  background: rgba(109, 136, 168, 0.08);
+  color: #a3b7cf;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.results-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 16px;
+  border: 1px dashed var(--white-opacity-10);
+  border-radius: 10px;
+  color: var(--moon-opacity-50);
+  font-size: 12px;
+}
+
+.results-empty i {
+  color: var(--moon-opacity-40);
+  font-size: 20px;
+}
+
 .result-row:hover {
   background-color: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.15);
 }
 .result-row:focus-visible {
-  outline: 2px solid var(--primary-400, #a5b4fc);
+  outline: 2px solid #a3b7cf;
   outline-offset: 2px;
 }
 .preview-text {
+  color: var(--moon-opacity-65);
+  font-size: 12px;
+  line-height: 1.65;
   overflow-wrap: anywhere;
   word-break: break-word;
 }

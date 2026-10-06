@@ -6,15 +6,15 @@ const { t: i18nT } = useI18n();
  * 桌面右侧面板的折叠态纯图标竖排栏。从 AppRightPanelDesktop 拆出，
  * 让父模板只保留「折叠 rail / 展开面板」的二选一，降低模板圈复杂度。
  */
-import { computed, ref } from 'vue';
-import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
+import { computed } from 'vue';
+import BatchEmbeddingsButton from 'src/components/novel/BatchEmbeddingsButton.vue';
+import { useBatchEmbeddingsPanel } from 'src/composables/useBatchEmbeddingsPanel';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 
 interface Props {
   activeRightTab: 'chat' | 'progress';
   rightPanelOpen: boolean;
   activeTranslationTaskCount: number;
-  showBatchEmbeddings: boolean;
 }
 
 const props = defineProps<Props>();
@@ -28,10 +28,7 @@ const progressBadge = computed(() =>
   props.activeTranslationTaskCount > 99 ? '99+' : props.activeTranslationTaskCount,
 );
 
-const batchEmbeddingsPanelRef = ref<{ toggle: () => void } | null>(null);
-const toggleBatchEmbeddingsPanel = () => {
-  batchEmbeddingsPanelRef.value?.toggle();
-};
+const { isAvailable: showBatchEmbeddings } = useBatchEmbeddingsPanel();
 </script>
 
 <template>
@@ -62,21 +59,10 @@ const toggleBatchEmbeddingsPanel = () => {
 
     <template v-if="showBatchEmbeddings">
       <div class="rp-rail-sep" />
-      <button
-        type="button"
-        class="rp-rail-item rail-base-btn"
-        :aria-label="i18nT('libraryUi.vectors')"
-        :title="i18nT('libraryUi.vectors')"
-        @click="toggleBatchEmbeddingsPanel"
-      >
-        <i class="pi pi-bolt" aria-hidden="true" />
-      </button>
+      <BatchEmbeddingsButton class="rp-rail-item rail-base-btn" />
     </template>
 
     <div class="rp-rail-spacer" />
-
-    <!-- 仅在书籍详情路由下挂载：避免在无关页面上订阅 EmbeddingQueue/Service/Memory 事件并触发 DB 查询 -->
-    <BatchEmbeddingsPanel v-if="showBatchEmbeddings" ref="batchEmbeddingsPanelRef" />
   </aside>
 </template>
 

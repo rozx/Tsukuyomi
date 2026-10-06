@@ -91,6 +91,8 @@ watch(
       lockedByThisInstance = false;
     }
   },
+  // 打开中切换到手机布局时，sheet 首次挂载就是 visible=true，也需要锁定背景滚动。
+  { immediate: true },
 );
 
 onBeforeUnmount(() => {

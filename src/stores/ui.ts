@@ -91,6 +91,7 @@ export const useUiStore = defineStore('ui', {
     isLoaded: boolean;
     assistantInputMessage: string | null; // 要复制到助手输入框的消息
     activeRightTab: ActiveRightTab; // 右侧面板当前激活的 Tab
+    batchEmbeddingsPanelOpen: boolean; // 向量面板跨布局共享，不持久化
   } => ({
     sideMenuOpen: true,
     rightPanelOpen: false,
@@ -101,6 +102,7 @@ export const useUiStore = defineStore('ui', {
     isLoaded: false,
     assistantInputMessage: null,
     activeRightTab: 'chat',
+    batchEmbeddingsPanelOpen: false,
   }),
 
   actions: {

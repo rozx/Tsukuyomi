@@ -205,6 +205,32 @@ describe('章节段落重排', () => {
     expect(results[0]?.chapter_id).toBe('c0');
   });
 
+  it('重排等待期间同一输入的向量重算不使正在进行的查询失效', async () => {
+    await seedBook();
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    spyOn(EmbeddingService, 'embedBatch').mockImplementation(async (texts) => {
+      entered.resolve();
+      await release.promise;
+      return texts.map(focusedVector);
+    });
+    const pending = ChapterEmbeddingService.queryChapters('rerank-book', QUERY);
+    // 先捕获结果，避免红测试中的预期拒绝成为未处理异常。
+    const settled = pending.then(
+      (results) => ({ results }),
+      (error: unknown) => ({ error }),
+    );
+    await entered.promise;
+    const [old] = await ChapterEmbeddingService.getChunksForChapter('c6');
+    spyOn(Date, 'now').mockReturnValue(old!.updatedAt + 1);
+    await ChapterEmbeddingService.writeChunksForChapter('c6', 'rerank-book', [old!]);
+    release.resolve();
+    const result = await settled;
+    expect('error' in result).toBe(false);
+    if ('results' in result)
+      expect(result.results.map((match) => match.chapter_id)).toContain('c6');
+  });
+
   for (const change of ['target', 'source', 'target-with-inference-failure'] as const) {
     it(`重排等待期间 ${change} 变化，旧快照不能作为新结果返回`, async () => {
       await seedBook();

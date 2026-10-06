@@ -10,7 +10,7 @@
  * 页面（RouterView）也只在这里渲染一次，经 Teleport 放进当前变体的 `#route-outlet-<variant>`。
  * 断点切换只移动页面 DOM，页面组件不会随外壳一起重新挂载，页面状态得以保留。
  */
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { RouterView } from 'vue-router';
 import { useDeviceVariant } from 'src/composables/useDeviceVariant';
 import { useMainLayoutShell } from 'src/composables/main-layout/useMainLayoutShell';
@@ -21,9 +21,19 @@ import AskUserDialog from 'src/components/dialogs/AskUserDialog.vue';
 import QuickStartGuideDialog from 'src/components/dialogs/QuickStartGuideDialog.vue';
 import Toast from 'primevue/toast';
 import ConfirmDialog from 'primevue/confirmdialog';
+import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
+import { useBatchEmbeddingsPanel } from 'src/composables/useBatchEmbeddingsPanel';
 
 const { variant } = useDeviceVariant();
 const { handleToastClose, quickStartGuideVisible, dismissQuickStartGuide } = useMainLayoutShell();
+const {
+  bookId,
+  isAvailable: embeddingsAvailable,
+  visible: embeddingsVisible,
+} = useBatchEmbeddingsPanel();
+watch([bookId, embeddingsAvailable], () => {
+  embeddingsVisible.value = false;
+});
 
 const variantComponent = computed(() => {
   switch (variant.value) {
@@ -51,4 +61,9 @@ const variantComponent = computed(() => {
   <ConfirmDialog group="force-sync" />
   <AskUserDialog />
   <QuickStartGuideDialog :visible="quickStartGuideVisible" @dismiss="dismissQuickStartGuide" />
+  <BatchEmbeddingsPanel
+    v-if="embeddingsAvailable"
+    :key="bookId"
+    v-model:visible="embeddingsVisible"
+  />
 </template>

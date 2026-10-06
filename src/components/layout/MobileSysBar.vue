@@ -11,6 +11,7 @@ import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
+import BatchEmbeddingsButton from 'src/components/novel/BatchEmbeddingsButton.vue';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 import { APP_VERSION } from 'src/constants/version';
@@ -53,6 +54,7 @@ const openHelp = () => {
     </div>
 
     <div class="sys-actions">
+      <BatchEmbeddingsButton class="tsm-sys-chip" />
       <!-- AI thinking -->
       <button
         v-if="thinking"

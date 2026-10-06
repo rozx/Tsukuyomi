@@ -21,7 +21,7 @@ When disabled:
 
 - Relevance falls back to keyword/recency weights of 0.75/0.25. Similar meaning expressed differently may be missed.
 - `query_chapter` and its prompt guidance are removed.
-- Batch indexing shows Disabled and locks writes.
+- The Vector index entry is hidden and any open index panel closes.
 
 ---
 
@@ -38,7 +38,7 @@ When disabled:
 
 ### Backends {#local-embedding-section-5}
 
-The app first checks for an available WebGPU adapter and device. If none is available, it loads WASM directly. Both backends use the same default artifact.
+Model loading, tokenization, and inference run locally in a dedicated browser Worker, without a server. WASM uses one thread inside the Worker and does not require cross-origin isolation. The Worker first checks for an available WebGPU adapter and device. If none is available, it loads WASM directly. Both backends use the same default artifact.
 
 | Backend    | Artifact and computation                         | Size     | Use                                                    |
 | :--------- | :----------------------------------------------- | :------- | :----------------------------------------------------- |
@@ -68,6 +68,8 @@ Physical mobile platform detection locks the switch off. Browser WASM memory lim
 
 The entry appears in book details and opens a drawer for inspecting and controlling the queue.
 
+Availability follows the effective local embeddings setting, independently of layout breakpoints. The entry is in the right tool rail on desktop and tablet layouts, and in the top bar on narrow layouts. Resizing a desktop browser does not disable it; physical mobile restrictions still apply. An open panel stays open when the layout changes. Mobile layouts use the same bottom sheet as the assistant and translation progress; desktop and tablet layouts use a right-side drawer.
+
 ### Status and counts {#local-embedding-section-9}
 
 - Service: `idle` / `loading` / `ready` / `failed`, with `webgpu` or `wasm`.
@@ -91,7 +93,7 @@ The active queue shows:
 - ETA based on the latest five batch durations
 - Current book ID, even while viewing another book
 
-Memory and chapter vectors are computed in batches of at most eight inputs. Interactive queries take priority over waiting background batches. Chapters can pause between batches; unfinished chapters remain queued and restart on resume, with results saved only after the whole chapter finishes. Panel statistics are read while the drawer is open, with updates from the same batch combined.
+Background memory and chapter inference uses groups of at most four inputs, split by length to reduce padding overhead. Interactive queries and paragraph reranking use groups of at most eight and take priority over waiting background jobs. Pauses between background batches reduce sustained CPU / GPU use, so whole-book rebuilds may take longer. Chapters can pause between batches; unfinished chapters remain queued and restart on resume, with results saved only after the whole chapter finishes. Panel statistics are read while the drawer is open, with updates from the same batch combined.
 
 ---
 
@@ -135,7 +137,7 @@ The panel shows a sync suspension banner until the gate opens.
 - Read console errors prefixed `[EmbeddingService]`.
   - WebGPU driver incompatibility falls back to WASM; if WASM fails too, memory may be insufficient.
   - A long background-tab pause during first loading may time out. Reopen the app; cached startup is faster.
-- Reload in the batch panel clears WebGPU exclusion and initializes again.
+- Reload in the batch panel releases the old model and checks WebGPU again. After a Worker crash or request timeout, unfinished jobs remain queued and resume when the model recovers. Incomplete chapters never replace a saved chapter cache.
 
 ### Poor retrieval {#local-embedding-section-17}
 

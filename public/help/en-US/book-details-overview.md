@@ -101,7 +101,7 @@ Two full-screen views:
 >
 > Translation settings are in the reader gear sheet's Global settings tab. Check updates opens `/books/:id/settings/update` full-screen from the book overview.
 >
-> Mobile has no right rail or vector index panel. Physical mobile devices disable embeddings; keyword/recency memory selection remains, while `query_chapter` is unavailable.
+> Narrow layouts have no right rail. A desktop browser resized to this layout can open Vector index from the top bar when local embeddings are enabled. Physical mobile devices still disable embeddings; keyword/recency memory selection remains, while `query_chapter` is unavailable.
 
 ---
 

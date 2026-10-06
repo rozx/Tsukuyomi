@@ -284,8 +284,6 @@ async function handleMemoryDelete(memory: Memory): Promise<void> {
     });
   }
 }
-
-const handleClose = () => emit('update:visible', false);
 </script>
 
 <template>
@@ -293,30 +291,40 @@ const handleClose = () => emit('update:visible', false);
     :visible="visible"
     :header="t('embeddingUi.testQuery')"
     :eyebrow="t('embeddingUi.title')"
-    desktop-width="52rem"
+    desktop-width="42rem"
+    tablet-width="min(42rem, 92vw)"
+    tablet-height="auto"
+    sheet-min-height="auto"
+    dialog-class="vector-query-dialog"
     @update:visible="emit('update:visible', $event)"
   >
-    <div class="flex flex-col gap-4 min-w-0">
-      <div class="space-y-2">
-        <label class="text-sm text-moon/80">{{ t('embeddingUi.query') }}</label>
-        <InputText
-          v-model="query"
-          :placeholder="t('embeddingUi.queryPlaceholder')"
-          class="w-full"
-          autofocus
-          @keydown.enter.prevent="handleEnter"
-        />
-        <div class="text-xs text-moon/60">{{ t('embeddingUi.queryHint') }}</div>
+    <div class="vq-body">
+      <p class="vq-intro">{{ t('embeddingUi.queryIntro') }}</p>
+      <div class="vq-form">
+        <label for="vector-query-input" class="vq-label">{{ t('embeddingUi.query') }}</label>
+        <div class="vq-search">
+          <i class="pi pi-search vq-search-icon" aria-hidden="true" />
+          <InputText
+            id="vector-query-input"
+            v-model="query"
+            :placeholder="t('embeddingUi.queryPlaceholder')"
+            aria-describedby="vector-query-hint"
+            class="vq-input"
+            autofocus
+            @keydown.enter.prevent="handleEnter"
+          />
+        </div>
+        <div id="vector-query-hint" class="vq-hint">{{ t('embeddingUi.queryHint') }}</div>
       </div>
 
-      <div class="flex gap-2">
+      <div class="vq-actions">
         <Button
           :label="t('embeddingUi.queryChapters')"
           icon="pi pi-book"
           severity="secondary"
           :disabled="!canRun"
           :loading="isChapterLoading"
-          class="flex-1"
+          class="vq-button vq-button-primary"
           @click="() => runQuery('chapter')"
         />
         <Button
@@ -325,35 +333,35 @@ const handleClose = () => emit('update:visible', false);
           severity="secondary"
           :disabled="!canRun"
           :loading="isMemoryLoading"
-          class="flex-1"
+          class="vq-button"
           @click="() => runQuery('memory')"
         />
       </div>
 
-      <div
-        v-if="errorMessage"
-        class="text-sm text-red-400 bg-red-500/10 border border-red-500/30 rounded p-2"
-      >
-        <i class="pi pi-exclamation-triangle mr-1"></i>{{ errorMessage }}
+      <div v-if="errorMessage" class="vq-error" role="alert">
+        <i class="pi pi-exclamation-triangle" aria-hidden="true" />
+        <span>{{ errorMessage }}</span>
       </div>
 
-      <BatchQueryResults
-        v-else-if="showResults"
-        :results="results"
-        :target-label="targetLabel"
-        :last-target="lastTarget"
-        @select="handleResultClick"
-      />
-    </div>
+      <div v-else-if="loading" class="vq-state" role="status" aria-live="polite">
+        <i class="pi pi-spin pi-spinner vq-state-icon" aria-hidden="true" />
+        <p class="vq-state-title">{{ t('embeddingUi.queryLoading', { target: targetLabel }) }}</p>
+      </div>
 
-    <template #footer>
-      <Button
-        :label="t('embeddingUi.close')"
-        icon="pi pi-times"
-        class="p-button-text"
-        @click="handleClose"
-      />
-    </template>
+      <div v-else-if="showResults" class="vq-results" aria-live="polite">
+        <BatchQueryResults
+          :results="results"
+          :target-label="targetLabel"
+          :last-target="lastTarget"
+          @select="handleResultClick"
+        />
+      </div>
+      <div v-else class="vq-state">
+        <i class="pi pi-book vq-state-icon" aria-hidden="true" />
+        <p class="vq-state-title">{{ t('embeddingUi.queryIdleTitle') }}</p>
+        <p class="vq-state-hint">{{ t('embeddingUi.queryIdleHint') }}</p>
+      </div>
+    </div>
   </AdaptiveDialog>
 
   <MemoryDetailDialog
@@ -365,3 +373,234 @@ const handleClose = () => emit('update:visible', false);
     @delete="handleMemoryDelete"
   />
 </template>
+
+<style scoped>
+.vq-body {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 18px;
+  min-width: 0;
+}
+
+.vq-intro {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--moon-opacity-60);
+}
+
+.vq-form {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.vq-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--moon-opacity-80);
+}
+
+.vq-search {
+  position: relative;
+  min-width: 0;
+}
+
+.vq-search-icon {
+  position: absolute;
+  top: 50%;
+  left: 13px;
+  transform: translateY(-50%);
+  color: var(--moon-opacity-50);
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.vq-input {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px 12px 38px;
+  border: 1px solid var(--white-opacity-12);
+  border-radius: 10px;
+  background: var(--white-opacity-4);
+  color: var(--moon-opacity-100);
+  font-family: inherit;
+  font-size: 13px;
+  box-shadow: none;
+  transition: border-color 150ms ease;
+}
+
+.vq-input::placeholder {
+  color: var(--moon-opacity-40);
+}
+
+.vq-input:enabled:focus {
+  border-color: #a3b7cf;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(109, 136, 168, 0.12);
+}
+
+.vq-hint {
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--moon-opacity-50);
+}
+
+.vq-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vq-button {
+  min-width: 0;
+  min-height: 36px;
+  padding: 9px 14px;
+  gap: 7px;
+  background: var(--white-opacity-4);
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 8px;
+  color: var(--moon-opacity-80);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: none;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease;
+}
+
+.vq-button :deep(.p-button-icon) {
+  font-size: 13px;
+}
+
+.vq-button :deep(.p-button-label) {
+  white-space: normal;
+}
+
+.vq-button:not(:disabled):hover {
+  background: var(--white-opacity-8);
+  border-color: var(--white-opacity-20);
+}
+
+.vq-button:focus-visible {
+  outline: 2px solid #a3b7cf;
+  outline-offset: 3px;
+}
+
+.vq-button:disabled {
+  opacity: 0.4;
+}
+
+.vq-button-primary {
+  background: rgba(109, 136, 168, 0.16);
+  border-color: rgba(109, 136, 168, 0.32);
+  color: #c0d0e2;
+}
+
+.vq-button-primary:not(:disabled):hover {
+  background: rgba(109, 136, 168, 0.25);
+  border-color: rgba(109, 136, 168, 0.5);
+}
+
+.vq-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 18px;
+  border: 1px dashed var(--white-opacity-10);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.015);
+  text-align: center;
+}
+
+.vq-state-icon {
+  margin-bottom: 4px;
+  font-size: 21px;
+  color: #a3b7cf;
+}
+
+.vq-state-title,
+.vq-state-hint {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.vq-state-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--moon-opacity-75);
+}
+
+.vq-state-hint {
+  font-size: 11px;
+  color: var(--moon-opacity-45);
+}
+
+.vq-results {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.vq-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  background: rgba(248, 113, 113, 0.06);
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.vq-error i {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+</style>
+
+<style>
+.vector-query-dialog.p-dialog.p-component {
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 40px);
+  background: rgba(14, 17, 22, 0.98);
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.vector-query-dialog .p-dialog-header {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--white-opacity-6);
+}
+
+.vector-query-dialog.p-dialog .p-dialog-header .p-dialog-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--moon-opacity-90);
+}
+
+.vector-query-dialog .p-dialog-header-actions button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 50%;
+  background: var(--white-opacity-4);
+  color: var(--moon-opacity-70);
+}
+
+.vector-query-dialog .p-dialog-content {
+  padding: 20px 22px;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--white-opacity-20) transparent;
+}
+</style>

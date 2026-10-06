@@ -82,7 +82,7 @@ Terminology, character settings, memories, and chapter search give the AI contex
 
 - **World-building notes**: record complex factions, magic-system rules, and key foreshadowing.
 - **Semantic-first memory retrieval**: when embeddings are available, memories are scored by semantic similarity, keyword match, and time decay (weights 0.85 / 0.10 / 0.05). When embeddings are off or unavailable, scoring falls back to keywords and time decay (0.75 / 0.25). Scores are normalized to 0–1.0 and the most relevant memories are injected within a character budget.
-- **Local semantic embeddings (optional)**: a built-in `bekko-embedding-v1-a25m` multilingual encoder (Transformers.js) runs on WebGPU, with WASM fallback. Both backends share a compact default ONNX artifact of about 190 MiB. Embeddings stay local and use no AI API quota. Off by default; enable under **Settings → Local embeddings**. Disabled on physical mobile devices.
+- **Local semantic embeddings (optional)**: a built-in `bekko-embedding-v1-a25m` multilingual encoder (Transformers.js) runs on WebGPU, with WASM fallback. Both backends share a compact default ONNX artifact of about 190 MiB. Model loading and inference stay in a dedicated browser Worker. Background batches are throttled and searches take priority; no AI API quota is used. Off by default; enable under **Settings → Local embeddings**. Disabled on physical mobile devices.
 - **Hybrid search**: the `search_memories` tool accepts natural-language queries and ranks results by both keyword match and semantic vectors; with embeddings off it falls back to keywords + time decay.
 
 #### 4. 📑 Chapter Vector Index

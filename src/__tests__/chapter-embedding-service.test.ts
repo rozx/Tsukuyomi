@@ -381,15 +381,15 @@ describe('ChapterEmbeddingService.embedChapter', () => {
       ]),
       lastModified: new Date().toISOString(),
     });
-    const embedSpy = spyOn(EmbeddingService, 'embedBatch').mockResolvedValue([
-      new Float32Array([0.1, 0.2]),
-    ]);
+    const embedSpy = spyOn(EmbeddingService, 'embedBatch').mockImplementation((texts) =>
+      Promise.resolve(texts.map(() => new Float32Array([0.1, 0.2]))),
+    );
 
     await ChapterEmbeddingService.embedChapter('ch-1');
 
     expect(embedSpy).toHaveBeenCalledTimes(1);
     const chunks = await ChapterEmbeddingService.getChunksForChapter('ch-1');
-    expect(chunks).toHaveLength(1);
+    expect(chunks).toHaveLength(2);
     expect(chunks[0]!.bookId).toBe('book-1');
     expect(chunks[0]!.vector).toHaveLength(2);
     expect(chunks[0]!.vector[0]).toBeCloseTo(0.1, 5);

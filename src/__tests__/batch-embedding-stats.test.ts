@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp, h, nextTick, ref } from 'vue';
 import type { App, Slots } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
+import type * as QuasarModule from 'quasar';
 import PrimeVue from 'primevue/config';
 import ConfirmationService from 'primevue/confirmationservice';
 import ToastService from 'primevue/toastservice';
@@ -13,6 +14,12 @@ import { ChapterEmbeddingService } from '../services/chapter-embedding-service';
 import { MemoryService } from '../services/memory-service';
 import { dispatchMemoryChanged } from '../services/memory-cache';
 import { useSettingsStore } from '../stores/settings';
+
+// 此测试只验证统计读取；Quasar 屏幕尺寸作为外部环境固定为桌面宽度。
+vi.mock('quasar', async (importOriginal) => {
+  const quasar = await importOriginal<typeof QuasarModule>();
+  return { ...quasar, useQuasar: () => ({ screen: { width: 1440 } }) };
+});
 
 vi.mock('primevue/drawer', () => ({
   default: {

@@ -85,6 +85,8 @@ export default defineConfig((ctx: any) => {
         // Suppress large chunk size warnings
         if (!viteConf.build) viteConf.build = {};
         viteConf.build.chunkSizeWarningLimit = 2000;
+        // 模型 Worker 使用动态 import，必须以模块格式构建以支持依赖拆包。
+        viteConf.worker = { ...viteConf.worker, format: 'es' };
         if (!viteConf.plugins) viteConf.plugins = [];
 
         // 配置开发服务器端口（避免与 Node.js 应用服务器冲突）

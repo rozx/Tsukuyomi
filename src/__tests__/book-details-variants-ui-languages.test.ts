@@ -132,6 +132,13 @@ async function renderPage(
 }
 
 describe('书籍详情三设备变体的界面文字', () => {
+  it('桌面设备使用平板布局时，启用本地嵌入即可看到向量索引入口', async () => {
+    const host = await renderPage('tablet', 'zh-CN');
+    useSettingsStore().settings.enableLocalEmbedding = true;
+    await flush();
+    expect(host.querySelector('button[aria-label="向量索引"]')).not.toBeNull();
+  });
+
   it.each(['desktop', 'tablet', 'mobile'] as const)(
     '%s：英文界面 + 繁中目标书籍不出现中文界面文字',
     async (device) => {

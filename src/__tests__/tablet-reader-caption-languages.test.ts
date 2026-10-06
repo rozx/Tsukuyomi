@@ -4,6 +4,7 @@ import { createApp, h, nextTick, ref } from 'vue';
 import type { App } from 'vue';
 import { createI18n } from 'vue-i18n';
 import { createPinia } from 'pinia';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import messages from '../i18n';
 import BookDetailsTablet from '../pages/book-details/BookDetailsTablet.vue';
 const context = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
@@ -26,10 +27,16 @@ describe('平板阅读列标题', () => {
       activeTranslationTaskCount: ref(0),
     };
     const i18n = createI18n({ legacy: false, locale: 'en-US', messages });
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/books/:id', component: { render: () => null } }],
+    });
+    await router.push('/books/caption-book');
     app = createApp({ setup: () => () => h(BookDetailsTablet) });
     app
       .use(createPinia())
       .use(i18n)
+      .use(router)
       .mount(document.body.appendChild(document.createElement('div')));
     await nextTick();
     const root = document.querySelector<HTMLElement>('.book-details-tablet')!;

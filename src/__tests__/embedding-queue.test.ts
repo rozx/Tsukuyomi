@@ -10,6 +10,7 @@ import * as settingsLookup from 'src/utils/settings-lookup';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
 import { useSettingsStore } from 'src/stores/settings';
 import type { Memory } from 'src/models/memory';
+import { vi } from 'vitest';
 
 function makeMemory(id: string, overrides: Partial<Memory> = {}): Memory {
   const mem: Memory = {
@@ -80,6 +81,80 @@ describe('EmbeddingQueue - 入队与批处理', () => {
     EmbeddingQueue.__resetForTesting();
     mock.restore();
   });
+
+  for (const kind of ['chapter', 'memory'] as const) {
+    test(`Worker 不可用时保留当前及后续 ${kind} 任务，恢复后可继续`, async () => {
+      let ready = true;
+      spyOn(EmbeddingService, 'isReady').mockImplementation(() => ready);
+      spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockImplementation(async (id) =>
+        makeMemory(id),
+      );
+      const update = spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(
+        undefined,
+      );
+      const chapter = spyOn(ChapterEmbeddingService, 'embedChapter').mockImplementation(
+        async () => {
+          ready = false;
+          throw new Error('worker stopped');
+        },
+      );
+      const embed = spyOn(EmbeddingService, 'embedBatch').mockImplementation(async (texts) => {
+        ready = false;
+        return texts.map(() => null);
+      });
+      if (kind === 'chapter') {
+        EmbeddingQueue.enqueueChapter('a', 'book-1');
+        EmbeddingQueue.enqueueChapter('b', 'book-1');
+      } else {
+        EmbeddingQueue.enqueueMemory('a', 'book-1');
+        EmbeddingQueue.enqueueMemory('b', 'book-1');
+      }
+      await vi.waitFor(() => expect(ready).toBe(false));
+      await vi.waitFor(() => expect(EmbeddingQueue.isRunning()).toBe(false));
+      expect(EmbeddingQueue.getProgress().pending).toBe(2);
+      expect(EmbeddingQueue.getProgress().completed).toBe(0);
+      expect(update).not.toHaveBeenCalled();
+      ready = true;
+      chapter.mockResolvedValue(true);
+      embed.mockImplementation(async (texts) => texts.map(() => new Float32Array([1, 0])));
+      EmbeddingQueue.tryResume();
+      await waitForIdle();
+      expect(EmbeddingQueue.getProgress().pending).toBe(0);
+    });
+
+    test(`Worker 已快速恢复时，旧 ${kind} 批次仍需重试而非误计完成`, async () => {
+      const processed: number[] = [];
+      const off = EmbeddingQueue.addEventListener('idle', (event) => {
+        processed.push((event.detail as { totalProcessed: number }).totalProcessed);
+      });
+      spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockImplementation(async (id) =>
+        makeMemory(id),
+      );
+      const update = spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(
+        undefined,
+      );
+      // reload 会派发生命周期事件；isReady 模拟已恢复，不能仅凭 catch 时的状态判断。
+      const chapter = spyOn(ChapterEmbeddingService, 'embedChapter')
+        .mockImplementationOnce(async () => {
+          await EmbeddingService.reload();
+          throw new Error('旧 Worker 请求已取消');
+        })
+        .mockResolvedValue(true);
+      const embed = spyOn(EmbeddingService, 'embedBatch')
+        .mockImplementationOnce(async (texts) => {
+          await EmbeddingService.reload();
+          return texts.map(() => null);
+        })
+        .mockImplementation(async (texts) => texts.map(() => new Float32Array([1, 0])));
+      if (kind === 'chapter') EmbeddingQueue.enqueueChapter('a', 'book-1');
+      else EmbeddingQueue.enqueueMemory('a', 'book-1');
+      await waitForIdle();
+      off();
+      expect(kind === 'chapter' ? chapter : embed).toHaveBeenCalledTimes(2);
+      expect(processed).toEqual([1]);
+      if (kind === 'memory') expect(update).toHaveBeenCalledTimes(1);
+    });
+  }
 
   test('enqueue 单条后自动处理并写回 embeddings', async () => {
     const memoryA = makeMemory('a');

@@ -13,6 +13,7 @@ declare module 'vue' {
   export interface GlobalComponents {
     AboutSection: typeof import('./components/settings/AboutSection.vue')['default']
     AdaptiveDialog: typeof import('./components/layout/AdaptiveDialog.vue')['default']
+    AdaptiveDrawer: typeof import('./components/layout/AdaptiveDrawer.vue')['default']
     AddChapterDialog: typeof import('./components/dialogs/AddChapterDialog.vue')['default']
     AddVolumeDialog: typeof import('./components/dialogs/AddVolumeDialog.vue')['default']
     AiCustomHeaders: typeof import('./components/dialogs/AiCustomHeaders.vue')['default']
@@ -40,6 +41,7 @@ declare module 'vue' {
     AssistantAvatar: typeof import('./components/layout/AssistantAvatar.vue')['default']
     BatchEmbeddingsActiveTask: typeof import('./components/novel/BatchEmbeddingsActiveTask.vue')['default']
     BatchEmbeddingsBackendStatus: typeof import('./components/novel/BatchEmbeddingsBackendStatus.vue')['default']
+    BatchEmbeddingsButton: typeof import('./components/novel/BatchEmbeddingsButton.vue')['default']
     BatchEmbeddingsDisabledNotice: typeof import('./components/novel/BatchEmbeddingsDisabledNotice.vue')['default']
     BatchEmbeddingsPanel: typeof import('./components/novel/BatchEmbeddingsPanel.vue')['default']
     BatchEmbeddingsStaleBanner: typeof import('./components/novel/BatchEmbeddingsStaleBanner.vue')['default']

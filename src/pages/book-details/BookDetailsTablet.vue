@@ -17,6 +17,7 @@ import { languageName } from 'src/i18n/translate';
 import BookDetailsDesktop from './BookDetailsDesktop.vue';
 import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
+import BatchEmbeddingsButton from 'src/components/novel/BatchEmbeddingsButton.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import { useTabletRightRail } from 'src/composables/useTabletRightRail';
 
@@ -95,6 +96,7 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
           {{ ctx.activeTranslationTaskCount.value }}
         </NotificationBadge>
       </button>
+      <BatchEmbeddingsButton class="tsr-btn rail-base-btn" />
     </TabletSideRail>
   </div>
 </template>

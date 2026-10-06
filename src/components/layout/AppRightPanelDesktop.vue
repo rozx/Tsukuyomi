@@ -11,7 +11,6 @@
  * 视图状态完全下沉到两个独立面板文件。
  */
 import { computed, watch } from 'vue';
-import { useRoute } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { usePanelResize } from 'src/composables/chat/usePanelResize';
@@ -28,11 +27,9 @@ const props = withDefaults(defineProps<{ showResizeHandle?: boolean; collapsed?:
 
 const ui = useUiStore();
 const aiProcessing = useAIProcessingStore();
-const route = useRoute();
 
 const activeRightTab = computed(() => ui.activeRightTab);
 const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslationTaskCount);
-const showBatchEmbeddings = computed(() => Boolean(route.params.id));
 
 const { panelContainerRef, resizeHandleRef, isResizing, handleResizeStart } = usePanelResize();
 
@@ -67,7 +64,6 @@ defineExpose({ props });
     :active-right-tab="activeRightTab"
     :right-panel-open="ui.rightPanelOpen"
     :active-translation-task-count="activeTranslationTaskCount"
-    :show-batch-embeddings="showBatchEmbeddings"
     @expand="expandToTab"
   />
 

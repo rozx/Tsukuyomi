@@ -30,6 +30,17 @@ async function fixture(paragraphCount = 1) {
 }
 
 describe('章节嵌入的批次边界', () => {
+  it('后续批次没有完整向量时保留上一版整章缓存，不提交半章', async () => {
+    const { chapter, embed } = await fixture(25);
+    await ChapterEmbeddingService.embedChapter(chapter.id);
+    const previous = await ChapterEmbeddingService.getChunksForChapter(chapter.id);
+    let batch = 0;
+    embed.mockImplementation((texts) =>
+      Promise.resolve(texts.map(() => (++batch === 9 ? null : new Float32Array([0, 1])))),
+    );
+    await expect(ChapterEmbeddingService.embedChapter(chapter.id)).rejects.toThrow('嵌入失败');
+    expect(await ChapterEmbeddingService.getChunksForChapter(chapter.id)).toEqual(previous);
+  });
   it('长章节按最多八条输入分批，完整保留最后分块和标题向量', async () => {
     const { chapter, embed } = await fixture(25);
     await ChapterEmbeddingService.embedChapter(chapter.id);

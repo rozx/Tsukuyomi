@@ -11,6 +11,7 @@ let mockPipelineFactory:
   | null = null;
 
 mock.module('@huggingface/transformers', () => ({
+  env: { backends: { onnx: { wasm: {} } } },
   pipeline: (task: string, model: string, options: unknown) => {
     if (mockPipelineFactory) return mockPipelineFactory(task, model, options);
     return Promise.resolve((input: unknown, opts?: unknown) => {
@@ -21,8 +22,14 @@ mock.module('@huggingface/transformers', () => ({
 }));
 
 // 必须在 mock 之后 import
-import { EmbeddingService, MODEL_VERSION, DIMENSIONS } from 'src/services/embedding-service';
+import { EmbeddingRuntime as EmbeddingService } from '../services/embedding-runtime';
+import {
+  EmbeddingService as RendererEmbeddingService,
+  MODEL_VERSION,
+  DIMENSIONS,
+} from '../services/embedding-service';
 import { MODEL_ID } from '../services/embedding-service';
+import { vi } from 'vitest';
 
 function makeFloat32(values: number[]): Float32Array {
   return new Float32Array(values);
@@ -179,6 +186,116 @@ describe('EmbeddingService - 懒加载与状态', () => {
     expect(await EmbeddingService.embed('重试查询', 'query')).toBeNull();
     expect(await EmbeddingService.embed('重试查询', 'query')).not.toBeNull();
     expect(calls).toBe(2);
+  });
+
+  test('后台批次即使队列曾清空，也要留出计算预算空档', async () => {
+    const calls: string[] = [];
+    mockPipelineImpl = async (input) => {
+      calls.push(String(input));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return fakePooledOutput(1, 0.5);
+    };
+    await EmbeddingService.init();
+    vi.useFakeTimers();
+    const clock = vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    try {
+      const first = EmbeddingService.embed('后台一', 'document');
+      await vi.advanceTimersByTimeAsync(20);
+      await first;
+      const second = EmbeddingService.embed('后台二', 'document');
+      await vi.advanceTimersByTimeAsync(1);
+      expect(calls).toEqual(['后台一']);
+      await vi.advanceTimersByTimeAsync(50);
+      await second;
+      expect(calls).toEqual(['后台一', '后台二']);
+    } finally {
+      clock.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  test('后台长短文本按长度分组并还原输入顺序，不让短文本陪长文本填充', async () => {
+    const batches: string[][] = [];
+    mockPipelineImpl = async (input) => {
+      const texts = input as string[];
+      batches.push(texts);
+      const data = new Float32Array(texts.length * DIMENSIONS);
+      texts.forEach((text, index) => {
+        data[index * DIMENSIONS] = 1;
+        data[index * DIMENSIONS + 1] = text.length;
+      });
+      return { data, dims: [texts.length, DIMENSIONS] };
+    };
+    await EmbeddingService.init();
+    const texts = ['短甲', '长'.repeat(1800), '短乙', '大'.repeat(1500), '短丙'];
+    const vectors = await EmbeddingService.embedBatch(texts, 'document');
+    expect(batches.length).toBeGreaterThan(1);
+    expect(batches.every((batch) => batch.length <= 4)).toBe(true);
+    expect(
+      batches
+        .filter((batch) => batch.some((text) => text.length > 1200))
+        .every((batch) => batch.length === 1),
+    ).toBe(true);
+    texts.forEach((text, index) =>
+      expect(vectors[index]![1]! / vectors[index]![0]!).toBeCloseTo(text.length, 2),
+    );
+  });
+
+  test('重新加载等待已有推理退出，并释放旧模型实例', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    let active = false;
+    const dispose = vi.fn(async () => {
+      expect(active).toBe(false);
+    });
+    mockPipelineFactory = async () =>
+      Object.assign(
+        async () => {
+          active = true;
+          entered.resolve();
+          await release.promise;
+          active = false;
+          return fakePooledOutput(1, 0.5);
+        },
+        { dispose },
+      );
+    await EmbeddingService.init();
+    const pending = EmbeddingService.embed('工作中', 'document');
+    await entered.promise;
+    const reload = EmbeddingService.reload();
+    expect(dispose).not.toHaveBeenCalled();
+    release.resolve();
+    await Promise.all([pending, reload]);
+    expect(dispose).toHaveBeenCalledTimes(1);
+  });
+
+  test('重载会取消旧批次尚未执行的分组，不再调用已释放的模型', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const oldModel = vi.fn(async (input: unknown) => {
+      entered.resolve();
+      await release.promise;
+      return fakePooledOutput((input as string[]).length, 0.5);
+    });
+    const dispose = vi.fn(() => Promise.resolve());
+    let created = 0;
+    mockPipelineFactory = async () => {
+      if (++created === 1) return Object.assign(oldModel, { dispose });
+      return async (input: unknown) => fakePooledOutput((input as string[]).length, 0.5);
+    };
+    await EmbeddingService.init();
+    const pending = EmbeddingService.embedBatch(
+      Array.from({ length: 8 }, (_, index) => `旧分组 ${index}`),
+      'document',
+    );
+    await entered.promise;
+    const reload = EmbeddingService.reload();
+    release.resolve();
+    const [vectors] = await Promise.all([pending, reload]);
+    expect(oldModel).toHaveBeenCalledTimes(1);
+    expect(vectors.slice(4)).toEqual([null, null, null, null]);
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(EmbeddingService.isReady()).toBe(true);
   });
 
   test('初始状态为 idle,isReady=false', () => {
@@ -528,28 +645,31 @@ describe('EmbeddingService - embed / embedBatch', () => {
 describe('EmbeddingService - cosineSimilarity', () => {
   test('相同向量返回 1', () => {
     const v = makeFloat32([0.6, 0.8]);
-    expect(EmbeddingService.cosineSimilarity(v, v)).toBeCloseTo(1, 5);
+    expect(RendererEmbeddingService.cosineSimilarity(v, v)).toBeCloseTo(1, 5);
   });
 
   test('正交向量返回 0', () => {
-    expect(EmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([0, 1]))).toBeCloseTo(
-      0,
-      5,
-    );
+    expect(
+      RendererEmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([0, 1])),
+    ).toBeCloseTo(0, 5);
   });
 
   test('任一为空返回 0', () => {
-    expect(EmbeddingService.cosineSimilarity(null, makeFloat32([1, 0]))).toBe(0);
-    expect(EmbeddingService.cosineSimilarity(makeFloat32([1, 0]), undefined)).toBe(0);
-    expect(EmbeddingService.cosineSimilarity(makeFloat32([]), makeFloat32([1]))).toBe(0);
+    expect(RendererEmbeddingService.cosineSimilarity(null, makeFloat32([1, 0]))).toBe(0);
+    expect(RendererEmbeddingService.cosineSimilarity(makeFloat32([1, 0]), undefined)).toBe(0);
+    expect(RendererEmbeddingService.cosineSimilarity(makeFloat32([]), makeFloat32([1]))).toBe(0);
   });
 
   test('维度不匹配返回 0', () => {
-    expect(EmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([1, 0, 0]))).toBe(0);
+    expect(
+      RendererEmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([1, 0, 0])),
+    ).toBe(0);
   });
 
   test('反向向量 clamp 到 0', () => {
-    expect(EmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([-1, 0]))).toBe(0);
+    expect(
+      RendererEmbeddingService.cosineSimilarity(makeFloat32([1, 0]), makeFloat32([-1, 0])),
+    ).toBe(0);
   });
 });
 
@@ -609,11 +729,11 @@ describe('EmbeddingService - cleanupLegacyModelCache', () => {
     ]);
     const restore = installFakeCaches([cache]);
     try {
-      expect(await EmbeddingService.isModelCachedInBrowser()).toBe(false);
+      expect(await RendererEmbeddingService.isModelCachedInBrowser()).toBe(false);
       cache.entries.push({
         url: 'https://huggingface.co/hotchpotch/bekko-embedding-v1-a25m/resolve/main/onnx/model.onnx',
       });
-      expect(await EmbeddingService.isModelCachedInBrowser()).toBe(true);
+      expect(await RendererEmbeddingService.isModelCachedInBrowser()).toBe(true);
     } finally {
       restore();
     }
@@ -628,7 +748,7 @@ describe('EmbeddingService - cleanupLegacyModelCache', () => {
     ]);
     const restore = installFakeCaches([cache]);
     try {
-      const deleted = await EmbeddingService.cleanupLegacyModelCache();
+      const deleted = await RendererEmbeddingService.cleanupLegacyModelCache();
       expect(deleted).toBe(3); // 2 条 embeddinggemma + 1 条 qwen3
       expect(cache.entries).toHaveLength(1);
       expect(cache.entries[0]!.url).toContain('gte-multilingual');
@@ -643,7 +763,7 @@ describe('EmbeddingService - cleanupLegacyModelCache', () => {
     ]);
     const restore = installFakeCaches([cache]);
     try {
-      const deleted = await EmbeddingService.cleanupLegacyModelCache();
+      const deleted = await RendererEmbeddingService.cleanupLegacyModelCache();
       expect(deleted).toBe(0);
       expect(cache.entries).toHaveLength(1);
     } finally {
@@ -655,7 +775,7 @@ describe('EmbeddingService - cleanupLegacyModelCache', () => {
     const original = (globalThis as { caches?: unknown }).caches;
     delete (globalThis as { caches?: unknown }).caches;
     try {
-      const deleted = await EmbeddingService.cleanupLegacyModelCache();
+      const deleted = await RendererEmbeddingService.cleanupLegacyModelCache();
       expect(deleted).toBe(0);
     } finally {
       if (original !== undefined) (globalThis as { caches: unknown }).caches = original;

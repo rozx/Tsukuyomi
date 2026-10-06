@@ -3,7 +3,7 @@ import { useI18n } from 'vue-i18n';
 
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import Drawer from 'primevue/drawer';
+import AdaptiveDrawer from 'src/components/layout/AdaptiveDrawer.vue';
 import Button from 'primevue/button';
 import ProgressBar from 'primevue/progressbar';
 import { useRouter } from 'vue-router';
@@ -46,7 +46,7 @@ const isEmbeddingEnabled = computed(() =>
 );
 const isMobile = computed(() => isMobileDevice());
 
-const drawerVisible = ref(false);
+const drawerVisible = defineModel<boolean>('visible', { default: false });
 
 // 进度状态
 const progress = ref<EmbeddingQueueProgress>(EmbeddingQueue.getProgress());
@@ -389,11 +389,10 @@ defineExpose({ toggle });
 </script>
 
 <template>
-  <Drawer
+  <AdaptiveDrawer
     v-model:visible="drawerVisible"
-    position="right"
+    :title="t('embeddingUi.title')"
     class="batch-embeddings-drawer"
-    :show-close-icon="false"
   >
     <template #header>
       <div class="bed-appbar">
@@ -402,6 +401,7 @@ defineExpose({ toggle });
           <div class="bed-appbar-title">{{ t('embeddingUi.title') }}</div>
           <div class="bed-appbar-sub">{{ t('embeddingUi.storage') }}</div>
         </div>
+        <span class="bed-appbar-status" :class="statusLabel.color">● {{ statusLabel.text }}</span>
         <button
           type="button"
           class="bed-appbar-close"
@@ -412,19 +412,21 @@ defineExpose({ toggle });
         </button>
       </div>
     </template>
-    <div class="flex flex-col gap-4 p-1">
+    <div class="bed-body">
       <div v-if="!currentBook" class="text-sm text-center text-moon-50 py-4">
         {{ t('embeddingUi.openBook') }}
       </div>
 
       <template v-else>
-        <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
-          <div class="text-sm font-medium text-moon-100 book-title-container">
-            <i class="pi pi-book mr-2 text-primary-400"></i>
-            {{ currentBook.title }}
-          </div>
-          <div class="flex items-center gap-4 text-xs text-moon-50">
-            <span>{{ t('embeddingUi.chapterCount', { count: totalChapters }) }}</span>
+        <div class="bed-book">
+          <i class="pi pi-book bed-book-icon" aria-hidden="true" />
+          <div class="bed-book-text">
+            <div class="book-title-container" :title="currentBook.title">
+              {{ currentBook.title }}
+            </div>
+            <div class="bed-book-meta">
+              {{ t('embeddingUi.chapterCount', { count: totalChapters }) }}
+            </div>
           </div>
         </div>
 
@@ -447,12 +449,12 @@ defineExpose({ toggle });
 
         <!-- 章节 Embedding -->
         <template v-if="isEmbeddingEnabled">
-          <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
-            <div class="flex items-center justify-between">
-              <div class="text-sm font-medium text-moon-100">
+          <section class="bed-section">
+            <div class="bed-section-heading">
+              <div class="bed-section-title">
                 {{ t('embeddingUi.chapterEmbeddings') }}
               </div>
-              <div class="text-xs text-moon-50">
+              <div class="bed-section-count">
                 {{
                   t('embeddingUi.embeddedCount', {
                     completed: chapterStats.embedded,
@@ -461,12 +463,12 @@ defineExpose({ toggle });
                 }}
               </div>
             </div>
-            <ProgressBar :value="chapterPercent" :show-value="false" style="height: 6px" />
-            <div class="flex items-center justify-between text-xs text-moon-50">
+            <ProgressBar :value="chapterPercent" :show-value="false" class="bed-progress" />
+            <div class="bed-section-meta">
               <span>{{ t('embeddingUi.pendingCount', { count: chapterPendingInQueue }) }}</span>
               <span v-if="chapterEtaVisible">ETA: {{ etaText }}</span>
             </div>
-            <div class="flex gap-2 mt-1">
+            <div class="bed-actions">
               <Button
                 :label="t('embeddingUi.fillMissing')"
                 size="small"
@@ -474,7 +476,7 @@ defineExpose({ toggle });
                 icon="pi pi-refresh"
                 @click="backfillChapters"
                 :disabled="actionsDisabled"
-                class="flex-1"
+                class="bed-action"
               />
               <Button
                 :label="t('embeddingUi.rebuildAll')"
@@ -483,18 +485,18 @@ defineExpose({ toggle });
                 icon="pi pi-sync"
                 @click="recomputeAllChapters"
                 :disabled="actionsDisabled"
-                class="flex-1"
+                class="bed-action"
               />
             </div>
-          </div>
+          </section>
 
           <!-- 记忆 Embedding -->
-          <div class="flex flex-col gap-2 p-2 bg-white/5 rounded">
-            <div class="flex items-center justify-between">
-              <div class="text-sm font-medium text-moon-100">
+          <section class="bed-section">
+            <div class="bed-section-heading">
+              <div class="bed-section-title">
                 {{ t('embeddingUi.memoryEmbeddings') }}
               </div>
-              <div class="text-xs text-moon-50">
+              <div class="bed-section-count">
                 {{
                   t('embeddingUi.embeddedCount', {
                     completed: memoryStats.embedded,
@@ -503,12 +505,12 @@ defineExpose({ toggle });
                 }}
               </div>
             </div>
-            <ProgressBar :value="memoryPercent" :show-value="false" style="height: 6px" />
-            <div class="flex items-center justify-between text-xs text-moon-50">
+            <ProgressBar :value="memoryPercent" :show-value="false" class="bed-progress" />
+            <div class="bed-section-meta">
               <span>{{ t('embeddingUi.pendingCount', { count: memoryPendingInQueue }) }}</span>
               <span v-if="memoryEtaVisible">ETA: {{ etaText }}</span>
             </div>
-            <div class="flex gap-2 mt-1">
+            <div class="bed-actions bed-actions-single">
               <Button
                 :label="t('embeddingUi.fillMissing')"
                 size="small"
@@ -516,10 +518,10 @@ defineExpose({ toggle });
                 icon="pi pi-refresh"
                 @click="backfillMemories"
                 :disabled="actionsDisabled"
-                class="flex-1"
+                class="bed-action"
               />
             </div>
-          </div>
+          </section>
 
           <!-- 测试查询入口 -->
           <Button
@@ -527,7 +529,7 @@ defineExpose({ toggle });
             size="small"
             severity="secondary"
             icon="pi pi-search"
-            class="w-full"
+            class="bed-action bed-query-action"
             :disabled="testDisabled"
             @click="openTestDialog"
           />
@@ -544,6 +546,7 @@ defineExpose({ toggle });
 
         <!-- 全局状态 -->
         <BatchEmbeddingsBackendStatus
+          class="bed-backend"
           :model-version="MODEL_VERSION"
           :chapter-model-version="CHAPTER_MODEL_VERSION"
           :active-backend="activeBackend"
@@ -556,17 +559,185 @@ defineExpose({ toggle });
         />
       </template>
     </div>
-  </Drawer>
+  </AdaptiveDrawer>
 
   <BatchEmbeddingsTestQueryDialog v-model:visible="testDialogVisible" :book-id="bookId" />
 </template>
 
 <style scoped>
+.bed-body {
+  display: flex;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 14px;
+  min-width: 0;
+}
+
+.bed-body > * {
+  min-width: 0;
+}
+
+.bed-book {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--white-opacity-8);
+  border-radius: 10px;
+}
+
+.bed-book-icon {
+  color: var(--moon-opacity-60);
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.bed-book-text {
+  flex: 1;
+  min-width: 0;
+}
+
 .book-title-container {
-  max-width: 280px;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--moon-opacity-90);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.bed-book-meta {
+  margin-top: 3px;
+  color: var(--moon-opacity-50);
+  font-size: 11px;
+}
+
+.bed-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--white-opacity-6);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.bed-section-heading,
+.bed-section-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.bed-section-title {
+  color: var(--moon-opacity-90);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.bed-section-count {
+  font-size: 11px;
+  color: var(--moon-opacity-70);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bed-section-meta {
+  color: var(--moon-opacity-50);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.bed-progress {
+  height: 4px;
+  border-radius: 3px;
+  background: var(--white-opacity-6);
+}
+
+.bed-progress :deep(.p-progressbar-value) {
+  background: #a3b7cf;
+  border-radius: inherit;
+}
+
+.bed-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.bed-actions-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.bed-action {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--white-opacity-10);
+  border-radius: 8px;
+  background: var(--white-opacity-4);
+  color: var(--moon-opacity-80);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  box-shadow: none;
+  gap: 6px;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.bed-action :deep(.p-button-label) {
+  white-space: normal;
+  line-height: 1.4;
+}
+
+.bed-action :deep(.p-button-icon) {
+  font-size: 12px;
+}
+
+.bed-action:not(:disabled):hover {
+  background: var(--white-opacity-8);
+  border-color: var(--white-opacity-20);
+  color: var(--moon-opacity-100);
+}
+
+.bed-action:focus-visible,
+.bed-appbar-close:focus-visible {
+  outline: 2px solid #a3b7cf;
+  outline-offset: 3px;
+}
+
+.bed-action:disabled {
+  opacity: 0.4;
+}
+
+.bed-query-action {
+  width: 100%;
+  min-height: 38px;
+  background: rgba(109, 136, 168, 0.15);
+  border-color: rgba(109, 136, 168, 0.3);
+  color: #c0d0e2;
+}
+
+.bed-query-action:not(:disabled):hover {
+  background: rgba(109, 136, 168, 0.24);
+  border-color: rgba(109, 136, 168, 0.45);
+}
+
+.bed-backend {
+  margin-top: 2px;
+  padding: 12px 2px 0;
+  border-top: 1px solid var(--white-opacity-6);
+  color: var(--moon-opacity-50);
+  font-size: 10px;
+  line-height: 1.7;
 }
 
 .bed-appbar {
@@ -596,6 +767,12 @@ defineExpose({ toggle });
 .bed-appbar-text {
   flex: 1;
   min-width: 0;
+}
+
+.bed-appbar-status {
+  flex-shrink: 0;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .bed-appbar-title {
@@ -640,21 +817,25 @@ defineExpose({ toggle });
 }
 </style>
 
-<!-- 非 scoped:PrimeVue Drawer 会 teleport 到 document.body,scoped 的 :deep 选择器
-     找不到宿主组件的 data-v-hash 祖先,所有针对 .p-drawer / .p-drawer-header /
-     .p-drawer-content 的规则都会静默失效。用 .batch-embeddings-drawer 前缀限定作用域。 -->
+<!-- 抽屉传送到 body，使用自身 class 限定 PrimeVue 容器样式。 -->
 <style>
-/* 抽屉宽度限制:PrimeVue 默认 100%,桌面给 400px,手机 min(92vw, 400px)。
-   PrimeVue 4 的 Drawer 会把根 class(batch-embeddings-drawer)放到外层 mask 上,
-   实际面板是其后代 .p-drawer,所以这里用后代选择器。 */
-.batch-embeddings-drawer .p-drawer {
-  width: min(400px, 92vw);
+/* 与助手 / 翻译进度面板保持相同的默认宽度和表面颜色。class 位于抽屉根节点。 */
+.batch-embeddings-drawer.p-drawer.p-component {
+  width: min(24rem, 92vw);
+  background: rgba(14, 16, 20, 0.96);
+  border: none;
+  border-left: 1px solid var(--white-opacity-8);
+  box-shadow: none;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 /* 紧凑 appbar —— 与 AppChatPanelDesktop / AppProgressPanelDesktop 的 appbar 同构 */
 .batch-embeddings-drawer .p-drawer-header {
   padding: 14px 16px;
   border-bottom: 1px solid var(--white-opacity-6);
+  background: transparent;
+  flex-shrink: 0;
 }
 
 /* 抽屉 body padding 收紧,和 chat/progress panel 对齐;
@@ -662,5 +843,7 @@ defineExpose({ toggle });
 .batch-embeddings-drawer .p-drawer-content {
   padding: 14px 16px;
   overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--white-opacity-20) transparent;
 }
 </style>

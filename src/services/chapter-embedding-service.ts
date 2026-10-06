@@ -1020,12 +1020,12 @@ export class ChapterEmbeddingService {
     const vectors: Array<Float32Array | null> = [];
     for (let offset = 0; offset < batchInputs.length; offset += CHAPTER_EMBED_BATCH_SIZE) {
       if (!(await shouldContinue())) return false;
-      vectors.push(
-        ...(await EmbeddingService.embedBatch(
-          batchInputs.slice(offset, offset + CHAPTER_EMBED_BATCH_SIZE),
-          'document',
-        )),
-      );
+      const inputs = batchInputs.slice(offset, offset + CHAPTER_EMBED_BATCH_SIZE);
+      const batchVectors = await EmbeddingService.embedBatch(inputs, 'document');
+      if (batchVectors.length !== inputs.length || batchVectors.some((vector) => !vector)) {
+        throw new Error(`章节 ${chapterId} 的批次嵌入失败，已保留上一版缓存`);
+      }
+      vectors.push(...batchVectors);
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     if (!(await shouldContinue())) return false;
@@ -1182,8 +1182,8 @@ export class ChapterEmbeddingService {
             row.chapterId !== previous?.chapterId ||
             row.kind !== previous?.kind ||
             row.chunkIndex !== previous?.chunkIndex ||
-            row.inputSignature !== previous?.inputSignature ||
-            row.updatedAt !== previous?.updatedAt
+            // 同一模型和输入重算只改变向量时间戳，旧快照仍可用于本次查询。
+            row.inputSignature !== previous?.inputSignature
           );
         });
       if (inputChanged) {

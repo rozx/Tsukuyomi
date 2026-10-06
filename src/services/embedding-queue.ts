@@ -116,6 +116,7 @@ export class EmbeddingQueue {
   private static paused = false;
   private static runScheduled = false;
   private static currentTask: EmbeddingQueueCurrentTask | null = null;
+  private static serviceRevision = 0;
   /**
    * 同步/恢复期间由外部 gate 临时暂停时置位；用于在同步结束后只恢复"由 gate 挂起"的场景,
    * 避免把用户主动点击的 pause 一起解除。
@@ -129,6 +130,14 @@ export class EmbeddingQueue {
   private static recentTimings: BatchTiming[] = [];
 
   private static readonly events = new EventTarget();
+
+  static {
+    // Worker 恢复后继续消费故障时保留的任务；不会解除用户主动暂停。
+    EmbeddingService.addEventListener('ready', () => this.tryResume());
+    EmbeddingService.addEventListener('status-changed', (event) => {
+      if ((event.detail as { status: string }).status !== 'ready') this.serviceRevision++;
+    });
+  }
 
   /**
    * 懒解析 item 的 bookId 并缓存在 item 上。
@@ -497,15 +506,28 @@ export class EmbeddingQueue {
     this.emitProgress();
 
     const startedAt = Date.now();
+    const serviceRevision = this.serviceRevision;
     try {
       if (head.kind === 'memory') {
-        await this.processMemoryBatch(batchItems.map((item) => item.id));
+        await this.processMemoryBatch(
+          batchItems.map((item) => item.id),
+          serviceRevision,
+        );
       } else {
         if (!(await this.processChapter(batchItems[0]!))) return;
       }
     } catch (error) {
       console.warn('[EmbeddingQueue] 批处理失败,继续下一批:', error);
       this.dispatch('error', { error, batchItems });
+      if (!EmbeddingService.isReady() || this.serviceRevision !== serviceRevision) {
+        for (const item of [...batchItems].reverse()) {
+          if (!this.pending.some((pending) => pending.kind === item.kind && pending.id === item.id))
+            this.pending.unshift(item);
+        }
+        this.currentTask = null;
+        this.emitProgress();
+        return;
+      }
       if (head.kind === 'memory') this.completed.memory += batchItems.length;
       else this.completed.chapter += 1;
     }
@@ -546,6 +568,7 @@ export class EmbeddingQueue {
       }
 
       while (this.pending.length > 0 && !this.paused) {
+        if (!EmbeddingService.isReady()) break;
         // 每轮循环开始时重新读取总开关:用户在 UI 上关闭嵌入应该立刻停下一批工作,
         // 不能让队列把剩下的 pending 全部跑完。正在跑的这一批无法中途 abort
         // (Transformers.js pipeline 调用不支持),所以只能做到"当前批次完成后立即停"。
@@ -576,7 +599,7 @@ export class EmbeddingQueue {
   /**
    * 处理一批 memory id
    */
-  private static async processMemoryBatch(ids: string[]): Promise<void> {
+  private static async processMemoryBatch(ids: string[], serviceRevision: number): Promise<void> {
     const memories: Array<{ id: string; segments: string[] } | null> = await Promise.all(
       ids.map(async (id) => {
         try {
@@ -609,6 +632,8 @@ export class EmbeddingQueue {
         batch.map((job) => job.text),
         'document',
       );
+      if (!EmbeddingService.isReady() || this.serviceRevision !== serviceRevision)
+        throw new Error('嵌入 Worker 已中断，保留记忆任务等待恢复');
       batch.forEach((job, vectorIndex) => {
         const vector = vectors[vectorIndex];
         if (!vector) return;
@@ -669,6 +694,7 @@ export class EmbeddingQueue {
     this.syncGatePaused = false;
     this.runScheduled = false;
     this.currentTask = null;
+    this.serviceRevision = 0;
     this.totalEnqueued = { memory: 0, chapter: 0 };
     this.completed = { memory: 0, chapter: 0 };
     this.recentTimings = [];
