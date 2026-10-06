@@ -82,13 +82,13 @@ Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
 
 - **世界观沉淀**: 记录复杂的势力关系、魔法系统规则、关键剧情伏笔。
 - **语义优先的记忆检索**: Embedding 可用时按语义相似度、关键词匹配和时间衰减自动评分（权重 0.85 / 0.10 / 0.05）；关闭或不可用时回退到关键词和时间衰减（0.75 / 0.25）。总分归一到 0–1.0，并按字符预算注入最相关记忆。
-- **本地语义嵌入（可选）**: 内置 `gte-multilingual-base` 多语言编码器（Transformers.js），通过 WebGPU + q4f16 运行，不支持时自动回退 WASM + int8。嵌入计算在本地完成，不消耗 AI API 额度；默认关闭，需在「设置 → 本地嵌入」中启用，物理移动设备上禁用。
+- **本地语义嵌入（可选）**: 内置 `bekko-embedding-v1-a25m` 多语言编码器（Transformers.js），WebGPU 优先、WASM 回退，两个后端共用约 190 MiB 的默认压缩 ONNX 文件。嵌入计算在本地完成，不消耗 AI API 额度；默认关闭，在「设置 → 本地嵌入」中启用，物理移动设备上禁用。
 - **混合搜索**: `search_memories` 工具支持自然语言查询，同时利用关键词匹配和语义向量排序；关闭嵌入时自动退化为关键词 + 时间衰减。
 
 #### 4. 📑 章节语义索引 (Chapter Vector Index)
 
-- **多向量章节索引**: 启用本地嵌入后，为每个章节按约 100 字的段落边界建立原生 768 维多向量索引，并额外为"章节标题 + 首段"写入专属向量，支持标题 / 系列 / 主题型查询。
-- **`query_chapter` 混合检索**: AI 可用自然语言跨章节搜索原文；先在章节粒度校准语义置信度并融合语义 / 关键词 RRF 排名，再按 `0.85 × 语义 + 0.15 × 关键词` 排序并过滤弱匹配。翻译、润色、校对、聊天助手四类任务的提示词已学会调用该工具获取前文上下文。
+- **多向量章节索引**: 启用本地嵌入后，为每个章节按约 100 字的段落边界建立原生 384 维多向量索引，并额外为"章节标题 + 首段"写入专属向量，支持标题 / 系列 / 主题型查询。
+- **`query_chapter` 混合检索**: AI 可用自然语言跨章节搜索原文；模糊情节先对候选原文段落做本地重排，明确匹配保留整块上下文。随后在章节粒度校准语义置信度并融合语义 / 关键词 RRF 排名，再按 `0.85 × 语义 + 0.15 × 关键词` 排序并过滤弱匹配。翻译、润色、校对、聊天助手四类任务的提示词已学会调用该工具获取前文上下文。
 - **批量管理**: 在书籍详情的「向量索引」面板查看索引记录、重建和批量重算，也可测试查询结果。详见 [本地嵌入](public/help/zh-CN/local-embedding.md)。
 
 ### 💬 AI 协作聊天助手
@@ -230,7 +230,7 @@ bun run dev
 | **桌面封装**      | Electron 39（Web SPA 与桌面端共用同一份代码，通过 `useDeviceVariant` 强制 Desktop 变体）                              |
 | **运行时 / 构建** | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                         |
 | **AI SDK**        | OpenAI SDK · Google Generative AI；通过 OpenAI 配置接入兼容协议服务（BYOK）                                           |
-| **本地嵌入**      | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · 768 维 · WebGPU + q4f16（优先）/ WASM + int8（回退）   |
+| **本地嵌入**      | Transformers.js (ONNX Runtime Web) · `bekko-embedding-v1-a25m` · 384 维 mean pooling · WebGPU（优先）/ WASM（回退）   |
 | **存储 / 同步**   | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 哈希 manifest · 条件 GET + 伪 CAS 并发保护                |
 | **抓取**          | Puppeteer + `puppeteer-extra-plugin-stealth`（Electron 桌面版）/ CORS 代理（Web 版）· 被拦截时回退 Firecrawl          |
 | **AI 导入**       | 工具调用整理草稿 · Web Worker 文件解析 · EPUB/ZIP（fflate）· Web Locks 跨标签页互斥                                   |

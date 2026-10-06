@@ -22,17 +22,18 @@ mock.module('@huggingface/transformers', () => ({
 
 // 必须在 mock 之后 import
 import { EmbeddingService, MODEL_VERSION, DIMENSIONS } from 'src/services/embedding-service';
+import { MODEL_ID } from '../services/embedding-service';
 
 function makeFloat32(values: number[]): Float32Array {
   return new Float32Array(values);
 }
 
 /**
- * 构造已池化的模拟输出:形状 [batch, 768](gte-multilingual-base 原生维度)。
+ * 构造 Bekko 原生已池化输出:形状 [batch, 384]。
  * 前几维为 fill,其余为 0。
  */
 function fakePooledOutput(batch: number, fill: number) {
-  const hidden = 768;
+  const hidden = 384;
   const data = new Float32Array(batch * hidden);
   for (let b = 0; b < batch; b++) {
     for (let i = 0; i < hidden; i++) {
@@ -112,6 +113,62 @@ describe('EmbeddingService - 懒加载与状态', () => {
     expect(inputs).toEqual(['后台一', '前台查询', '后台二']);
   });
 
+  test('前台重排的文档批次复用缓存，并与查询文本的缓存隔离', async () => {
+    let calls = 0;
+    mockPipelineImpl = async (input) => {
+      calls += 1;
+      return fakePooledOutput(Array.isArray(input) ? input.length : 1, 0.5);
+    };
+    await EmbeddingService.init();
+    const first = await EmbeddingService.embedBatch(['关键段落', '关键段落'], 'document', 'query');
+    expect(first[0]).toEqual(first[1]);
+    await EmbeddingService.embedBatch(['关键段落'], 'document', 'query');
+    expect(calls).toBe(1);
+    await EmbeddingService.embed('关键段落', 'query');
+    expect(calls).toBe(2);
+    await EmbeddingService.embedBatch(['关键段落'], 'document');
+    expect(calls).toBe(3);
+  });
+
+  test('文档重排优先于等待中的后台批次，任务输入仍按文档处理', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const inputs: string[] = [];
+    mockPipelineImpl = async (input) => {
+      const text = String(input);
+      inputs.push(text);
+      if (text === '后台一') {
+        entered.resolve();
+        await release.promise;
+      }
+      return fakePooledOutput(1, 0.5);
+    };
+    await EmbeddingService.init();
+    const first = EmbeddingService.embed('后台一', 'document');
+    await entered.promise;
+    const second = EmbeddingService.embed('后台二', 'document');
+    const rerank = EmbeddingService.embedBatch(['关键段落'], 'document', 'query');
+    release.resolve();
+    await Promise.all([first, second, rerank]);
+    expect(inputs).toEqual(['后台一', '关键段落', '后台二']);
+  });
+
+  test('一轮最大规模的段落重排能完整缓存，重复查询不会逐批淘汰而全部重新推理', async () => {
+    let calls = 0;
+    mockPipelineImpl = async (input) => {
+      calls += 1;
+      return fakePooledOutput(Array.isArray(input) ? input.length : 1, 0.5);
+    };
+    await EmbeddingService.init();
+    const texts = Array.from({ length: 192 }, (_, index) => `章节关键段落 ${index}`);
+    for (let round = 0; round < 2; round++) {
+      for (let offset = 0; offset < texts.length; offset += 8) {
+        await EmbeddingService.embedBatch(texts.slice(offset, offset + 8), 'document', 'query');
+      }
+    }
+    expect(calls).toBe(24);
+  });
+
   test('失败的查询向量不会占据缓存，下一次请求可以重试', async () => {
     let calls = 0;
     mockPipelineImpl = async () => {
@@ -135,6 +192,132 @@ describe('EmbeddingService - 懒加载与状态', () => {
 
     expect(EmbeddingService.getStatus()).toBe('ready');
     expect(EmbeddingService.isReady()).toBe(true);
+  });
+
+  test('Bekko 在 WebGPU 和 WASM 都加载官方默认压缩 ONNX 文件', async () => {
+    const originalGpu = Object.getOwnPropertyDescriptor(navigator, 'gpu');
+    const loaded: Array<{ model: string; config: Record<string, unknown> }> = [];
+    mockPipelineFactory = async (_task, model, options) => {
+      loaded.push({ model, config: options as Record<string, unknown> });
+      return async () => fakePooledOutput(1, 0.5);
+    };
+    try {
+      for (const gpu of [
+        undefined,
+        {
+          requestAdapter: () =>
+            Promise.resolve({ requestDevice: () => Promise.resolve({ destroy() {} }) }),
+        },
+      ]) {
+        Object.defineProperty(navigator, 'gpu', { configurable: true, value: gpu });
+        if (gpu === undefined) delete (navigator as Navigator & { gpu?: unknown }).gpu;
+        EmbeddingService.__resetForTesting();
+        await EmbeddingService.init();
+      }
+      expect(loaded.map((entry) => entry.model)).toEqual([
+        'hotchpotch/bekko-embedding-v1-a25m',
+        'hotchpotch/bekko-embedding-v1-a25m',
+      ]);
+      expect(loaded.map((entry) => entry.config)).toEqual([
+        expect.objectContaining({ device: 'wasm', dtype: 'fp32' }),
+        expect.objectContaining({ device: 'webgpu', dtype: 'fp32' }),
+      ]);
+    } finally {
+      if (originalGpu) Object.defineProperty(navigator, 'gpu', originalGpu);
+      else delete (navigator as Navigator & { gpu?: unknown }).gpu;
+    }
+  });
+
+  test('浏览器暴露 WebGPU 但拿不到适配器时，直接加载 WASM 而不污染运行时初始化链', async () => {
+    const originalGpu = Object.getOwnPropertyDescriptor(navigator, 'gpu');
+    const backends: unknown[] = [];
+    Object.defineProperty(navigator, 'gpu', {
+      configurable: true,
+      value: { requestAdapter: () => Promise.resolve(null) },
+    });
+    mockPipelineFactory = async (_task, _model, options) => {
+      const device = (options as Record<string, unknown>).device;
+      backends.push(device);
+      if (device === 'webgpu') throw new Error('poisoned runtime initialization chain');
+      return async () => fakePooledOutput(1, 0.5);
+    };
+    try {
+      await EmbeddingService.init();
+      expect(backends).toEqual(['wasm']);
+      expect(EmbeddingService.getActiveBackend()).toBe('wasm');
+      expect(EmbeddingService.isReady()).toBe(true);
+    } finally {
+      if (originalGpu) Object.defineProperty(navigator, 'gpu', originalGpu);
+      else delete (navigator as Navigator & { gpu?: unknown }).gpu;
+    }
+  });
+
+  test('GPU 适配器存在但驱动无法创建设备时直接使用 WASM', async () => {
+    const originalGpu = Object.getOwnPropertyDescriptor(navigator, 'gpu');
+    Object.defineProperty(navigator, 'gpu', {
+      configurable: true,
+      value: {
+        requestAdapter: () =>
+          Promise.resolve({
+            requestDevice: () => Promise.reject(new Error('GPU device unavailable')),
+          }),
+      },
+    });
+    const backends: unknown[] = [];
+    mockPipelineFactory = async (_task, _model, options) => {
+      backends.push((options as Record<string, unknown>).device);
+      return async () => fakePooledOutput(1, 0.5);
+    };
+    try {
+      await EmbeddingService.init();
+      expect(backends).toEqual(['wasm']);
+      expect(EmbeddingService.getActiveBackend()).toBe('wasm');
+    } finally {
+      if (originalGpu) Object.defineProperty(navigator, 'gpu', originalGpu);
+      else delete (navigator as Navigator & { gpu?: unknown }).gpu;
+    }
+  });
+
+  test('WebGPU session 失败后 init 等待 WASM 完成，并发调用不重复初始化', async () => {
+    const originalGpu = Object.getOwnPropertyDescriptor(navigator, 'gpu');
+    Object.defineProperty(navigator, 'gpu', {
+      configurable: true,
+      value: {
+        requestAdapter: () =>
+          Promise.resolve({ requestDevice: () => Promise.resolve({ destroy() {} }) }),
+      },
+    });
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const backends: unknown[] = [];
+    mockPipelineFactory = async (_task, _model, options) => {
+      const device = (options as Record<string, unknown>).device;
+      backends.push(device);
+      if (device === 'webgpu') throw new Error('GPU session failed');
+      entered.resolve();
+      await release.promise;
+      return async () => fakePooledOutput(1, 0.5);
+    };
+    let finished = false;
+    const first = EmbeddingService.init().then(() => {
+      finished = true;
+    });
+    try {
+      await entered.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(finished).toBe(false);
+      const second = EmbeddingService.init();
+      release.resolve();
+      await Promise.all([first, second]);
+      expect(backends).toEqual(['webgpu', 'wasm']);
+      expect(EmbeddingService.isReady()).toBe(true);
+      expect(EmbeddingService.getActiveBackend()).toBe('wasm');
+    } finally {
+      release.resolve();
+      await first;
+      if (originalGpu) Object.defineProperty(navigator, 'gpu', originalGpu);
+      else delete (navigator as Navigator & { gpu?: unknown }).gpu;
+    }
   });
 
   test('init() 失败时状态切换到 failed,不抛异常', async () => {
@@ -204,7 +387,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     EmbeddingService.__resetForTesting();
   });
 
-  test('embed 返回原生 768 维 L2 归一化向量,保留跨语言细粒度语义', async () => {
+  test('embed 返回原生 384 维 L2 归一化向量', async () => {
     mockPipelineImpl = async () => fakePooledOutput(1, 0.5);
     await EmbeddingService.init();
 
@@ -284,7 +467,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     mockPipelineImpl = async (input: unknown, options?: unknown) => {
       capturedOptions.push((options ?? {}) as Record<string, unknown>);
       const texts = Array.isArray(input) ? (input as string[]) : [input as string];
-      const hidden = 768;
+      const hidden = 384;
       const data = new Float32Array(texts.length * hidden);
       for (let b = 0; b < texts.length; b++) {
         const t = texts[b] ?? '';
@@ -305,7 +488,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     // 两处传入的 pooling 必须一致 — 这是 embedding 空间身份的组成部分
     expect(capturedOptions).toHaveLength(2);
     expect(capturedOptions[0]!.pooling).toBe(capturedOptions[1]!.pooling);
-    expect(capturedOptions[0]!.pooling).toBe('cls');
+    expect(capturedOptions[0]!.pooling).toBe('mean');
 
     // 同文本 + 同 task 下,两条路径必须产出完全相同的向量
     expect(batch[0]!.length).toBe(single!.length);
@@ -319,7 +502,7 @@ describe('EmbeddingService - embed / embedBatch', () => {
     mockPipelineImpl = async (input: unknown) => {
       const texts = Array.isArray(input) ? (input as string[]) : [input as string];
       capturedInputs.push(...texts);
-      const hidden = 768;
+      const hidden = 384;
       const data = new Float32Array(texts.length * hidden);
       for (let b = 0; b < texts.length; b++) {
         const t = texts[b] ?? '';
@@ -372,8 +555,9 @@ describe('EmbeddingService - cosineSimilarity', () => {
 
 describe('EmbeddingService - 常量', () => {
   test('MODEL_VERSION 与 DIMENSIONS 与 spec 一致', () => {
-    expect(MODEL_VERSION).toBe('gte-multilingual-base@768@cls@raw');
-    expect(DIMENSIONS).toBe(768);
+    expect(MODEL_ID).toBe('hotchpotch/bekko-embedding-v1-a25m');
+    expect(MODEL_VERSION).toBe('bekko-embedding-v1-a25m@384@mean@raw');
+    expect(DIMENSIONS).toBe(384);
   });
 });
 
@@ -417,6 +601,23 @@ describe('EmbeddingService - cleanupLegacyModelCache', () => {
       },
     };
   }
+
+  test('仅 Bekko 的完整默认模型缓存可触发预热，旧模型或单独分词器不算', async () => {
+    const cache = makeCache('transformers-cache', [
+      'https://huggingface.co/onnx-community/gte-multilingual-base/resolve/main/onnx/model_q4f16.onnx',
+      'https://huggingface.co/hotchpotch/bekko-embedding-v1-a25m/resolve/main/tokenizer.json',
+    ]);
+    const restore = installFakeCaches([cache]);
+    try {
+      expect(await EmbeddingService.isModelCachedInBrowser()).toBe(false);
+      cache.entries.push({
+        url: 'https://huggingface.co/hotchpotch/bekko-embedding-v1-a25m/resolve/main/onnx/model.onnx',
+      });
+      expect(await EmbeddingService.isModelCachedInBrowser()).toBe(true);
+    } finally {
+      restore();
+    }
+  });
 
   test('删除所有匹配历史模型 URL 片段的条目,保留当前模型', async () => {
     const cache = makeCache('transformers-cache', [

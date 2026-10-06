@@ -11,5 +11,5 @@ export interface Memory {
   updatedAt?: number; // 内容修改时间；旧记录首次读写时沿用原 lastAccessedAt
   lastAccessedAt: number; // 设备本地的最后访问时间戳（用于 LRU 和检索）
   embeddings?: number[][]; // 分段语义向量；长记忆评分时取所有分段中的最佳匹配
-  embeddingModel?: string; // 生成该向量的模型版本标识，例如 "gte-multilingual-base@256"
+  embeddingModel?: string; // 生成该向量的模型版本标识，例如 "bekko-embedding-v1-a25m@384@mean@raw"
 }

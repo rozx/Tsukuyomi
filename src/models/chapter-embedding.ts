@@ -5,9 +5,9 @@ import type { AppLocale } from './locale';
  *
  * - 存储在独立 IndexedDB store `chapter-embeddings`(本地资源,Gist 同步时 strip)
  * - 每章按 `kind` 分两类 chunk:
- *   · `'content'` — 原文+译文按段落边界切的 ~1500 字符 chunk(可 0..N 条)
+ *   · `'content'` — 原文按段落边界切的 ~100 字符语义 chunk，预览保留目标译文(可 0..N 条)
  *   · `'title'`   — 由「[章] ${标题}\n\n${首段}」组成、截断到 300 字的语义 chunk(0 或 1 条)
- * - 向量维度固定为 256(与 EmbeddingService 对齐,Matryoshka 截取)
+ * - 向量维度固定为 384(与 EmbeddingService 对齐,原生 mean pooling)
  * - Key 格式:`${chapterId}:${kind}:${chunkIndex}` —— title chunk 永远是 `${chapterId}:title:0`
  */
 export type ChapterEmbeddingKind = 'content' | 'title';
@@ -28,7 +28,7 @@ export interface ChapterEmbedding {
   kind: ChapterEmbeddingKind;
   /** 该 kind 内 chunk 的顺序索引(0-based;title chunk 永远为 0) */
   chunkIndex: number;
-  /** 256 维归一化向量 */
+  /** 384 维归一化向量 */
   vector: number[];
   /** 该 chunk 的前 200 字符,作为 query_chapter 返回的 preview */
   textSnippet: string;

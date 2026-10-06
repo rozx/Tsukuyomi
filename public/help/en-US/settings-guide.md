@@ -252,11 +252,11 @@ Local vectors support semantic memory search and `query_chapter`. See [Local emb
 
 ### Model and backend {#settings-guide-section-32}
 
-- Default: `onnx-community/gte-multilingual-base`, a 305M multilingual BERT encoder with full 768-dimensional L2-normalized vectors and CLS pooling. Browser Cache Storage retains downloaded weights for offline startup.
+- Default: `hotchpotch/bekko-embedding-v1-a25m`, about 123M total / 25M active parameters, with 384-dimensional L2-normalized vectors and mean pooling. The default artifact is about 190 MiB, with an int8 vocabulary table and fp32 Transformer computation, retained in browser Cache Storage.
 - Automatic backend order:
-  - **WebGPU + q4f16**, about 465 MB and 5–10× faster on supporting desktop Chrome/Edge.
-  - **WASM + int8**, about 340 MB, when WebGPU is unavailable or fails. WebGPU is not retried during the session.
-- Version: `gte-multilingual-base@768@cls@raw` since v0.14.3. Model, dimensions, pooling, or input changes bump the version; stale vectors are recomputed.
+  - **WebGPU** when a GPU adapter is available.
+  - **WASM** when no adapter is available. Both backends use the same default artifact.
+- Version: `bekko-embedding-v1-a25m@384@mean@raw`. Changes to model, dimensions, pooling, or input scheme update the version; stale vectors are recomputed in the background.
 - Automatic warmup requires embeddings enabled and an already cached model. The first download takes time.
 
 ### Memory injection {#settings-guide-section-33}

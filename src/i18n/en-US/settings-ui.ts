@@ -61,12 +61,12 @@ export default {
       mobileHint:
         'Local embeddings are not supported on mobile (the model is too large and WebGPU is unstable). Mobile search uses keyword matching only. Vectors are local to each device and are not synced; enabling them on desktop affects only that desktop’s semantic search.',
       desktopHint:
-        'When enabled, an embedding model is downloaded to the browser for semantic memory retrieval and chapter vector search. When off, only keyword matching is used, saving ~340–465 MB of storage.',
+        'When enabled, an embedding model is downloaded to the browser for semantic memory retrieval and chapter vector search. The first download is about 190 MiB. When off, keyword retrieval remains available and vector generation pauses.',
       modelTitle: 'Embedding model',
       modelDescription:
         'A locally run embedding model that provides vectors for memory injection and chapter embeddings below',
       modelSize:
-        '(WebGPU: q4f16 ~465 MB / without WebGPU, falls back to WASM: int8 ~340 MB; downloaded to the browser cache on first use)',
+        '(WebGPU / WASM share the ~190 MiB default ONNX artifact, with an int8 vocabulary and fp32 Transformer; downloaded to the browser cache on first use)',
       memoryTitle: 'Memory injection',
       memoryDescription:
         'Automatically include the most relevant memories as context when translating',

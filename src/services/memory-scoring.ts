@@ -588,8 +588,15 @@ function clamp01(value: number): number {
  *
  * 中等相似度必须同时明显高于本批中位数，避免“整批都无关，但相对第一名仍被 RRF
  * 抬成满分”。候选过少时无法可靠估计背景分布，只应用绝对相似度校准。
+ * 主动检索可传入模型对应的绝对区间，默认保持自动记忆注入的保守区间。
  */
-export function calculateSemanticConfidenceScores(values: Array<number | null>): number[] {
+export function calculateSemanticConfidenceScores(
+  values: Array<number | null>,
+  calibration: { floor: number; full: number } = {
+    floor: SEMANTIC_CONFIDENCE_FLOOR,
+    full: SEMANTIC_CONFIDENCE_FULL,
+  },
+): number[] {
   const valid = values.filter((value): value is number => value !== null).sort((a, b) => a - b);
   const middle = Math.floor(valid.length / 2);
   const median =
@@ -602,7 +609,7 @@ export function calculateSemanticConfidenceScores(values: Array<number | null>):
   return values.map((value) => {
     if (value === null) return 0;
     const absoluteConfidence = clamp01(
-      (value - SEMANTIC_CONFIDENCE_FLOOR) / (SEMANTIC_CONFIDENCE_FULL - SEMANTIC_CONFIDENCE_FLOOR),
+      (value - calibration.floor) / (calibration.full - calibration.floor),
     );
     if (absoluteConfidence === 0 || valid.length < SEMANTIC_CONTRAST_MIN_BATCH) {
       return absoluteConfidence;

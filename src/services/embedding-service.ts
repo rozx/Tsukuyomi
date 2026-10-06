@@ -2,11 +2,9 @@
  * EmbeddingService — 基于 Transformers.js 的本地特征提取
  *
  * 约定:
- * - 使用 GTE-Multilingual-Base ONNX(Alibaba 2024),305M 参数 BERT-encoder。
- *   体积:WebGPU q4f16 ~465MB / WASM int8 ~340MB。
- *   相比 Qwen3-Embedding-0.6B(decoder + last-token pooling)同硬件下快 3-5×,
- *   因为 encoder 的 forward pass 比同等参数的 decoder 轻很多。
- * - 使用原生 768 维 CLS 表征并 L2 归一化,保留跨语言检索的细粒度语义。
+ * - 使用 Bekko a25m 官方 ONNX,约 123M 总参数 / 25M 活跃参数。
+ *   默认文件约 190 MiB，静态词表 int8 压缩，Transformer 计算保持 fp32。
+ * - 使用原生 384 维 mean pooling 表征并 L2 归一化。
  * - 模型加载走动态 import,确保 Transformers.js 不进主 bundle。
  * - 失败时静默降级:调用方通过 getStatus() 感知,不会抛到 UI 顶层。
  */
@@ -14,48 +12,47 @@
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
 import { createCustomEventSubscriber, dispatchCustomEvent } from 'src/utils/dispatch-custom-event';
 
-export const MODEL_ID = 'onnx-community/gte-multilingual-base';
+export const MODEL_ID = 'hotchpotch/bekko-embedding-v1-a25m';
 // 模型 id + 截取维度 + 输入方案 + pooling 方案共同构成 embedding 空间身份,任一变化必须 bump 版本号,
 // EmbeddingQueue backlog 扫描会把版本不匹配的记录当作 stale 自动重算。
-export const MODEL_VERSION = 'gte-multilingual-base@768@cls@raw';
-export const DIMENSIONS = 768;
-const NATIVE_DIMENSIONS = 768;
+export const MODEL_VERSION = 'bekko-embedding-v1-a25m@384@mean@raw';
+export const DIMENSIONS = 384;
+const NATIVE_DIMENSIONS = 384;
 
 export type EmbeddingStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
 /**
  * 运行后端:WebGPU 优先,不可用/初始化失败时回落 WASM(CPU)。
- * 两者体积差不多,但 WebGPU 上推理速度可快 5-10 倍(尤其对 0.6B 级别模型)。
+ * 两个后端使用同一官方默认 ONNX 文件，避免使用未推荐的 Transformer 权重量化版本。
  */
 export type EmbeddingBackend = 'webgpu' | 'wasm';
 
 interface PipelineConfig {
   device: EmbeddingBackend;
-  dtype: 'q4f16' | 'int8';
+  dtype: 'fp32';
 }
 
-/** WebGPU 上:4-bit 权重 + fp16 激活,gte 的 q4f16 ≈ 465MB。 */
-const WEBGPU_CONFIG: PipelineConfig = { device: 'webgpu', dtype: 'q4f16' };
-/** WASM 上:8-bit 量化,gte 的 int8 ≈ 340MB,兼容性最好但速度慢于 WebGPU 许多。 */
-const WASM_CONFIG: PipelineConfig = { device: 'wasm', dtype: 'int8' };
+/** fp32 选择 model.onnx；该文件的词表已经 int8 压缩，并非完整 fp32 权重。 */
+const WEBGPU_CONFIG: PipelineConfig = { device: 'webgpu', dtype: 'fp32' };
+const WASM_CONFIG: PipelineConfig = { device: 'wasm', dtype: 'fp32' };
 
 function hasWebGPU(): boolean {
   return typeof navigator !== 'undefined' && 'gpu' in navigator;
 }
 
 /**
- * GTE-Multilingual 官方检索方案直接编码原文,不使用 query/document 指令前缀。
+ * Bekko 官方检索方案直接编码原文,不使用 query/document 指令前缀。
  * task 仍保留在 API 中标明调用意图,便于以后更换模型时维持显式契约。
  */
 export type EmbeddingTask = 'query' | 'document';
 
 /**
- * Pooling 方案 — gte-multilingual-base 官方示例取 last_hidden_state 的首个 token(CLS)。
+ * Pooling 方案 — Bekko 官方契约对有效 token 做 mean pooling。
  * 单条 embed() 与批处理 embedBatch() 必须使用同一方案,否则 query 向量和 document 向量
  * 落到不同空间,余弦相似度退化成噪声。集中在此常量避免两处手写漂移。
  * 该值也是 MODEL_VERSION 的一部分——变更 pooling 必须同时 bump 版本号。
  */
-const POOLING = 'cls' as const;
+const POOLING = 'mean' as const;
 
 function prepareTaskText(text: string, _task: EmbeddingTask): string {
   return text;
@@ -91,7 +88,8 @@ type FeatureExtractionPipeline = (
  * 单例 Service。浏览器只需要一份 pipeline 实例。
  */
 export class EmbeddingService {
-  private static readonly QUERY_CACHE_LIMIT = 128;
+  // 足以容纳一轮最多 192 个重排段落和查询文本，避免按批扫描造成 LRU 抖动。
+  private static readonly QUERY_CACHE_LIMIT = 256;
   private static readonly queryCache = new Map<string, Promise<Float32Array | null>>();
   private static readonly inferenceQueue: Array<{ task: EmbeddingTask; run: () => Promise<void> }> =
     [];
@@ -109,7 +107,7 @@ export class EmbeddingService {
    * 避免在无 WebGPU 的浏览器里每次重试都再次触发 WebGPU 探测。
    */
   private static webGpuBlacklisted = false;
-  /** 最终加载成功的后端,供 UI 展示(q4f16 / q8 速度差 5-10 倍,用户应该能看到) */
+  /** 最终加载成功的后端,供 UI 展示 */
   private static activeBackend: EmbeddingBackend | null = null;
 
   private static readonly events = new EventTarget();
@@ -206,8 +204,29 @@ export class EmbeddingService {
   }
 
   /** 按当前会话状态决定本次 init 用什么后端 + dtype */
-  private static pickConfig(): PipelineConfig {
-    if (!this.webGpuBlacklisted && hasWebGPU()) return WEBGPU_CONFIG;
+  private static async pickConfig(): Promise<PipelineConfig> {
+    if (!this.webGpuBlacklisted && hasWebGPU()) {
+      try {
+        const gpu = (
+          navigator as Navigator & {
+            gpu?: { requestAdapter?: () => Promise<unknown> };
+          }
+        ).gpu;
+        const adapter = await gpu?.requestAdapter?.();
+        if (adapter) {
+          const device = await (
+            adapter as {
+              requestDevice: () => Promise<{ destroy: () => void }>;
+            }
+          ).requestDevice();
+          device.destroy();
+          return WEBGPU_CONFIG;
+        }
+      } catch {
+        // 先检查适配器，避免失败的 WebGPU session 污染运行时初始化链。
+      }
+      this.webGpuBlacklisted = true;
+    }
     return WASM_CONFIG;
   }
 
@@ -223,7 +242,15 @@ export class EmbeddingService {
       for (const name of cacheNames) {
         const cache = await caches.open(name);
         const keys = await cache.keys();
-        if (keys.some((req) => req.url.toLowerCase().includes('gte-multilingual'))) {
+        if (
+          keys.some((req) => {
+            const url = req.url.toLowerCase();
+            return (
+              url.includes(MODEL_ID.toLowerCase()) &&
+              url.split('?')[0]!.endsWith('/onnx/model.onnx')
+            );
+          })
+        ) {
           return true;
         }
       }
@@ -304,10 +331,8 @@ export class EmbeddingService {
           options: Record<string, unknown>,
         ) => Promise<FeatureExtractionPipeline>;
 
-        // 按 pickConfig 的结果决定 backend + dtype:
-        // - WebGPU 支持: q4f16 (~567MB, 推理 5-10x 快于 WASM)
-        // - WASM 回落:  q8  (~614MB, 兼容性最好)
-        const config = this.pickConfig();
+        // 两个后端共用官方默认压缩文件，优先 WebGPU，失败后回落 WASM。
+        const config = await this.pickConfig();
         console.info(`[EmbeddingService] 使用后端 ${config.device} + dtype ${config.dtype}`);
         const extractor = await pipeline('feature-extraction', MODEL_ID, {
           dtype: config.dtype,
@@ -342,7 +367,7 @@ export class EmbeddingService {
             fallbackToWasm: true,
           });
           this.initPromise = null;
-          void this.init();
+          await this.init();
           return;
         }
 
@@ -359,7 +384,7 @@ export class EmbeddingService {
           console.info(`[EmbeddingService] 将在 ${delay / 1000}s 后重试...`);
           await new Promise((r) => setTimeout(r, delay));
           this.initPromise = null;
-          void this.init(); // 重新触发 init
+          await this.init(); // 等待本次重试完成，保持并发调用共享同一初始化过程
           return;
         }
 
@@ -401,7 +426,7 @@ export class EmbeddingService {
 
   /**
    * 对单条文本计算 embedding。
-   * 返回 768 维 L2 归一化 Float32Array。
+   * 返回 384 维 L2 归一化 Float32Array。
    * 未就绪或失败时返回 null(调用方 fallback 到纯关键词 + 时间衰减)。
    *
    * `task` 必填:'query' 用于检索查询,'document' 用于被检索的文档/记忆/章节 chunk。
@@ -442,14 +467,16 @@ export class EmbeddingService {
    * 返回的数组下标与输入一一对应,失败或空文本对应位置为 null。
    *
    * `task` 必填,所有非空输入都会按与单条 `embed` 相同的模型契约处理。
+   * `priority` 只控制调度；前台文档重排可用 query 优先级，并按文档任务独立缓存。
    */
   static async embedBatch(
     texts: string[],
     task: EmbeddingTask,
+    priority: EmbeddingTask = task,
   ): Promise<Array<Float32Array | null>> {
     if (!texts || texts.length === 0) return [];
     if (!this.isReady()) return texts.map(() => null);
-    if (task === 'query') return this.embedQueryBatch(texts);
+    if (task === 'query' || priority === 'query') return this.embedQueryBatch(texts, task);
     return this.embedUncachedBatch(texts, task);
   }
 
@@ -458,12 +485,15 @@ export class EmbeddingService {
     this.queryCache.clear();
   }
 
-  private static queryKey(text: string): string {
-    return `${MODEL_VERSION}:query:${text}`;
+  private static queryKey(text: string, task: EmbeddingTask = 'query'): string {
+    return `${MODEL_VERSION}:${task}:${text}`;
   }
 
-  private static getCachedQuery(text: string): Promise<Float32Array | null> | undefined {
-    const key = this.queryKey(text);
+  private static getCachedQuery(
+    text: string,
+    task: EmbeddingTask = 'query',
+  ): Promise<Float32Array | null> | undefined {
+    const key = this.queryKey(text, task);
     const cached = this.queryCache.get(key);
     if (cached) {
       this.queryCache.delete(key);
@@ -475,8 +505,9 @@ export class EmbeddingService {
   private static cacheQuery(
     text: string,
     promise: Promise<Float32Array | null>,
+    task: EmbeddingTask = 'query',
   ): Promise<Float32Array | null> {
-    const key = this.queryKey(text);
+    const key = this.queryKey(text, task);
     this.queryCache.set(key, promise);
     if (this.queryCache.size > this.QUERY_CACHE_LIMIT) {
       const oldest = this.queryCache.keys().next().value;
@@ -488,19 +519,23 @@ export class EmbeddingService {
     return promise;
   }
 
-  private static async embedQueryBatch(texts: string[]): Promise<Array<Float32Array | null>> {
+  private static async embedQueryBatch(
+    texts: string[],
+    task: EmbeddingTask = 'query',
+  ): Promise<Array<Float32Array | null>> {
     const jobs: Array<{ text: string; resolve: (vector: Float32Array | null) => void }> = [];
     const pending = texts.map((text) => {
       if (!text?.trim()) return Promise.resolve(null);
-      const cached = this.getCachedQuery(text);
+      const cached = this.getCachedQuery(text, task);
       if (cached) return cached;
       const deferred = Promise.withResolvers<Float32Array | null>();
       jobs.push({ text, resolve: deferred.resolve });
-      return this.cacheQuery(text, deferred.promise);
+      return this.cacheQuery(text, deferred.promise, task);
     });
     if (jobs.length) {
       const vectors = await this.embedUncachedBatch(
         jobs.map((job) => job.text),
+        task,
         'query',
       );
       jobs.forEach((job, index) => job.resolve(vectors[index] ?? null));
@@ -545,6 +580,7 @@ export class EmbeddingService {
   private static async embedUncachedBatch(
     texts: string[],
     task: EmbeddingTask,
+    priority: EmbeddingTask = task,
   ): Promise<Array<Float32Array | null>> {
     // 过滤空文本但保留位置映射
     const indexed: Array<{ idx: number; text: string }> = [];
@@ -556,7 +592,7 @@ export class EmbeddingService {
     const result: Array<Float32Array | null> = texts.map(() => null);
     const pipeline = this.pipeline!;
     try {
-      const output = await this.scheduleInference(task, () =>
+      const output = await this.scheduleInference(priority, () =>
         pipeline(
           indexed.map((e) => prepareTaskText(e.text, task)),
           {
@@ -583,7 +619,7 @@ export class EmbeddingService {
   private static extractFirstVector(output: any): Float32Array | null {
     const flat = this.outputToFloat32(output);
     if (!flat) return null;
-    // CLS-pooled 输出形状 = [batch, hidden_size];单条输入 batch=1 → 取前 NATIVE_DIMENSIONS 维
+    // Mean-pooled 输出形状 = [batch, hidden_size];单条输入 batch=1 → 取原生维度
     const hidden = flat.length >= NATIVE_DIMENSIONS ? NATIVE_DIMENSIONS : flat.length;
     const take = Math.min(DIMENSIONS, hidden);
     return this.truncateAndNormalize(flat, 0, take);

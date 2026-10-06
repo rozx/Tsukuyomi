@@ -68,9 +68,11 @@ describe('ChapterEmbeddingService.splitChapterIntoChunks', () => {
     expect(chunks).toHaveLength(1);
     expect(chunks[0]!.chunkIndex).toBe(0);
     expect(chunks[0]!.text).toContain('第一段原文');
-    expect(chunks[0]!.text).toContain('第一段译文');
+    expect(chunks[0]!.text).not.toContain('第一段译文');
     expect(chunks[0]!.text).toContain('第二段原文');
-    expect(chunks[0]!.text).toContain('第二段译文');
+    expect(chunks[0]!.text).not.toContain('第二段译文');
+    expect(chunks[0]!.snippet).toContain('第一段译文');
+    expect(chunks[0]!.snippet).toContain('第二段译文');
     expect(chunks[0]!.snippet.length).toBeLessThanOrEqual(PREVIEW_CHARS);
   });
 
@@ -136,11 +138,23 @@ describe('ChapterEmbeddingService.splitChapterIntoChunks', () => {
     expect(chunks[0]!.text).toBe('原文-only');
   });
 
-  test('有译文段落按 "原文\\n译文" 拼接', () => {
+  test('语义输入只用原文，关键词和预览拼接目标译文', () => {
     const paragraphs = [makeParagraph('p1', '原文', '译文')];
     const chunks = splitChapterIntoChunks(paragraphs);
 
-    expect(chunks[0]!.text).toBe('原文\n译文');
+    expect(chunks[0]!.text).toBe('原文');
+    expect(chunks[0]!.snippet).toBe('原文\n译文');
+  });
+
+  test('有无译文不改变原文的语义输入或切块边界', () => {
+    const source = Array.from({ length: 3 }, (_, i) => makeParagraph(`p${i}`, 'あ'.repeat(40)));
+    const translated = source.map((p) => makeParagraph(p.id, p.text, '译'.repeat(100)));
+    const sourceChunks = splitChapterIntoChunks(source);
+    const translatedChunks = splitChapterIntoChunks(translated);
+    expect(translatedChunks.map(({ text, chunkIndex }) => ({ text, chunkIndex }))).toEqual(
+      sourceChunks.map(({ text, chunkIndex }) => ({ text, chunkIndex })),
+    );
+    expect(translatedChunks[0]!.snippet).toContain('译');
   });
 
   test('chunkIndex 从 0 递增', () => {
@@ -453,12 +467,14 @@ describe('ChapterEmbeddingService.queryChapters', () => {
       { kind: 'content', chunkIndex: 0, vector: [0.1, 1], textSnippet: 'C-0' },
     ]);
 
-    const result = await ChapterEmbeddingService.queryChapters('book-1', 'q', 2);
+    const result = await ChapterEmbeddingService.queryChapters('book-1', 'q', 3);
 
-    expect(result).toHaveLength(1);
+    // Bekko 中 B 的 0.447 余弦属于有效证据，C 的 0.100 仍应被过滤。
+    expect(result).toHaveLength(2);
     expect(result[0]!.chapter_id).toBe('ch-A');
     expect(result[0]!.title).toBe('A');
     expect(result[0]!.preview).toBe('A-1 (high)');
+    expect(result[1]!.chapter_id).toBe('ch-B');
   });
 
   test('limit 默认为 5, 超出数量时截断', async () => {

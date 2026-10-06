@@ -301,14 +301,75 @@ describe('ChapterEmbeddingService.queryChapters — 混合打分', () => {
     ]);
     spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
 
-    // 第一名虽高于背景分布,但校准后的总分只有约 0.43；这种孤立弱命中不应硬返回。
-    await putContentChunks('ch-1', bookId, [{ vector: v(0.56), snippet: '放学后的闲聊' }]);
-    await putContentChunks('ch-2', bookId, [{ vector: v(0.51), snippet: '周末的午餐' }]);
-    await putContentChunks('ch-3', bookId, [{ vector: v(0.5), snippet: '社团活动' }]);
-    await putContentChunks('ch-4', bookId, [{ vector: v(0.49), snippet: '回家路上' }]);
+    // Bekko 的弱命中贴近背景，不能因相对第一名而变成有效结果。
+    await putContentChunks('ch-1', bookId, [{ vector: v(0.32), snippet: '放学后的闲聊' }]);
+    await putContentChunks('ch-2', bookId, [{ vector: v(0.3), snippet: '周末的午餐' }]);
+    await putContentChunks('ch-3', bookId, [{ vector: v(0.29), snippet: '社团活动' }]);
+    await putContentChunks('ch-4', bookId, [{ vector: v(0.28), snippet: '回家路上' }]);
 
     const results = await ChapterEmbeddingService.queryChapters(bookId, '量子色动力学实验数据', 5);
     expect(results).toEqual([]);
+  });
+
+  it('整书候选池中，跨语言情节虽低于 GTE 的相似度区间，仍能召回明显高于背景的章节', async () => {
+    const v = (c: number): number[] => [c, Math.sqrt(1 - c * c)];
+    const raws = [
+      0.345778,
+      0.323198,
+      0.322005,
+      0.320232,
+      0.312522,
+      0.306261,
+      0.305671,
+      0.304821,
+      ...Array.from({ length: 49 }, () => 0.272),
+    ];
+    const bookId = 'cross-language-book';
+    await seedBook(
+      bookId,
+      '本卷',
+      raws.map((_raw, index) => ({ id: `c${index}`, title: `日文章 ${index}` })),
+    );
+    spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
+    for (const [index, raw] of raws.entries()) {
+      await putContentChunks(`c${index}`, bookId, [
+        { vector: v(raw), snippet: '彼を頼るまで待つのも、やめよう。' },
+      ]);
+    }
+    const results = await ChapterEmbeddingService.queryChapters(
+      bookId,
+      '女主不想再等待男主主动依赖她',
+      5,
+    );
+    expect(results.map((match) => match.chapter_id)).toContain('c1');
+    expect(results[0]?.chapter_id).toBe('c0');
+    expect(results.length).toBeLessThanOrEqual(5);
+  });
+
+  it('整书的低相似度噪声仍返回空，不因放宽跨语言校准硬凑结果', async () => {
+    const v = (c: number): number[] => [c, Math.sqrt(1 - c * c)];
+    const bookId = 'unrelated-book';
+    const raws = [
+      0.204179,
+      0.203649,
+      0.190737,
+      0.181898,
+      ...Array.from({ length: 53 }, () => 0.12),
+    ];
+    await seedBook(
+      bookId,
+      '本卷',
+      raws.map((_raw, index) => ({ id: `c${index}`, title: `日文章 ${index}` })),
+    );
+    spyOn(EmbeddingService, 'embed').mockResolvedValue(new Float32Array([1, 0]));
+    for (const [index, raw] of raws.entries()) {
+      await putContentChunks(`c${index}`, bookId, [
+        { vector: v(raw), snippet: '放課後の出来事。' },
+      ]);
+    }
+    expect(
+      await ChapterEmbeddingService.queryChapters(bookId, '宇宙飞船核聚变发动机的维修步骤', 5),
+    ).toEqual([]);
   });
 
   it('全书语义分完全并列时降级到 keyword,字面命中赢', async () => {

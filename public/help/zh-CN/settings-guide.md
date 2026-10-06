@@ -257,11 +257,11 @@
 
 ### 嵌入模型与运行后端 {#settings-guide-section-32}
 
-- 默认模型：`onnx-community/gte-multilingual-base`（305M 参数的多语言 BERT encoder，使用完整 768 维向量并 L2 归一化，CLS pooling 与官方示例一致）。模型权重首次下载后由浏览器 Cache Storage 持久化，离线也可启动。
-- 运行后端按下列优先级自动选择：
-  - **WebGPU + q4f16**（~465MB，推理快 5-10×）— 桌面 Chrome / Edge 等支持 WebGPU 的浏览器优先。
-  - **WASM + int8**（~340MB，兼容性最好）— WebGPU 不可用或初始化失败时自动回落，本会话内不再重试 WebGPU。
-- 模型版本号：`gte-multilingual-base@768@cls@raw`（v0.14.3 起，pooling 切回 CLS、取消非对称 query 前缀）。模型 / 维度 / pooling / 输入方案任一变化都会 bump 版本号，旧向量被判定为 stale 自动重算（参见独立文档「模型版本与 stale 重算」一节）。
+- 默认模型：`hotchpotch/bekko-embedding-v1-a25m`，约 123M 总参数 / 25M 活跃参数，使用 384 维向量、mean pooling 和 L2 归一化。模型文件约 190 MiB，词表 int8 压缩、Transformer 计算 fp32；首次下载后由浏览器 Cache Storage 持久化。
+- 运行后端自动选择：
+  - **WebGPU** — 能取得 GPU 适配器时优先使用。
+  - **WASM** — 适配器不可用时直接使用；两个后端共用同一默认文件。
+- 模型版本号：`bekko-embedding-v1-a25m@384@mean@raw`。模型 / 维度 / pooling / 输入方案变化时更新版本号，旧向量作为 stale 在后台重算。
 - 仅在启用后且曾经缓存过模型时才会自动预热，首次开启需下载模型，请耐心等待。
 
 ### 记忆注入 {#settings-guide-section-33}

@@ -113,5 +113,8 @@
   },
   "engines": {
     "bun": ">=1.0.0"
+  },
+  "patchedDependencies": {
+    "@huggingface/transformers@4.3.0": "patches/@huggingface%2Ftransformers@4.3.0.patch"
   }
 }

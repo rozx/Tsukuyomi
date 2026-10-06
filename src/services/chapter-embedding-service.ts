@@ -3,7 +3,7 @@
  *
  * 职责:
  * - 切 chunk(按段落边界,目标 ~100 字符)
- * - 拼接原文+译文作为嵌入输入
+ * - 原文作为语义输入，原文+目标译文保留在关键词与预览文本中
  * - 为每章额外生成一条 `kind: 'title'` chunk(章节标题 + 首段,截到 300 字),
  *   作为标题型 query 的语义锚点
  * - 调 EmbeddingService.embedBatch 生成向量(content + title 按最多八条分批)
@@ -31,7 +31,8 @@ import { normalizeChapterLanguages } from './localization/normalize';
 import { cosineSimilarity } from 'src/utils/cosine-similarity';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { ChapterEmbedding, ChapterEmbeddingKind } from 'src/models/chapter-embedding';
-import { EmbeddingService, MODEL_VERSION } from 'src/services/embedding-service';
+import { EmbeddingService, MODEL_ID, MODEL_VERSION } from 'src/services/embedding-service';
+import { rerankChapterParagraphs } from './chapter-search-reranking';
 import { loadChapterContent } from 'src/utils/chapter-content-loader';
 import { lookupChapterBookFromDB, loadBookMetaFromDB } from 'src/utils/chapter-book-lookup';
 import {
@@ -245,7 +246,7 @@ export const CHUNK_TARGET_CHARS = 100;
  * 与 MODEL_VERSION 分离的目的:memory 也用 MODEL_VERSION,但 memory 没有 chunking
  * 概念。chapter chunking 改动不应触发 memory 重嵌。
  */
-const CHAPTER_CHUNK_LAYOUT_VERSION = 'cs100';
+const CHAPTER_CHUNK_LAYOUT_VERSION = 'cs100-source-v2';
 /**
  * 章节嵌入实际使用的版本号 = MODEL_VERSION + chunking version。
  * `writeChunksForChapter` 写入此值;`queryChapters` / `findChaptersNeedingEmbedding`
@@ -277,8 +278,12 @@ export const TITLE_CHUNK_INDEX = 0;
 const CHAPTER_SEMANTIC_WEIGHT = 0.85;
 /** 章节级 keyword 在最终 total 中的权重 */
 const CHAPTER_KEYWORD_WEIGHT = 0.15;
+// Bekko 的整书跨语言情节相似度低于 GTE。只校准主动章节搜索，仍保留批内对比度
+// 和绝对质量门槛；自动记忆注入继续使用原有保守校准。
+const IS_BEKKO_MODEL = MODEL_ID === 'hotchpotch/bekko-embedding-v1-a25m';
+const CHAPTER_SEMANTIC_CALIBRATION = IS_BEKKO_MODEL ? { floor: 0.18, full: 0.45 } : undefined;
 /** 低于此总分的弱相对命中不返回，避免任何 query 都硬凑出 5 个章节。 */
-const CHAPTER_QUERY_MIN_SCORE = 0.45;
+const CHAPTER_QUERY_MIN_SCORE = IS_BEKKO_MODEL ? 0.25 : 0.45;
 /** 明确字面命中可越过总分阈值，确保语义无区分度时仍能用关键词兜底。 */
 const KEYWORD_FALLBACK_FLOOR = 0.5;
 /** content_top_k_mean 取前 K 个 content chunk 的均值,K = min(CONTENT_TOP_K, 实际数量) */
@@ -360,7 +365,7 @@ export function composeTitleChunkInput(
 export interface ChapterChunkDraft {
   chunkIndex: number;
   text: string; // 用于 embed 的输入文本
-  snippet: string; // 前 200 字,给 preview 用
+  snippet: string; // 原文+目标译文前 200 字,用于关键词与 preview
 }
 
 export interface ChapterQueryMatch {
@@ -386,6 +391,8 @@ function paragraphToText(p: Paragraph, language: AppLocale): string {
 
 /**
  * 按段落边界累积字符数,目标 ~CHUNK_TARGET_CHARS 切块。
+ * 语义输入和边界只依据原文，避免已译章节的双语文本挤压未译章节的跨语言召回。
+ * 译文继续参与关键词检索和预览；只有原文缺失时才用目标译文作为语义输入。
  * - 单段超过目标时独占一个 chunk(不切段)。
  * - 空段落被跳过(不贡献字符数、不进 chunk)。
  */
@@ -395,6 +402,7 @@ export function splitChapterIntoChunks(
 ): ChapterChunkDraft[] {
   const chunks: ChapterChunkDraft[] = [];
   let buffer: string[] = [];
+  let snippetBuffer: string[] = [];
   let bufferChars = 0;
 
   const flush = () => {
@@ -402,20 +410,23 @@ export function splitChapterIntoChunks(
     const joined = buffer.join('\n\n').trim();
     if (!joined) {
       buffer = [];
+      snippetBuffer = [];
       bufferChars = 0;
       return;
     }
     chunks.push({
       chunkIndex: chunks.length,
       text: joined,
-      snippet: joined.slice(0, PREVIEW_CHARS),
+      snippet: snippetBuffer.join('\n\n').trim().slice(0, PREVIEW_CHARS),
     });
     buffer = [];
+    snippetBuffer = [];
     bufferChars = 0;
   };
 
   for (const p of paragraphs) {
-    const piece = paragraphToText(p, language);
+    const snippetPiece = paragraphToText(p, language);
+    const piece = (p.text ?? '').trim() || snippetPiece;
     if (!piece) continue;
 
     // 单段超大时独占一块:先把 buffer 冲掉,再独立成块
@@ -423,7 +434,7 @@ export function splitChapterIntoChunks(
       chunks.push({
         chunkIndex: chunks.length,
         text: piece,
-        snippet: piece.slice(0, PREVIEW_CHARS),
+        snippet: snippetPiece.slice(0, PREVIEW_CHARS),
       });
       continue;
     }
@@ -433,6 +444,7 @@ export function splitChapterIntoChunks(
       flush();
     }
     buffer.push(piece);
+    snippetBuffer.push(snippetPiece);
     bufferChars += piece.length;
   }
   flush();
@@ -444,7 +456,7 @@ interface ChapterAgg {
   chapterId: string;
   titleSemantic: number;
   contentSemantics: number[];
-  contentSnippets: Array<{ score: number; snippet: string }>;
+  contentSnippets: Array<{ score: number; snippet: string; sourceText: string }>;
   titleSnippet: string;
 }
 
@@ -460,6 +472,7 @@ function computeRawCosines(
 function aggregateChunksByChapter(
   chunks: ChapterEmbedding[],
   rawCosines: number[],
+  sourceTexts: Map<string, string>,
 ): Map<string, ChapterAgg> {
   const byChapter = new Map<string, ChapterAgg>();
   for (let i = 0; i < chunks.length; i++) {
@@ -481,7 +494,11 @@ function aggregateChunksByChapter(
       if (!agg.titleSnippet) agg.titleSnippet = c.textSnippet;
     } else {
       agg.contentSemantics.push(raw);
-      agg.contentSnippets.push({ score: raw, snippet: c.textSnippet });
+      agg.contentSnippets.push({
+        score: raw,
+        snippet: c.textSnippet,
+        sourceText: sourceTexts.get(chunkKey(c.chapterId, c.kind, c.chunkIndex)) ?? '',
+      });
     }
   }
   return byChapter;
@@ -578,6 +595,7 @@ interface ChapterInputState {
   batchInputs: string[];
   contentDrafts: ChapterChunkDraft[];
   titleInput: string | null;
+  titleSnippet: string | null;
 }
 interface ChapterInputSnapshot extends ChapterInputState {
   inputSignature: string;
@@ -606,7 +624,8 @@ function chapterInputState(
       ? ''
       : (getNameTranslation(chapter.title, language)?.translation ?? '');
   const contentDrafts = splitChapterIntoChunks(paragraphs, language);
-  const titleInput = composeTitleChunkInput(
+  const titleInput = composeTitleChunkInput(originalTitle, paragraphs);
+  const titleSnippet = composeTitleChunkInput(
     [originalTitle, targetTitle].filter(Boolean).join('\n'),
     paragraphs,
   );
@@ -616,10 +635,17 @@ function chapterInputState(
   ];
   return {
     targetLanguage: language,
-    serialized: JSON.stringify({ language, batchInputs }),
+    // 译文虽然不参与语义编码，变化后仍须刷新关键词、预览和提交时的输入校验。
+    serialized: JSON.stringify({
+      language,
+      batchInputs,
+      contentSnippets: contentDrafts.map((draft) => draft.snippet),
+      titleSnippet,
+    }),
     batchInputs,
     contentDrafts,
     titleInput,
+    titleSnippet,
   };
 }
 
@@ -641,7 +667,9 @@ async function loadChapterInput(
 
 interface ChapterQuerySnapshot {
   book: Novel | undefined;
+  revision: number | undefined;
   chunks: ChapterEmbedding[];
+  sourceTexts: Map<string, string>;
   hasUnavailableInput: boolean;
 }
 interface CachedChapterQuery {
@@ -713,7 +741,7 @@ async function loadQuerySnapshot(bookId: string, language: AppLocale) {
     await tx.done;
     return cached.promise;
   }
-  const promise = buildQuerySnapshot(tx, bookId, language);
+  const promise = buildQuerySnapshot(tx, bookId, language, revision?.revision);
   // 旧数据库没有修订记录时不缓存，保持历史数据读路径的完整校验。
   if (revision) {
     const entry = { revision: revision.revision, promise };
@@ -739,6 +767,7 @@ async function buildQuerySnapshot(
   tx: QuerySnapshotTransaction,
   bookId: string,
   language: AppLocale,
+  revision: number | undefined,
 ): Promise<ChapterQuerySnapshot> {
   const [book, rows] = await Promise.all([
     tx.objectStore('books').get(bookId),
@@ -767,7 +796,17 @@ async function buildQuerySnapshot(
   );
   return {
     book,
+    revision,
     chunks,
+    // 复用同一事务中已校验的原文，不额外加载候选章节，也不混入目标译文做段落编码。
+    sourceTexts: new Map(
+      chunks.map((row) => [
+        chunkKey(row.chapterId, row.kind, row.chunkIndex),
+        row.kind === 'content'
+          ? (inputs.get(row.chapterId)?.contentDrafts[row.chunkIndex]?.text ?? '')
+          : '',
+      ]),
+    ),
     hasUnavailableInput:
       rows.length > 0 || [...inputs.values()].some((input) => input.batchInputs.length > 0),
   };
@@ -968,7 +1007,7 @@ export class ChapterEmbeddingService {
     const { bookId } = lookup;
     const snapshot = await loadChapterInput(bookId, chapterId);
     if (!snapshot) return true;
-    const { contentDrafts, titleInput, batchInputs } = snapshot;
+    const { contentDrafts, titleInput, titleSnippet, batchInputs } = snapshot;
     if (batchInputs.length === 0) {
       await this.writeChunksForChapter(chapterId, bookId, [], snapshot);
       return true;
@@ -1017,7 +1056,7 @@ export class ChapterEmbeddingService {
           kind: 'title',
           chunkIndex: TITLE_CHUNK_INDEX,
           vector: Array.from(titleVec),
-          textSnippet: titleInput.slice(0, PREVIEW_CHARS),
+          textSnippet: (titleSnippet ?? titleInput).slice(0, PREVIEW_CHARS),
         });
       }
     }
@@ -1037,7 +1076,7 @@ export class ChapterEmbeddingService {
    * 流程(对应 design.md D3-D6):
    * 1. query 做 embed,与全书 chunk(content + title)算 raw cosine
    * 2. 按 chapterId 聚合 raw cosine:semantic_raw = max(title, content_max/top3 blend)
-   * 3. 在章节粒度分别计算 semantic / keyword 的 RRF 名次，并校准语义绝对置信度
+   * 3. 模糊查询先用候选原文段落重排，再在章节粒度融合 RRF 并校准语义绝对置信度
    * 4. 关键词通道:title_kw 扫 [章节标题 + 卷标题],content_kw 扫各 content chunk snippet
    *    keyword = min(1, title_kw + content_kw)
    * 5. total = 0.85 × semantic + 0.15 × keyword；过滤弱匹配后取 top limit
@@ -1063,7 +1102,8 @@ export class ChapterEmbeddingService {
     if (!queryVec)
       throw new LocalizedError('QUERY_EMBEDDING_FAILED', 'embeddingUi.calculationFailed');
 
-    const { book, chunks, hasUnavailableInput } = await loadQuerySnapshot(bookId, language);
+    const snapshot = await loadQuerySnapshot(bookId, language);
+    const { book, chunks, sourceTexts, hasUnavailableInput } = snapshot;
     if (chunks.length === 0) {
       if (!hasUnavailableInput) return [];
       throw new LocalizedError('CHAPTER_CACHE_REBUILDING', 'aiBookFeedback.cacheRebuilding');
@@ -1073,7 +1113,7 @@ export class ChapterEmbeddingService {
     const rawCosines = computeRawCosines(chunks, queryVec);
 
     // ===== Pass 2:按 chapterId 聚合 — 先收缩到章节粒度，再做跨章节排名 =====
-    const byChapter = aggregateChunksByChapter(chunks, rawCosines);
+    const byChapter = aggregateChunksByChapter(chunks, rawCosines, sourceTexts);
 
     // ===== 标题 / 卷标题 + 别名 / Identifier / IDF =====
     // 直接从 IndexedDB 加载 book 元数据,避免 import stores/books 形成循环依赖
@@ -1115,9 +1155,49 @@ export class ChapterEmbeddingService {
     }
 
     // ===== Pass 4:章节级 RRF + 置信度融合 =====
-    const semanticRawValues = candidates.map((candidate) => candidate.semanticRaw);
+    const { scores: refined, queriedParagraphs } = await rerankChapterParagraphs(
+      candidates.map((candidate) => ({
+        chapterId: candidate.agg.chapterId,
+        semanticRaw: candidate.semanticRaw,
+        titleSemantic: candidate.agg.titleSemantic,
+        sourceTexts: [...candidate.agg.contentSnippets]
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 2)
+          .map((chunk) => chunk.sourceText),
+      })),
+      queryVec,
+      CHAPTER_SEMANTIC_CALIBRATION,
+    );
+    // 即使段落推理失败，也不能把等待期间已经失效的旧语言或旧内容作为回退结果返回。
+    if (queriedParagraphs) {
+      const current = await loadQuerySnapshot(bookId, language);
+      const inputChanged =
+        current.revision !== snapshot.revision ||
+        current.book?.targetLanguage !== book?.targetLanguage ||
+        String(current.book?.lastEdited) !== String(book?.lastEdited) ||
+        current.chunks.length !== chunks.length ||
+        current.chunks.some((row, index) => {
+          const previous = chunks[index];
+          return (
+            row.chapterId !== previous?.chapterId ||
+            row.kind !== previous?.kind ||
+            row.chunkIndex !== previous?.chunkIndex ||
+            row.inputSignature !== previous?.inputSignature ||
+            row.updatedAt !== previous?.updatedAt
+          );
+        });
+      if (inputChanged) {
+        throw new LocalizedError('CHAPTER_CACHE_REBUILDING', 'aiBookFeedback.cacheRebuilding');
+      }
+    }
+    const semanticRawValues = candidates.map(
+      (candidate) => refined.get(candidate.agg.chapterId) ?? candidate.semanticRaw,
+    );
     const semanticRanks = calculateNormalizedRrfScores(semanticRawValues);
-    const semanticConfidences = calculateSemanticConfidenceScores(semanticRawValues);
+    const semanticConfidences = calculateSemanticConfidenceScores(
+      semanticRawValues,
+      CHAPTER_SEMANTIC_CALIBRATION,
+    );
     const keywordRanks = calculateNormalizedRrfScores(
       candidates.map((candidate) => (candidate.keywordRaw > 0 ? candidate.keywordRaw : null)),
     );

@@ -38,7 +38,7 @@ export default {
       'Model size and unstable mobile WebGPU support prevent local embedding on mobile. Generate embeddings on desktop; mobile devices can read them.',
     notEnabled: 'Local embeddings are disabled',
     enableHint:
-      'Enable this feature to download an embedding model (about 340–465 MB) for semantic memory and chapter search. Related actions are hidden while disabled.',
+      'Enable this feature to download an embedding model (about 190 MiB) for semantic memory and chapter search. Related actions are hidden while disabled.',
     openSettings: 'Enable in settings',
     upgraded: 'Embedding space upgraded',
     staleHint:

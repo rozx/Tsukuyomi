@@ -99,7 +99,7 @@ describe('章节向量输入语言隔离', () => {
     ).toEqual([]);
   });
 
-  for (const change of ['target', 'body', 'legacy'] as const) {
+  for (const change of ['target', 'body', 'translation', 'legacy'] as const) {
     it(`后台扫描检测 ${change} 输入失效`, async () => {
       const chapter = translationChapter('c', paragraph.id);
       chapter.content = [structuredClone(paragraph)];
@@ -127,6 +127,14 @@ describe('章节向量输入语言隔离', () => {
           delete row.inputSignature;
           await db.put('chapter-embeddings', row, `c:${row.kind}:${row.chunkIndex}`);
         }
+      }
+      if (change === 'translation') {
+        const row = (await db.get('chapter-contents', 'c'))!;
+        const values = JSON.parse(row.content) as Paragraph[];
+        values[0]!.translations.find(
+          (translation) => translation.language === 'en-US',
+        )!.translation = 'Changed translation';
+        await db.put('chapter-contents', { ...row, content: JSON.stringify(values) });
       }
       expect(await ChapterEmbeddingService.findChaptersNeedingEmbedding('fixture-book')).toEqual([
         'c',
@@ -163,7 +171,7 @@ describe('章节向量输入语言隔离', () => {
     });
   });
 
-  for (const change of ['target', 'body', 'delete'] as const) {
+  for (const change of ['target', 'body', 'translation', 'delete'] as const) {
     it(`异步嵌入期间 ${change} 变化后旧计算不覆盖新状态`, async () => {
       const chapter = translationChapter('c', paragraph.id);
       chapter.content = [structuredClone(paragraph)];
@@ -188,6 +196,14 @@ describe('章节向量输入语言隔离', () => {
         const record = (await db.get('chapter-contents', 'c'))!;
         const paragraphs = JSON.parse(record.content) as Paragraph[];
         paragraphs[0]!.text = 'New source';
+        await db.put('chapter-contents', { ...record, content: JSON.stringify(paragraphs) });
+      }
+      if (change === 'translation') {
+        const record = (await db.get('chapter-contents', 'c'))!;
+        const paragraphs = JSON.parse(record.content) as Paragraph[];
+        paragraphs[0]!.translations.find(
+          (translation) => translation.language === 'en-US',
+        )!.translation = 'New translation';
         await db.put('chapter-contents', { ...record, content: JSON.stringify(paragraphs) });
       }
       if (change === 'delete') await books.updateBook('fixture-book', { volumes: [] });
@@ -220,8 +236,10 @@ describe('章节向量输入语言隔离', () => {
     ['en-US', 'Original\nEnglish body'],
     ['zh-TW', 'Original'],
   ] as const) {
-    it(`${language} 仅拼接目标选用，缺失只原文`, () => {
-      expect(splitChapterIntoChunks([paragraph], language)[0]!.text).toBe(expected);
+    it(`${language} 语义只原文，预览仅拼接目标选用`, () => {
+      const chunk = splitChapterIntoChunks([paragraph], language)[0]!;
+      expect(chunk.text).toBe('Original');
+      expect(chunk.snippet).toBe(expected);
     });
   }
   for (const language of ['en-US', 'zh-TW'] as const) {
@@ -263,7 +281,7 @@ describe('章节向量输入语言隔离', () => {
       else expect(all).not.toContain('english');
     });
   }
-  it('实际嵌入输入与预览使用建书目标', async () => {
+  it('正文和标题语义都只用原文，预览使用建书目标', async () => {
     const chapter = translationChapter('c', paragraph.id);
     chapter.content = [structuredClone(paragraph)];
     chapter.title = names('Original title', 'CN_TITLE_SECRET', 'English title');
@@ -274,11 +292,14 @@ describe('章节向量输入语言隔离', () => {
       .mockImplementation((texts) => Promise.resolve(texts.map(() => new Float32Array([1, 0]))));
     await ChapterEmbeddingService.embedChapter('c');
     const inputs = embed.mock.calls[0]![0].join('\n');
-    expect(inputs).toContain('English body');
-    expect(inputs).toContain('English title');
+    expect(inputs).toContain('Original');
+    expect(inputs).not.toContain('English body');
+    expect(inputs).not.toContain('English title');
     expect(inputs).not.toMatch(/CN_BODY_SECRET|CN_TITLE_SECRET/);
     const rows = await ChapterEmbeddingService.getChunksForChapter('c');
     expect(rows).toHaveLength(2);
     expect(rows.every((row) => row.targetLanguage === 'en-US' && !!row.inputSignature)).toBe(true);
+    expect(rows.find((row) => row.kind === 'content')!.textSnippet).toContain('English body');
+    expect(rows.find((row) => row.kind === 'title')!.textSnippet).toContain('English title');
   });
 });

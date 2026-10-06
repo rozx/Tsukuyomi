@@ -58,11 +58,11 @@ export default {
       mobileHint:
         '行動裝置不支援本地嵌入（模型過大、WebGPU 不穩定）。手機端檢索僅使用關鍵詞比對——向量是裝置本地狀態，不參與同步；在桌面端啟用後也只影響桌面端自己的語意檢索。',
       desktopHint:
-        '啟用後下載嵌入模型到瀏覽器，支援語意記憶檢索與章節向量搜尋；關閉時僅使用關鍵詞比對，節省 ~340–465 MB 儲存空間。',
+        '啟用後下載嵌入模型到瀏覽器，支援語意記憶檢索與章節向量搜尋；關閉時僅使用關鍵詞比對，節省 ~190 MiB 儲存空間。',
       modelTitle: '嵌入模型',
       modelDescription: '本地執行的嵌入模型，為下方記憶注入與章節嵌入提供向量',
       modelSize:
-        '（WebGPU：q4f16 ~465 MB / 無 WebGPU 時改用 WASM：int8 ~340 MB，首次使用需下載到瀏覽器快取）',
+        '（WebGPU / WASM 共用約 190 MiB 預設 ONNX 檔案，詞表 int8、Transformer fp32，首次使用需下載到瀏覽器快取）',
       memoryTitle: '記憶注入',
       memoryDescription: '翻譯時自動選擇最相關的記憶作為上下文',
       charBudget: '字元預算',

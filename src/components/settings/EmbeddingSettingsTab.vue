@@ -89,7 +89,7 @@ const updateEnableLocalEmbedding = async (value: boolean) => {
 
   // 开启后自动触发 warmup:
   // - 浏览器 Cache Storage 里已缓存过 → 秒 ready(无网络)
-  // - 从未下载过 → 进度条亮起开始下 ~340-465MB
+  // - 从未下载过 → 进度条亮起开始下 ~190 MiB
   // 两种情况 UI 都有明确反馈,不需要用户再手动按"下载模型"。
   // 关闭时不动已加载的 pipeline — EmbeddingQueue 的 gate 自会让它闲置,
   // 用户再次开启也不用重新加载。

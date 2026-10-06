@@ -157,8 +157,8 @@ export interface AppSettings {
    */
   memoryInjection?: MemoryInjectionSettings;
   /**
-   * 全局开关:是否启用本地嵌入(Transformers.js + gte-multilingual-base)。
-   * 默认值:false(用户主动开启,避免首次启动就触发 ~340-465MB 模型下载)
+   * 全局开关:是否启用本地嵌入(Transformers.js + Bekko a25m)。
+   * 默认值:false(用户主动开启,避免首次启动就触发 ~190 MiB 模型下载)
    *
    * 关闭时:
    * - 应用启动不 warmup / 不下载嵌入模型

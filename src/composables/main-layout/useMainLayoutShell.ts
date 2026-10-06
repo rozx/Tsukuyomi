@@ -131,7 +131,7 @@ export function useMainLayoutShell() {
   ): Promise<void> => {
     const { EmbeddingService } = await import('src/services/embedding-service');
 
-    // 清理历史模型在 Cache Storage 里的残留（例如从 Qwen3 切到 gte 后的 ~567MB）。
+    // 清理已退役模型的缓存；试用期间保留 GTE，便于切回比较。
     // 清到过东西说明原先的 embeddingModelCached 标记对应的是已失效的旧模型 → 复位，
     // 避免 warmup 以为新模型也已缓存从而静默触发不必要的下载。
     const legacyCleaned = await EmbeddingService.cleanupLegacyModelCache();
@@ -141,7 +141,10 @@ export function useMainLayoutShell() {
 
     if (EmbeddingService.isReady()) return;
     const flagSet = settings.settings.memoryInjection?.embeddingModelCached === true;
-    const cacheHit = flagSet ? true : await EmbeddingService.isModelCachedInBrowser();
+    const cacheHit = await EmbeddingService.isModelCachedInBrowser();
+    if (flagSet && !cacheHit) {
+      await settings.updateMemoryInjection({ embeddingModelCached: false });
+    }
     if (cacheHit) void EmbeddingService.warmup();
   };
 
@@ -149,7 +152,7 @@ export function useMainLayoutShell() {
     setupAutoSync();
 
     // 语义检索启用且模型已被缓存时，应用启动后自动预热（复用浏览器已缓存的模型文件，无需重新下载）
-    // 注意：首次安装/首次启用时不会自动触发，需用户在设置页主动下载，避免意外产生 ~195MB 带宽消耗
+    // 首次安装/模型升级时需主动下载；只有当前模型文件已缓存才静默预热。
     if (!settingsStore.isLoaded) await settingsStore.loadSettings();
 
     // 本地嵌入是总电源（默认 false），关闭或手机端时连模型缓存扫描都跳过，避免无意义 IO。

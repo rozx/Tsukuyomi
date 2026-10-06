@@ -124,11 +124,11 @@ Memories are selected in score order within the character budget, default 2000 c
 
 ### Semantic retrieval {#book-details-memory-section-18}
 
-Enable Local embeddings in Settings to generate 768-dimensional vectors. See [Local embeddings](/help/local-embedding).
+Enable Local embeddings in Settings to generate 384-dimensional vectors. See [Local embeddings](/help/local-embedding).
 
-- Model: `onnx-community/gte-multilingual-base`, 305M multilingual BERT, 70+ languages, full L2-normalized vectors and CLS pooling. Query prefixes were removed in v0.14.3.
+- Model: `hotchpotch/bekko-embedding-v1-a25m`, about 123M total / 25M active parameters, 100+ languages, full 384-dimensional L2-normalized vectors and mean pooling. Queries and documents both encode raw text.
 - Long summary/content is split into segments up to 1200 characters and robustly aggregated.
-- Download: ~465 MB WebGPU q4f16, ~340 MB WASM int8, cached afterward.
+- Download: both backends share the compact default ONNX artifact, about 190 MiB, cached in the browser after first use.
 - Computation is local, without API usage; WebGPU is preferred with WASM fallback.
 - Physical mobile devices disable embeddings but retain keyword/recency selection.
 - Disabled/unavailable embeddings automatically use fallback weights.

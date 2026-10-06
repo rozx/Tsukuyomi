@@ -58,11 +58,11 @@ export default {
       mobileHint:
         '移动设备不支持本地嵌入（模型过大、WebGPU 不稳定）。手机端检索仅用关键词匹配——向量是设备本地状态，不参与同步；在桌面端启用后也只影响桌面端自己的语义检索。',
       desktopHint:
-        '启用后下载嵌入模型到浏览器，支持语义记忆检索与章节向量搜索；关闭时仅用关键词匹配，节省 ~340–465 MB 存储。',
+        '启用后下载嵌入模型到浏览器，支持语义记忆检索与章节向量搜索；首次下载约 190 MiB；关闭时仅用关键词检索并暂停向量生成。',
       modelTitle: '嵌入模型',
       modelDescription: '本地运行的嵌入模型，为下方记忆注入与章节嵌入提供向量',
       modelSize:
-        '（WebGPU：q4f16 ~465 MB / 无 WebGPU 回落 WASM：int8 ~340 MB，首次使用需下载到浏览器缓存）',
+        '（WebGPU / WASM 共用约 190 MiB 默认 ONNX 文件，词表 int8、Transformer fp32，首次使用需下载到浏览器缓存）',
       memoryTitle: '记忆注入',
       memoryDescription: '翻译时自动选择最相关的记忆作为上下文',
       charBudget: '字符预算',

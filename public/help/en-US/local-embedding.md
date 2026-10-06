@@ -13,7 +13,9 @@ When enabled, background indexing covers:
 - **Memories**: summary and content are split at paragraph/sentence boundaries into segments of at most 1200 characters and robustly aggregated, avoiding truncation of long memories. Semantic similarity supplies the 0.85-weight component of relevance scoring. `search_memories` accepts natural-language queries.
 - **Chapters**: paragraphs form chunks targeting 100 characters; title plus first paragraph has its own chunk. `query_chapter` retrieves relevant passages without pre-generated summaries.
 
-Chapter vectors, title chunks, and full-text indexes validate the target language and actual input signature. They include source and selected translations for that target. A target change invalidates caches for background rebuild; old computations cannot overwrite the new cache. Retrieval may report rebuilding. Name expansion uses originals and current-target term/character/alias translations, never another language. Shared memories and memory vectors are retained across target changes.
+Chapter semantic vectors consistently encode the source text so translated and untranslated chapters remain comparable; the target translation is used only when source text is missing. Keyword search, previews, and full-text indexes retain the source and the selected translation for the current target. Caches validate the target language and actual input signature, including translation changes that affect keywords and previews. A target change invalidates caches for background rebuild; old computations cannot overwrite the new cache. Retrieval may report rebuilding. Name expansion uses originals and current-target term/character/alias translations, never another language. Shared memories and memory vectors are retained across target changes.
+
+For vague plot queries, a small set of candidates is reranked using source paragraphs so surrounding text does not obscure the relevant event. Queries with a clear match retain the full chunk context, and repeated queries reuse cached vectors. If reranking fails, the original ranking is retained. All computation stays in the browser and adds no AI API requests.
 
 When disabled:
 
@@ -27,27 +29,27 @@ When disabled:
 
 ### Default model {#local-embedding-section-4}
 
-- **Model**: `onnx-community/gte-multilingual-base`, an ONNX version of GTE-Multilingual-Base.
-- **Architecture**: 305M BERT encoder with 70+ languages, including Chinese, Japanese, and English.
-- **Dimensions**: full **768**, L2-normalized.
-- **Pooling**: final-layer CLS token, following the model example. Query and document share the same path, without asymmetric prefixes.
-- **Encoding**: raw query/document text uses the same encoder; no user configuration is needed.
-- **Version**: `gte-multilingual-base@768@cls@raw`. A change to model ID, dimensions, pooling, or input scheme bumps the version and makes old vectors stale.
+- **Model**: `hotchpotch/bekko-embedding-v1-a25m`, the Bekko a25m multilingual encoder.
+- **Architecture**: about 123M total parameters and 25M active parameters, supporting 100+ languages including Chinese, Japanese, and English.
+- **Dimensions**: full **384**, L2-normalized.
+- **Pooling**: mean pooling over valid tokens. Query and document use the same encoding path without task prefixes.
+- **Default artifact**: official `onnx/model.onnx`, about **190 MiB**. The static vocabulary table is int8-compressed while Transformer computation remains fp32. `dtype: fp32` selects this compact artifact, not a full fp32 vocabulary table.
+- **Version**: `bekko-embedding-v1-a25m@384@mean@raw`. Changes to model ID, dimensions, pooling, or input scheme update the version; old memory and chapter vectors become stale and are recomputed in the background.
 
 ### Backends {#local-embedding-section-5}
 
-Automatic priority:
+The app first checks for an available WebGPU adapter and device. If none is available, it loads WASM directly. Both backends use the same default artifact.
 
-| Backend    | Quantization                           | Size    | Speed/compatibility  | Use                                         |
-| :--------- | :------------------------------------- | :------ | :------------------- | :------------------------------------------ |
-| **WebGPU** | q4f16: 4-bit weights, fp16 activations | ~465 MB | 5–10× faster         | Recent desktop Chrome/Edge with GPU support |
-| **WASM**   | int8                                   | ~340 MB | Widest compatibility | No WebGPU or failed initialization          |
+| Backend    | Artifact and computation                         | Size     | Use                                                    |
+| :--------- | :----------------------------------------------- | :------- | :----------------------------------------------------- |
+| **WebGPU** | Default ONNX; int8 vocabulary / fp32 Transformer | ~190 MiB | Desktop browsers with WebGPU support                   |
+| **WASM**   | The same default ONNX artifact                   | ~190 MiB | Browsers without an available WebGPU adapter or device |
 
-> One WebGPU initialization failure selects WASM for the rest of the session. Reload clears this exclusion so you can retry after driver/browser changes.
+> An unavailable adapter selects WASM for the session. Reload checks WebGPU again. Actual inference speed depends on hardware, input length, and backend.
 
 ### Mobile restriction {#local-embedding-section-6}
 
-Physical mobile platform detection locks the switch off. Browser WASM memory limits, typically around 2 GB, make a 300 MB+ model with several inference chunks prone to crashes. Keyword and recency retrieval remain available.
+Physical mobile platform detection locks the switch off. Browser WASM memory limits, typically around 2 GB, make a local model with several inference chunks prone to crashes. Keyword and recency retrieval remain available.
 
 ---
 

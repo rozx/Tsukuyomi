@@ -82,13 +82,13 @@ Terminology, character settings, memories, and chapter search give the AI contex
 
 - **World-building notes**: record complex factions, magic-system rules, and key foreshadowing.
 - **Semantic-first memory retrieval**: when embeddings are available, memories are scored by semantic similarity, keyword match, and time decay (weights 0.85 / 0.10 / 0.05). When embeddings are off or unavailable, scoring falls back to keywords and time decay (0.75 / 0.25). Scores are normalized to 0–1.0 and the most relevant memories are injected within a character budget.
-- **Local semantic embeddings (optional)**: a built-in `gte-multilingual-base` multilingual encoder (Transformers.js) runs on WebGPU + q4f16, falling back to WASM + int8 when unsupported. Embeddings are computed locally and use no AI API quota. Off by default; enable it under **Settings → Local embeddings**. Disabled on physical mobile devices.
+- **Local semantic embeddings (optional)**: a built-in `bekko-embedding-v1-a25m` multilingual encoder (Transformers.js) runs on WebGPU, with WASM fallback. Both backends share a compact default ONNX artifact of about 190 MiB. Embeddings stay local and use no AI API quota. Off by default; enable under **Settings → Local embeddings**. Disabled on physical mobile devices.
 - **Hybrid search**: the `search_memories` tool accepts natural-language queries and ranks results by both keyword match and semantic vectors; with embeddings off it falls back to keywords + time decay.
 
 #### 4. 📑 Chapter Vector Index
 
-- **Multi-vector chapter index**: with local embeddings enabled, each chapter gets a native 768-dimension multi-vector index split at paragraph boundaries of about 100 characters, plus a dedicated vector for "chapter title + first paragraph" to support title, series, and topic queries.
-- **`query_chapter` hybrid search**: the AI can search source text across chapters in natural language. Semantic confidence is calibrated per chapter and fused with keyword ranks via RRF, then results are ranked by `0.85 × semantic + 0.15 × keyword` and weak matches are filtered out. The translate, polish, proofread, and chat assistant prompts all use this tool to pull in earlier context.
+- **Multi-vector chapter index**: with local embeddings enabled, each chapter gets a native 384-dimension multi-vector index split at paragraph boundaries of about 100 characters, plus a dedicated vector for "chapter title + first paragraph" to support title, series, and topic queries.
+- **`query_chapter` hybrid search**: the AI can search source text across chapters in natural language. Vague plot queries are locally reranked using candidate source paragraphs, while clear matches retain full chunk context. Semantic confidence is then calibrated per chapter and fused with keyword ranks via RRF; results are ranked by `0.85 × semantic + 0.15 × keyword` and weak matches are filtered out. The translate, polish, proofread, and chat assistant prompts all use this tool to pull in earlier context.
 - **Bulk management**: in book details, the **Vector index** panel shows index records, rebuilds and recomputes in bulk, and lets you test queries. See [Local embeddings](public/help/en-US/local-embedding.md).
 
 ### 💬 AI Chat Assistant
@@ -230,7 +230,7 @@ bun run dev
 | **Desktop**           | Electron 39 (the web SPA and desktop app share one codebase; `useDeviceVariant` forces the Desktop variant)                  |
 | **Runtime / build**   | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                                |
 | **AI SDK**            | OpenAI SDK · Google Generative AI; compatible services connect through the OpenAI provider (BYOK)                            |
-| **Local embeddings**  | Transformers.js (ONNX Runtime Web) · `gte-multilingual-base` · 768-dim · WebGPU + q4f16 (preferred) / WASM + int8 (fallback) |
+| **Local embeddings**  | Transformers.js (ONNX Runtime Web) · `bekko-embedding-v1-a25m` · 384-dim mean pooling · WebGPU (preferred) / WASM (fallback) |
 | **Storage / sync**    | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 hash manifest · conditional GET + pseudo-CAS concurrency guard   |
 | **Scraping**          | Puppeteer + `puppeteer-extra-plugin-stealth` (Electron desktop) / CORS proxy (web) · Firecrawl fallback when blocked         |
 | **AI import**         | Tool calls organize drafts · Web Worker file parsing · EPUB/ZIP (fflate) · Web Locks for cross-tab exclusion                 |

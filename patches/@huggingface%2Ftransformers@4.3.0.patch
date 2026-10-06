@@ -1,0 +1,85 @@
+diff --git a/dist/transformers.node.cjs b/dist/transformers.node.cjs
+index e8fe721f948c3a2c361b1d45ceda9411fb220e65..6adf3792e6d5cd9eb6fe41f17098f17607dbe448 100644
+--- a/dist/transformers.node.cjs
++++ b/dist/transformers.node.cjs
+@@ -13674,14 +13674,14 @@ async function createInferenceSession(buffer_or_path, session_options, session_c
+     logSeverityLevel,
+     ...session_options
+   });
+-  const session = await (apis.IS_WEB_ENV ? webInitChain = webInitChain.then(load) : load());
++  const session = await (apis.IS_WEB_ENV ? webInitChain = webInitChain.then(load, load) : load());
+   session.config = session_config;
+   return session;
+ }
+ var webInferenceChain = Promise.resolve();
+ async function runInferenceSession(session, ortFeed) {
+   const run = () => session.run(ortFeed);
+-  return apis.IS_WEB_ENV ? webInferenceChain = webInferenceChain.then(run) : run();
++  return apis.IS_WEB_ENV ? webInferenceChain = webInferenceChain.then(run, run) : run();
+ }
+ function isONNXTensor(x) {
+   return x instanceof ONNX.Tensor;
+diff --git a/dist/transformers.node.mjs b/dist/transformers.node.mjs
+index 66363e7ecba6a8a76ba6c05d66559622dc32b7f2..5465ae065d464034ac0e309656887bfb42ab6d75 100644
+--- a/dist/transformers.node.mjs
++++ b/dist/transformers.node.mjs
+@@ -12685,14 +12685,14 @@ async function createInferenceSession(buffer_or_path, session_options, session_c
+     logSeverityLevel,
+     ...session_options
+   });
+-  const session = await (apis.IS_WEB_ENV ? webInitChain = webInitChain.then(load) : load());
++  const session = await (apis.IS_WEB_ENV ? webInitChain = webInitChain.then(load, load) : load());
+   session.config = session_config;
+   return session;
+ }
+ var webInferenceChain = Promise.resolve();
+ async function runInferenceSession(session, ortFeed) {
+   const run = () => session.run(ortFeed);
+-  return apis.IS_WEB_ENV ? webInferenceChain = webInferenceChain.then(run) : run();
++  return apis.IS_WEB_ENV ? webInferenceChain = webInferenceChain.then(run, run) : run();
+ }
+ function isONNXTensor(x) {
+   return x instanceof ONNX.Tensor;
+diff --git a/dist/transformers.web.js b/dist/transformers.web.js
+index 5ac054cb23be44616d4e3ef32813e1e7c3acef41..8837556d5ff8bd67f2cde906bd9b01de888c679c 100644
+--- a/dist/transformers.web.js
++++ b/dist/transformers.web.js
+@@ -8704,14 +8704,14 @@ async function createInferenceSession(buffer_or_path, session_options, session_c
+     logSeverityLevel,
+     ...session_options
+   });
+-  const session = await (apis.IS_WEB_ENV ? webInitChain = webInitChain.then(load) : load());
++  const session = await (apis.IS_WEB_ENV ? webInitChain = webInitChain.then(load, load) : load());
+   session.config = session_config;
+   return session;
+ }
+ var webInferenceChain = Promise.resolve();
+ async function runInferenceSession(session, ortFeed) {
+   const run = () => session.run(ortFeed);
+-  return apis.IS_WEB_ENV ? webInferenceChain = webInferenceChain.then(run) : run();
++  return apis.IS_WEB_ENV ? webInferenceChain = webInferenceChain.then(run, run) : run();
+ }
+ function isONNXTensor(x) {
+   return x instanceof ONNX.Tensor;
+diff --git a/src/backends/onnx.js b/src/backends/onnx.js
+index 7dbfe44ba4a5e02073c6f1f152675bbf885d2be9..6c5df825f5b167c21b0fe47b17253c2ea13f8ac0 100644
+--- a/src/backends/onnx.js
++++ b/src/backends/onnx.js
+@@ -287,7 +287,7 @@ export async function createInferenceSession(buffer_or_path, session_options, se
+             logSeverityLevel,
+             ...session_options,
+         });
+-    const session = await (apis.IS_WEB_ENV ? (webInitChain = webInitChain.then(load)) : load());
++    const session = await (apis.IS_WEB_ENV ? (webInitChain = webInitChain.then(load, load)) : load());
+     session.config = session_config;
+     return session;
+ }
+@@ -307,7 +307,7 @@ let webInferenceChain = Promise.resolve();
+  */
+ export async function runInferenceSession(session, ortFeed) {
+     const run = () => session.run(ortFeed);
+-    return apis.IS_WEB_ENV ? (webInferenceChain = webInferenceChain.then(run)) : run();
++    return apis.IS_WEB_ENV ? (webInferenceChain = webInferenceChain.then(run, run)) : run();
+ }
+ 
+ /**
