@@ -25,6 +25,7 @@ import { getDB } from 'src/utils/indexed-db';
 import { isAppLocale, resolveAppLocale } from 'src/models/locale';
 import type { AppLocale } from 'src/models/locale';
 import { LocalizedError } from 'src/utils/localized-error';
+import { normalizeTaskModelSettings } from 'src/services/settings/task-default-models';
 
 // localStorage 仅用于向后兼容读取（历史版本曾使用 localStorage 存储 settings/syncs）
 const SETTINGS_STORAGE_KEY = 'tsukuyomi-settings';
@@ -61,6 +62,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   lastEdited: new Date(0), // 使用 epoch 时间，确保远程设置优先
   scraperConcurrencyLimit: 3,
   taskDefaultModels: {},
+  taskDefaultModelsUpdatedAt: {},
   lastOpenedSettingsTab: 0,
   proxyEnabled: true,
   proxyUrl: DEFAULT_PROXY_LIST[0]!.url,
@@ -159,10 +161,9 @@ function normalizeLoadedSettings(raw: unknown): AppSettings {
   const loadedSettings: AppSettings = {
     ...DEFAULT_SETTINGS,
     ...(settings as any),
-    taskDefaultModels: {
-      ...DEFAULT_SETTINGS.taskDefaultModels,
-      ...(((settings as any).taskDefaultModels as Record<string, string | null | undefined>) || {}),
-    },
+    taskDefaultModels: {},
+    taskDefaultModelsUpdatedAt: {},
+    ...normalizeTaskModelSettings(settings),
     lastEdited: existingLastEdited,
     proxySiteMapping: mergedMapping,
     quickStartDismissed:
@@ -553,17 +554,30 @@ export const useSettingsStore = defineStore('settings', {
       return serializeSettingsWrite(this, async () => {
         // 深度合并 taskDefaultModels
         // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
+        const current = normalizeTaskModelSettings(this.settings);
         const mergedSettings: AppSettings = {
           ...this.settings,
+          ...current,
           ...updates,
           lastEdited: updates.lastEdited ?? new Date(),
         };
 
         if (updates.taskDefaultModels !== undefined) {
+          const incoming = normalizeTaskModelSettings(updates);
           mergedSettings.taskDefaultModels = {
-            ...this.settings.taskDefaultModels,
-            ...updates.taskDefaultModels,
+            ...current.taskDefaultModels,
+            ...incoming.taskDefaultModels,
           };
+          mergedSettings.taskDefaultModelsUpdatedAt = { ...current.taskDefaultModelsUpdatedAt };
+          for (const [key, value] of Object.entries(incoming.taskDefaultModels ?? {})) {
+            const task = key as keyof AIModelDefaultTasks;
+            if (value !== current.taskDefaultModels?.[task]) {
+              mergedSettings.taskDefaultModelsUpdatedAt[task] = Math.max(
+                mergedSettings.lastEdited.getTime(),
+                (current.taskDefaultModelsUpdatedAt?.[task] ?? 0) + 1,
+              );
+            }
+          }
         }
 
         await saveSettingsToDB(mergedSettings);
@@ -592,11 +606,8 @@ export const useSettingsStore = defineStore('settings', {
       task: keyof AIModelDefaultTasks,
       modelId: string | null,
     ): Promise<void> {
-      const taskDefaultModels = {
-        ...this.settings.taskDefaultModels,
-        [task]: modelId,
-      };
-      await this.updateSettings({ taskDefaultModels });
+      // 只提交当前任务，让串行写入在最新状态上合并，避免并发保存带回旧值。
+      await this.updateSettings({ taskDefaultModels: { [task]: modelId } });
     },
 
     /**
@@ -647,9 +658,15 @@ export const useSettingsStore = defineStore('settings', {
 
         if (settings.taskDefaultModels !== undefined) {
           // 如果远程有 taskDefaultModels，深度合并
+          const current = normalizeTaskModelSettings(this.settings);
+          const incoming = normalizeTaskModelSettings(settings);
           mergedSettings.taskDefaultModels = {
-            ...this.settings.taskDefaultModels,
-            ...settings.taskDefaultModels,
+            ...current.taskDefaultModels,
+            ...incoming.taskDefaultModels,
+          };
+          mergedSettings.taskDefaultModelsUpdatedAt = {
+            ...current.taskDefaultModelsUpdatedAt,
+            ...incoming.taskDefaultModelsUpdatedAt,
           };
         }
 

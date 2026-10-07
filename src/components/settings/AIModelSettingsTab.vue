@@ -33,15 +33,13 @@ const getModelOptionsForTask = (task: keyof AIModelDefaultTasks) => {
 };
 
 // 获取任务的默认模型 ID
-// 如果当前选中的模型不再支持该任务，自动清除该设置
+// 读取不修改设置：同步时模型可能尚未到达，暂时显示未设置并保留已保存的选择。
 const getTaskModelId = (task: keyof AIModelDefaultTasks): string | null | undefined => {
   const modelId = settingsStore.getTaskDefaultModelId(task);
   if (modelId) {
     // 检查该模型是否仍然支持该任务
     const model = aiModelsStore.getModelById(modelId);
     if (!model || !model.enabled || !model.isDefault[task]?.enabled) {
-      // 模型不存在、已禁用或不再支持该任务，清除设置
-      void settingsStore.setTaskDefaultModelId(task, null);
       return null;
     }
   }

@@ -7,6 +7,7 @@ import type { Novel, CoverHistoryItem } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
+import { normalizeTaskModelSettings } from './task-default-models';
 
 /**
  * 将 Date / number / string 转成毫秒时间戳。
@@ -244,10 +245,13 @@ export function parseAppSettings(raw: unknown): AppSettings | undefined {
     scraperConcurrencyLimit: pickScraperConcurrency(source.scraperConcurrencyLimit),
   };
 
-  const taskDefaultModels = parseTaskDefaultModels(source.taskDefaultModels);
-  if (taskDefaultModels) {
-    result.taskDefaultModels = taskDefaultModels;
-  }
+  Object.assign(
+    result,
+    normalizeTaskModelSettings({
+      ...source,
+      taskDefaultModels: parseTaskDefaultModels(source.taskDefaultModels),
+    }),
+  );
 
   copyOptionalAppSettingsFields(result, source);
 

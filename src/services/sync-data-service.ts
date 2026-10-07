@@ -33,6 +33,7 @@ import type { Memory } from 'src/models/memory';
 import type { DeletionRecord, SyncConfig } from 'src/models/sync';
 import type { AppSettings, ImportResult } from 'src/models/settings';
 import { importMemoriesPreservingIdentity } from './settings/memory-import';
+import { mergeTaskModelSettings } from './settings/task-default-models';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 import { normalizeMemoriesForSync, stripNovelLocalFields } from 'src/utils/sync-strip';
@@ -1938,10 +1939,12 @@ export class SyncDataService {
     const uiLocale = shouldApplyRemoteSettings
       ? mergeUiLocalePreference(remoteAppSettings.uiLocale, localSettings.uiLocale)
       : mergeUiLocalePreference(localSettings.uiLocale, remoteAppSettings.uiLocale);
+    const taskModels = mergeTaskModelSettings(localSettings, remoteAppSettings);
     if (shouldApplyRemoteSettings) {
       const currentGistSync = GlobalConfig.getGistSyncSnapshot();
       await settingsStore.importSettings({
         ...remoteAppSettings,
+        ...(!isManualRetrieval ? taskModels : {}),
         ...(uiLocale ? { uiLocale } : {}),
         quickStartDismissed: mergedQuickStartDismissed,
       });
@@ -1949,7 +1952,7 @@ export class SyncDataService {
         await settingsStore.updateGistSync(currentGistSync);
       }
     } else {
-      const updates: Partial<AppSettings> = {};
+      const updates: Partial<AppSettings> = { ...taskModels };
       if (mergedQuickStartDismissed && localSettings.quickStartDismissed !== true) {
         updates.quickStartDismissed = true;
       }
@@ -2511,6 +2514,7 @@ export class SyncDataService {
       remoteAppSettings,
       'upload',
     );
+    const taskModels = mergeTaskModelSettings(localAppSettings, remoteAppSettings);
 
     if (
       !SyncDataService.shouldUseRemoteForUpload(
@@ -2520,6 +2524,7 @@ export class SyncDataService {
     ) {
       return {
         ...localAppSettings,
+        ...taskModels,
         uiLocale: mergeUiLocalePreference(localAppSettings.uiLocale, remoteAppSettings.uiLocale),
         quickStartDismissed: mergedQuickStartDismissed,
       };
@@ -2549,6 +2554,7 @@ export class SyncDataService {
 
     return {
       ...remoteAppSettings,
+      ...taskModels,
       uiLocale: mergeUiLocalePreference(remoteAppSettings.uiLocale, localAppSettings.uiLocale),
       syncs: mergedSyncs,
       quickStartDismissed: mergedQuickStartDismissed,
@@ -2849,7 +2855,7 @@ export class SyncDataService {
     return failedEntryKeys;
   }
 
-  /** settings 条目：若远端 lastEdited 更新则整体导入 */
+  /** settings 条目：普通字段按整份设置时间合并，任务模型选择按任务时间合并。 */
   private static async applyPartialSettingsEntry(
     remoteSettings: Record<string, unknown>,
   ): Promise<void> {
@@ -2861,6 +2867,7 @@ export class SyncDataService {
     const remoteTime = remoteSettings.lastEdited
       ? new Date(remoteSettings.lastEdited as unknown as string).getTime()
       : 0;
+    const taskModels = mergeTaskModelSettings(localSettings, remoteSettings);
     if (remoteTime > localTime) {
       // quickStartDismissed 按单调语义合并（任一端为 true 即 true），
       // 与 legacy 路径的 mergeQuickStartDismissedFlag 保持一致，
@@ -2870,7 +2877,9 @@ export class SyncDataService {
         remoteSettings,
         'download',
       );
-      await settingsStore.importSettings({ ...remoteSettings, quickStartDismissed });
+      await settingsStore.importSettings({ ...remoteSettings, ...taskModels, quickStartDismissed });
+    } else if (Object.keys(taskModels).length) {
+      await settingsStore.importSettings(taskModels);
     }
   }
 

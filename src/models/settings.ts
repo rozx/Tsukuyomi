@@ -80,6 +80,8 @@ export interface AppSettings {
    * 值为模型 ID 或 null（表示未设置）
    */
   taskDefaultModels?: TaskDefaultModels;
+  /** 各任务模型选择的修改时间（毫秒）；独立于标签页、代理等应用设置。 */
+  taskDefaultModelsUpdatedAt?: Partial<Record<keyof AIModelDefaultTasks, number>>;
   /**
    * 最后打开的设置标签页索引
    * 默认值：0（第一个标签页）
