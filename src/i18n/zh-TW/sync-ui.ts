@@ -269,6 +269,29 @@ export default {
     time: {
       never: '從未',
     },
+    cleanup: {
+      title: '清理遠端遺留檔案',
+      description: '掃描最新遠端清單不再引用的舊檔案。先預覽，再確認清理。',
+      scan: '掃描遺留檔案',
+      rescan: '重新掃描',
+      summary: '可清理 {count} 個檔案 · {size}',
+      empty: '本次掃描未發現可清理的遺留檔案。',
+      partial:
+        '遠端檔案清單不完整，本次僅檢查傳回的檔案，並保留使用中項目的額外檔案。清理後可再次掃描；結果不代表已掃描全部檔案。',
+      historyHint: '只清理最新版本，歷史修訂仍保留原檔案。',
+      remove: '清理這 {count} 個檔案',
+      confirmTitle: '確認清理遺留檔案',
+      confirm:
+        '將從目前 Gist 刪除預覽中的 {count} 個檔案（{size}）。執行前會重新核對遠端版本，歷史修訂保留不變。',
+      succeeded: '遺留檔案清理完成',
+      removed: '已清理 {count} 個檔案。',
+      failed: '遺留檔案清理失敗',
+      scanFailed: '掃描遺留檔案失敗',
+      invalidManifest: '遠端清單缺失、損壞或無法確認配置，已停止清理。請先完成一次同步。',
+      upgrading: '遠端格式升級尚未完成，請先完成同步再清理。',
+      changed: '遠端版本或同步設定已變更，請重新掃描後再清理。',
+      verifyFailed: '清理請求已送出，但無法確認結果。請重新掃描，勿重複使用舊預覽。',
+    },
     revision: {
       legacyFiles: '歷史遺留檔案',
       legacySummary: '不在此修訂的還原書庫中 · {count} 個檔案',

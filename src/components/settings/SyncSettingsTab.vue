@@ -18,6 +18,7 @@ import { useForceSync } from 'src/composables/useForceSync';
 import ForceSyncToggle from 'src/components/sync/ForceSyncToggle.vue';
 import RestoreDeletedItemsDialog from 'src/components/dialogs/RestoreDeletedItemsDialog.vue';
 import SyncRevisionCard from 'src/components/settings/SyncRevisionCard.vue';
+import SyncCleanupPanel from 'src/components/settings/SyncCleanupPanel.vue';
 import { isRevisionRestoreBlocked } from 'src/utils/sync-revision-guards';
 import co from 'co';
 import { useI18n } from 'vue-i18n';
@@ -122,7 +123,7 @@ watch(isRestoringRevision, (restoring) => {
 const isRevisionActionLocked = computed(() => gistSyncing.value || isRestoringRevision.value);
 
 // 以下 computed 把模板里重复的 || / && / ?: 表达式收进脚本侧，降低模板圈复杂度
-const gistInputDisabled = computed(() => !gistEnabled.value || isRestoringRevision.value);
+const gistInputDisabled = computed(() => !gistEnabled.value || isRevisionActionLocked.value);
 const syncActionDisabled = computed(
   () => !gistEnabled.value || gistSyncing.value || isRestoringRevision.value,
 );
@@ -225,6 +226,12 @@ const buildGistFetchConfig = (): SyncConfig => {
     },
     secret: gistToken.value,
   };
+};
+const cleanupConfig = computed(buildGistFetchConfig);
+
+const handleCleanupCompleted = async () => {
+  expandedRevisions.value.clear();
+  await loadRevisions();
 };
 
 // 加载修订历史的门禁条件
@@ -953,7 +960,7 @@ const deleteGist = () => {
           :binary="true"
           :model-value="gistEnabled"
           input-id="gist-enabled"
-          :disabled="isRestoringRevision"
+          :disabled="isRevisionActionLocked"
           @update:model-value="(value) => handleGistEnabledChange(value as boolean)"
         />
         <label for="gist-enabled" class="text-xs text-moon/80 cursor-pointer">
@@ -1076,6 +1083,12 @@ const deleteGist = () => {
         @click="handleSyncClick"
       />
     </div>
+
+    <SyncCleanupPanel
+      v-if="hasRevisionHistory"
+      :config="cleanupConfig"
+      @cleaned="handleCleanupCompleted"
+    />
 
     <!-- 修订历史 -->
     <div v-if="hasRevisionHistory" class="border-t border-white/10 pt-6 mt-6">

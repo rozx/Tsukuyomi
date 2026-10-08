@@ -83,14 +83,14 @@ async function readLegacyFileIndex(
 }
 
 /** raw_url 中的修订可能是文件最后修改时间，必须替换成这次快照的修订。 */
-function revisionRawRoot(
+export function revisionRawRoot(
   gistId: string,
   revision: string,
-  files: Record<string, GistFileLike>,
+  files: Record<string, GistFileLike | null | undefined>,
 ): string {
   if (!/^[a-f0-9]{40,64}$/i.test(revision)) throw incompleteSnapshot();
   for (const file of Object.values(files)) {
-    if (!file.raw_url) continue;
+    if (!file?.raw_url) continue;
     try {
       const url = new URL(file.raw_url);
       const [, owner, id, raw] = url.pathname.split('/');

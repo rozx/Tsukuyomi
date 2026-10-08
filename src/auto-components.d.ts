@@ -201,6 +201,7 @@ declare module 'vue' {
     StreamStateTransition: typeof import('./components/novel/translation-progress/StreamStateTransition.vue')['default']
     StreamThinkingBlock: typeof import('./components/novel/translation-progress/StreamThinkingBlock.vue')['default']
     StreamToolCall: typeof import('./components/novel/translation-progress/StreamToolCall.vue')['default']
+    SyncCleanupPanel: typeof import('./components/settings/SyncCleanupPanel.vue')['default']
     SyncNextTime: typeof import('./components/sync/SyncNextTime.vue')['default']
     SyncPendingList: typeof import('./components/sync/SyncPendingList.vue')['default']
     SyncRestoreDialog: typeof import('./components/sync/SyncRestoreDialog.vue')['default']

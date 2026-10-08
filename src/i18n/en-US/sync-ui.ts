@@ -282,6 +282,32 @@ export default {
     time: {
       never: 'Never',
     },
+    cleanup: {
+      title: 'Clean up remote leftover files',
+      description:
+        'Find old files no longer referenced by the latest remote manifest. Preview before removing them.',
+      scan: 'Scan for leftover files',
+      rescan: 'Scan again',
+      summary: '{count} files to remove · {size}',
+      empty: 'No removable leftover files found in this scan.',
+      partial:
+        'The remote file list is incomplete. This scan only checks returned files and keeps extra files for active entries. You can scan again after cleanup; this result does not cover all files.',
+      historyHint: 'Only the latest version is cleaned up. Earlier revisions keep their files.',
+      remove: 'Remove these {count} files',
+      confirmTitle: 'Confirm leftover file cleanup',
+      confirm:
+        'Remove the {count} previewed files ({size}) from the current Gist? The remote version will be checked again before removal. Earlier revisions are preserved.',
+      succeeded: 'Leftover files removed',
+      removed: 'Removed {count} files.',
+      failed: 'File cleanup failed',
+      scanFailed: 'Could not scan leftover files',
+      invalidManifest:
+        'The remote manifest is missing, damaged, or has an unrecognized layout. Cleanup was stopped. Complete a sync first.',
+      upgrading: 'The remote format upgrade is incomplete. Finish syncing before cleanup.',
+      changed: 'The remote version or sync configuration has changed. Scan again before cleanup.',
+      verifyFailed:
+        'The cleanup request was sent, but its result could not be verified. Scan again instead of reusing the old preview.',
+    },
     revision: {
       legacyFiles: 'Leftover files',
       legacySummary: 'Excluded from this revision’s restored library · {count} files',

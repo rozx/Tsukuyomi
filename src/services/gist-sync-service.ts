@@ -42,6 +42,7 @@ import type { AppLocale } from 'src/models/locale';
 import type { MessageKey } from 'src/i18n/types';
 import { translateText } from 'src/i18n/translate';
 import { LocalizedError, localizedErrorCode } from 'src/utils/localized-error';
+import { scanGistCleanup, executeGistCleanup, type GistCleanupPlan } from './gist-file-cleanup';
 
 /** 同步服务的用户可见文案 key（syncUi.service.*） */
 type SyncServiceKey = string;
@@ -2623,5 +2624,15 @@ export class GistSyncService {
         error: this.errorText(error, 'deleteUnknown'),
       };
     }
+  }
+
+  async scanLeftoverFiles(config: SyncConfig): Promise<GistCleanupPlan> {
+    const { octokit, gistId } = this.prepareGistClient(config);
+    return scanGistCleanup(octokit, gistId);
+  }
+
+  async cleanupLeftoverFiles(config: SyncConfig, plan: GistCleanupPlan) {
+    const { octokit, gistId } = this.prepareGistClient(config);
+    return executeGistCleanup(octokit, gistId, plan);
   }
 }

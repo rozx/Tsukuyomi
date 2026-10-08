@@ -227,6 +227,12 @@ With sync enabled and a Gist ID:
 
 A local backup with chapter source and translations is created first. Failure to read any required entry aborts restoration and preserves current data. Application failure rolls back independently stored chapter content as well as metadata.
 
+### Clean up remote leftover files {#settings-guide-sync-cleanup}
+
+In sync settings, select **Scan for leftover files**, review the files grouped by book and their sizes, then confirm removal. The scan uses the latest remote manifest, not your local library. Only previewed, unreferenced files are removed; active data and earlier revisions are preserved.
+
+Cleanup stops if the manifest is damaged, a format upgrade is incomplete, or required content is known to be missing. If the remote revision changes before confirmation, scan again. Gists with more than 300 files are marked as partially scanned: only returned, verified candidates are considered, and extra files for active entries are kept. You can scan again after cleanup, but this cannot guarantee that all leftovers are gone. A complete inventory requires fetching the entire Gist through Git.
+
 ### Delete Gist {#settings-guide-section-28}
 
 - **Delete current Gist** requires confirmation.
