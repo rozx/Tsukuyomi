@@ -6,6 +6,7 @@ import { GlobalConfig } from 'src/services/global-config-cache';
 import { useSettingsStore } from 'src/stores/settings';
 import { classifyFetchFailure, resolveFetchPlan } from 'src/services/proxy-fetch-plan';
 import type { FetchPlan } from 'src/services/proxy-fetch-plan';
+import { shouldBypassExternalProxy } from 'src/services/proxy-url-policy';
 
 /** 瞬时错误（网络 / 超时 / 429 / 5xx）重试同一地址前的等待 */
 const TRANSIENT_RETRY_DELAY_MS = 1000;
@@ -33,6 +34,7 @@ function buildPlan(
   const rootDomain = rootDomainOf(originalUrl);
   return resolveFetchPlan({
     url: originalUrl,
+    appOrigin: typeof window === 'undefined' ? undefined : window.location.origin,
     isElectron: isElectron(),
     proxyEnabled: GlobalConfig.getProxyEnabled(),
     defaultProxyUrl: GlobalConfig.getProxyUrl(),
@@ -96,11 +98,15 @@ export class ProxyService {
   /**
    * 获取 AI 调用的 CORS 代理 URL（仅在浏览器模式下）
    * 在浏览器模式下，使用用户设置中的 CORS 代理来绕过 CORS 限制
+   * 同源、本机和局域网地址始终直接请求
    * @param originalUrl 原始 URL
    * @param useCorsProxy 是否使用 CORS 代理，undefined 或 true 表示启用，false 表示跳过
    * @returns 代理后的 URL 或原始 URL
    */
   static getProxiedUrlForAI(originalUrl: string, useCorsProxy?: boolean): string {
+    const appOrigin = typeof window === 'undefined' ? undefined : window.location.origin;
+    if (shouldBypassExternalProxy(originalUrl, appOrigin)) return originalUrl;
+
     // 如果模型级别显式禁用 CORS 代理，直接返回原始 URL
     if (useCorsProxy === false) {
       return originalUrl;

@@ -1,5 +1,6 @@
 import { FIRECRAWL_MAPPING_TOKEN } from 'src/constants/proxy';
 import { LocalizedError } from 'src/utils/localized-error';
+import { shouldBypassExternalProxy } from 'src/services/proxy-url-policy';
 
 /**
  * 网页抓取尝试链的纯函数部分：决定本次抓取依次请求哪些 URL、是否直接走 Firecrawl，
@@ -16,6 +17,8 @@ const INTERNAL_PROXY_HOSTS: Record<string, string> = {
 
 export interface FetchPlanInput {
   url: string;
+  /** 浏览器所在源，用于识别同源请求；纯函数调用方显式传入 */
+  appOrigin?: string | undefined;
   isElectron: boolean;
   proxyEnabled: boolean;
   defaultProxyUrl: string;
@@ -68,7 +71,7 @@ function corsAttempts(input: FetchPlanInput, corsEntries: string[]): string[] {
 }
 
 export function resolveFetchPlan(input: FetchPlanInput): FetchPlan {
-  if (input.url.startsWith('/api/') || input.skipProxy) {
+  if (input.skipProxy || shouldBypassExternalProxy(input.url, input.appOrigin)) {
     return { firecrawlFirst: false, attempts: [input.url], firecrawlFallback: false };
   }
   const firecrawlFallback = input.firecrawlFallbackEnabled;

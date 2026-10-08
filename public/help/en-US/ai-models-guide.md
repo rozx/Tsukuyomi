@@ -94,8 +94,9 @@ These settings apply to both providers, including model listing, generation, and
 
 Each model controls its proxy independently:
 
-- **Use CORS proxy** is on by default and forwards requests through the proxy server.
-- Turn it off for local services such as Ollama, self-hosted services with CORS configured, or endpoints that do not need a proxy.
+- **Use CORS proxy** is on by default and forwards public API requests through the configured proxy server.
+- Same-origin URLs, local services such as Ollama, and LAN addresses always connect directly, regardless of the switch.
+- Turn it off for public self-hosted services with CORS configured or endpoints that do not need a proxy.
 - The switch applies only to Web. Electron always connects directly.
 
 ### Custom HTTP headers {#ai-models-guide-section-11}
@@ -161,7 +162,7 @@ Desktop cards show:
 
 API keys are stored in plaintext in local IndexedDB:
 
-- With CORS proxy enabled, requests and keys pass through the proxy to the provider.
+- With CORS proxy enabled for public API requests, requests and keys pass through the proxy to the provider.
 - Gist sync uploads keys with model configuration. See [Settings](./settings-guide.md).
 
 ---

@@ -22,7 +22,7 @@ export interface UploadError {
  * 图片上传服务类
  */
 export class ImageUploadService {
-  // 使用外部 API，在 SPA 构建中会自动通过 CORS proxy 访问
+  // 图床接口原生支持跨域上传，直接发送文件，避免占用 CORS 代理流量
   private static readonly BASE_API_URL = 'https://p.sda1.dev/api/v1/upload_external_noform';
   private static readonly MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
   private static readonly SUPPORTED_FORMATS = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
@@ -93,8 +93,6 @@ export class ImageUploadService {
       method: 'POST',
       headers: {
         'Content-Type': contentType,
-        'User-Agent': 'Tsukuyomi-Moonlit-Translator',
-        Connection: 'keep-alive',
       },
       body: imageBuffer as unknown as BodyInit,
     });
@@ -148,11 +146,7 @@ export class ImageUploadService {
     const contentType = this.getContentType(file.name);
     const imageBuffer = new Uint8Array(await file.arrayBuffer());
 
-    let apiUrl = `${this.BASE_API_URL}?filename=${encodeURIComponent(file.name)}`;
-    // SPA 构建走 CORS 代理
-    if (apiUrl.startsWith('http://') || apiUrl.startsWith('https://')) {
-      apiUrl = ProxyService.getProxiedUrlForAI(apiUrl);
-    }
+    const apiUrl = `${this.BASE_API_URL}?filename=${encodeURIComponent(file.name)}`;
 
     try {
       const result = await this.postImageBuffer(apiUrl, contentType, imageBuffer, locale);

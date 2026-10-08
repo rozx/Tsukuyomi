@@ -87,7 +87,8 @@ Other listed proxies are used only when selected as the default or assigned to a
 
 - This tab appears only outside Electron.
 - Some built-in sites still use app `/api/...` routes when proxy is off.
-- Web AI model requests have their own default CORS proxy behavior; this Proxy URL does not directly control them.
+- Public AI requests on Web follow both the global proxy switch and the model's CORS proxy switch. When both are on, they use the Proxy URL configured here.
+- Same-origin, local, and LAN requests, as well as cover display and uploads, connect directly without an external CORS proxy.
 
 ---
 
