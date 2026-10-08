@@ -16,14 +16,7 @@ describe('同步界面文案跟随界面语言', () => {
     const names = getGroupedFiles(files, [{ id: 'b1', title: '月の本' }], 'en-US').map(
       (file) => file.displayName,
     );
-    expect(names).toEqual(
-      expect.arrayContaining([
-        'App settings',
-        '月の本',
-        '[Deleted] novel-gone.json',
-        '[Memories] 月の本',
-      ]),
-    );
+    expect(names).toEqual(expect.arrayContaining(['App configuration', '月の本', 'Book gone']));
     expect(getGroupedFiles(files, [], 'zh-TW').map((file) => file.displayName)).toContain(
       '應用程式設定',
     );

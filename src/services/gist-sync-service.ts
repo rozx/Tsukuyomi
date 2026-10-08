@@ -35,7 +35,7 @@ import {
   parseGistManifest,
 } from 'src/utils/manifest-protocol';
 import { assembleChapterGroups } from './sync-chapter-layout';
-import { completeGistFileSnapshot } from './gist-file-snapshot';
+import { completeGistFileSnapshot, revisionSnapshotBookIds } from './gist-file-snapshot';
 import { hashJson } from 'src/utils/content-hash';
 import { normalizeBookLanguages } from './localization/normalize';
 import type { AppLocale } from 'src/models/locale';
@@ -2397,6 +2397,7 @@ export class GistSyncService {
   ): Promise<
     SyncResult & {
       data?: {
+        snapshotBookIds?: string[];
         files: Record<
           string,
           { filename?: string; size?: number; content?: string; truncated?: boolean }
@@ -2409,12 +2410,14 @@ export class GistSyncService {
 
       // 过滤掉 null 值并转换类型
       const files = response.data.files ? this.mapRevisionFilesToDetails(response.data.files) : {};
+      const snapshotBookIds = revisionSnapshotBookIds(response.data.files ?? {});
 
       return {
         success: true,
         message: this.text('revisionLoaded'),
         data: {
           files,
+          ...(snapshotBookIds !== undefined ? { snapshotBookIds } : {}),
         },
       };
     } catch (error) {

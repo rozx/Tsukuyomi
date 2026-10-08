@@ -18,6 +18,7 @@ const props = defineProps<{
   committedAt: string;
   additions: number;
   deletions: number;
+  snapshotBookIds?: string[] | undefined;
   files:
     | Array<{ filename: string; status: RevisionFileStatus; size?: number; sizeDiff?: number }>
     | undefined;
@@ -88,7 +89,11 @@ const onRevertClick = (event: Event) => {
 
     <!-- 展开的文件变更列表 -->
     <div v-if="isExpanded" class="border-t border-white/10 bg-white/5 p-3">
-      <SyncRevisionFileList :is-loading="isLoadingDetails" :files="files" />
+      <SyncRevisionFileList
+        :is-loading="isLoadingDetails"
+        :files="files"
+        :snapshot-book-ids="snapshotBookIds"
+      />
     </div>
   </div>
 </template>

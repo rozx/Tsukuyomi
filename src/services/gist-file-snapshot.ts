@@ -1,11 +1,29 @@
 import type { GistFileLike } from './gist-sync-incremental';
-import { MANIFEST_FILE_NAME } from 'src/models/manifest';
+import { MANIFEST_FILE_NAME, parseNovelEntryKey } from 'src/models/manifest';
 import { effectiveSchemaVersion, parseGistManifest } from 'src/utils/manifest-protocol';
 import { LocalizedError } from 'src/utils/localized-error';
 
 /** 旧布局分批迁移时保留原文件目录，正式 manifest 发布后删除。 */
 export const LEGACY_FILE_INDEX_NAME = 'tsukuyomi-legacy-files.json';
 export const LEGACY_FILE_INDEX_FORMAT = 'tsukuyomi-legacy-files-v1';
+
+/** 仅用于修订展示；清单缺失、截断或无法确认时，不推断任何文件是遗留数据。 */
+export function revisionSnapshotBookIds(
+  files: Record<string, GistFileLike | null | undefined>,
+): string[] | undefined {
+  const file = files[MANIFEST_FILE_NAME];
+  if (!file?.content || file.truncated) return undefined;
+  try {
+    const manifest = parseGistManifest(file.content);
+    if (Object.values(manifest.entries).some((entry) => !entry || typeof entry.hash !== 'string'))
+      return undefined;
+    return Object.keys(manifest.entries)
+      .map(parseNovelEntryKey)
+      .filter((id): id is string => !!id);
+  } catch {
+    return undefined;
+  }
+}
 
 interface GistSnapshot {
   files?: Record<string, GistFileLike | null | undefined>;

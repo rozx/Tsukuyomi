@@ -80,6 +80,69 @@ function mockRevisionApi(
   } as never);
 }
 
+describe('Gist 修订详情的有效书库', () => {
+  afterEach(() => mock.restore());
+
+  it('从 manifest 提取恢复书籍 ID，未引用旧文件仍保留在详情中', async () => {
+    const service = new GistSyncService();
+    mockRevisionApi(service, [], () =>
+      Promise.resolve(
+        makeRevisionResponse({
+          'manifest.json': {
+            content: JSON.stringify({
+              schemaVersion: 6,
+              entries: {
+                'novel:kept': { hash: 'book-hash' },
+                'chapters:kept:a': { hash: 'chapter-hash' },
+              },
+            }),
+          },
+          'book-kept.json': { size: 100 },
+          'novel-old.json': { size: 200 },
+        }),
+      ),
+    );
+    const result = await service.getGistRevision(makeConfig(), 'revision-sha');
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ snapshotBookIds: ['kept'] });
+    expect(result.data?.files['novel-old.json']).toBeDefined();
+  });
+
+  it.each([
+    undefined,
+    { content: '{broken' },
+    { content: JSON.stringify({ schemaVersion: 99, entries: {} }) },
+    { content: JSON.stringify({ schemaVersion: 6, entries: { 'novel:bad': null } }) },
+    { content: JSON.stringify({ schemaVersion: 6, entries: {} }), truncated: true },
+  ])('清单缺失、损坏或不兼容时不猜测恢复书库：%j', async (manifestFile) => {
+    const service = new GistSyncService();
+    mockRevisionApi(service, [], () =>
+      Promise.resolve(
+        makeRevisionResponse({
+          ...(manifestFile ? { 'manifest.json': manifestFile } : {}),
+          'novel-old.json': { size: 200 },
+        }),
+      ),
+    );
+    const result = await service.getGistRevision(makeConfig(), 'revision-sha');
+    expect(result.success).toBe(true);
+    expect(result.data).not.toHaveProperty('snapshotBookIds');
+  });
+
+  it('有效空清单与未知清单明确区分', async () => {
+    const service = new GistSyncService();
+    mockRevisionApi(service, [], () =>
+      Promise.resolve(
+        makeRevisionResponse({
+          'manifest.json': { content: JSON.stringify({ schemaVersion: 6, entries: {} }) },
+        }),
+      ),
+    );
+    const result = await service.getGistRevision(makeConfig(), 'revision-sha');
+    expect(result.data).toMatchObject({ snapshotBookIds: [] });
+  });
+});
+
 describe('GistSyncService.downloadFromGistRevision', () => {
   afterEach(() => {
     mock.restore();

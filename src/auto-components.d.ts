@@ -206,6 +206,7 @@ declare module 'vue' {
     SyncRestoreDialog: typeof import('./components/sync/SyncRestoreDialog.vue')['default']
     SyncRevisionCard: typeof import('./components/settings/SyncRevisionCard.vue')['default']
     SyncRevisionFileList: typeof import('./components/settings/SyncRevisionFileList.vue')['default']
+    SyncRevisionGroup: typeof import('./components/settings/SyncRevisionGroup.vue')['default']
     SyncSettingsTab: typeof import('./components/settings/SyncSettingsTab.vue')['default']
     SyncStatusBody: typeof import('./components/sync/SyncStatusBody.vue')['default']
     SyncStatusPanel: typeof import('./components/sync/SyncStatusPanel.vue')['default']

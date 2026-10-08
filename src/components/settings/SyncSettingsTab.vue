@@ -54,6 +54,7 @@ const revisions = ref<
   Array<{
     version: string;
     committedAt: string;
+    snapshotBookIds?: string[];
     changeStatus: {
       total: number;
       additions: number;
@@ -431,6 +432,9 @@ const processRevisionDetails = async (version: string, config: SyncConfig): Prom
       version: existingRevision.version,
       committedAt: existingRevision.committedAt,
       changeStatus: existingRevision.changeStatus,
+      ...(revisionResponse.data.snapshotBookIds !== undefined
+        ? { snapshotBookIds: revisionResponse.data.snapshotBookIds }
+        : {}),
       files,
     };
   }
@@ -1095,6 +1099,7 @@ const deleteGist = () => {
           :additions="revision.changeStatus.additions"
           :deletions="revision.changeStatus.deletions"
           :files="revision.files"
+          :snapshot-book-ids="revision.snapshotBookIds"
           :is-expanded="expandedRevisions.has(revision.version)"
           :is-loading-details="loadingRevisionDetails.has(revision.version)"
           :is-reverting="revertingVersion === revision.version"
