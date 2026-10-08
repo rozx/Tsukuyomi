@@ -13,6 +13,7 @@ import { mergeBookEntityState } from './entities';
 import { createEntityDeletionRecorder } from './entity-identity';
 import { replaceLanguageSlots as restoreSlots } from './versioned-values';
 import { replaceBookLanguageSlots } from './book-slots';
+import { createRestoreSignature, restoreSignaturesMatch } from './restore-signature';
 
 export interface EntityRestoreOperation {
   id: string;
@@ -40,7 +41,7 @@ function assertReceipt(
   scope: EntityRestoreOperation['scope'],
   signature: string,
 ) {
-  if (receipt.scope !== scope || receipt.signature !== signature)
+  if (receipt.scope !== scope || !restoreSignaturesMatch(receipt.signature, signature))
     throw new Error('RESTORE_OPERATION_CONFLICT');
 }
 export async function restoreOperationApplied(
@@ -195,13 +196,17 @@ export async function prepareBookRestore(
   const desired = normalizeBookLanguages(snapshot);
   const previous = current ? normalizeBookLanguages(current) : undefined;
   const key = restoreOperationKey('book', operationId, snapshot.id);
-  const signature = canonicalStringify(desired);
-  const sourceSignature = canonicalStringify(previous ?? null);
+  const signature = createRestoreSignature(desired);
+  const sourceSignature = createRestoreSignature(previous ?? null);
   const cached = await db.get('entity-operations', key);
   const readReceipt = (receipt: EntityRestoreOperation) => {
     assertReceipt(receipt, 'book', signature);
     if (!receipt.result) throw new Error('RESTORE_RECEIPT_MISSING');
-    if (receipt.state !== 'applied' && receipt.sourceSignature !== sourceSignature)
+    if (
+      receipt.state !== 'applied' &&
+      (!receipt.sourceSignature ||
+        !restoreSignaturesMatch(receipt.sourceSignature, sourceSignature))
+    )
       throw new Error('RESTORE_SOURCE_CHANGED');
     return normalizeBookLanguages(receipt.result);
   };

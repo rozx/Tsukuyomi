@@ -80,6 +80,14 @@ export default defineConfig((ctx: any) => {
       // distDir
 
       extendViteConf(viteConf: any) {
+        if (ctx.dev) {
+          // index.html 的 Quasar 入口由插件注入，依赖扫描读取原始 HTML 时看不到它。
+          // 显式扫描实际入口（包括懒加载路由/服务），避免恢复途中发现新依赖而整页重载。
+          viteConf.optimizeDeps = {
+            ...viteConf.optimizeDeps,
+            entries: [ctx.appPaths.resolve.entry('client-entry.js')],
+          };
+        }
         // Reduce log noise in terminal
         viteConf.logLevel = 'error';
         // Suppress large chunk size warnings

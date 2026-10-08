@@ -14,7 +14,7 @@ import {
   restoreOperationApplied,
 } from './localization/restore';
 import { completeIdbTransaction } from 'src/utils/complete-idb-transaction';
-import { canonicalStringify } from 'src/utils/canonical-json';
+import { createRestoreSignature } from './localization/restore-signature';
 import { getDB } from 'src/utils/indexed-db';
 import { v4 } from 'uuid';
 import { mergeUiLocalePreference } from 'src/models/locale';
@@ -906,7 +906,7 @@ export class SyncDataService {
     const books = useBooksStore();
     const covers = useCoverHistoryStore();
     const db = await getDB();
-    const signature = canonicalStringify(data);
+    const signature = createRestoreSignature(data);
     const scopeId = `settings:${operationId}`;
     const bookScope = `${scopeId}:books`;
     if (
@@ -1008,7 +1008,8 @@ export class SyncDataService {
 
     return {
       models: JSON.parse(JSON.stringify(aiModelsStore.models)),
-      books: JSON.parse(JSON.stringify(booksWithContent)),
+      // 按书隔离备份，避免一次构造完整书库 JSON 字符串及其解析副本。
+      books: booksWithContent.map((book) => JSON.parse(JSON.stringify(book)) as Novel),
       covers: JSON.parse(JSON.stringify(coverHistoryStore.covers)),
       settings: JSON.parse(JSON.stringify(settings ?? {})),
       gistSync: JSON.parse(JSON.stringify(gistSync ?? {})),
@@ -2030,7 +2031,7 @@ export class SyncDataService {
     }
 
     const db = await getDB();
-    const signature = canonicalStringify(remoteData);
+    const signature = createRestoreSignature(remoteData);
     if (
       await restoreOperationApplied(
         { get: (id) => db.get('entity-operations', id) },

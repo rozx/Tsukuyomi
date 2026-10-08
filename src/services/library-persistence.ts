@@ -6,6 +6,7 @@ import type { Novel, Chapter, Paragraph } from 'src/models/novel';
 import type { TsukuyomiDB } from 'src/utils/indexed-db';
 import { serializeDates } from 'src/utils/serialize-dates';
 import { canonicalStringify } from 'src/utils/canonical-json';
+import { createRestoreSignature } from './localization/restore-signature';
 import { bumpBookRevision } from './book-revision';
 import { mergeBookDeletionRecords } from './sync-config-persistence';
 import type { AppLocale } from 'src/models/locale';
@@ -495,7 +496,7 @@ export class LibraryPersistence {
     snapshots: Novel[],
     operationId: string,
   ): Promise<void> {
-    const signature = canonicalStringify(snapshots.map(normalizeBookLanguages));
+    const signature = createRestoreSignature(snapshots.map(normalizeBookLanguages));
     if (
       await restoreOperationApplied(
         { get: (id) => db.get('entity-operations', id) },

@@ -9,6 +9,7 @@
         "@ai-sdk/openai-compatible": "^3",
         "@huggingface/transformers": "^4.3",
         "@intlify/core-base": "11.4.6",
+        "@noble/hashes": "^2.2.0",
         "@octokit/rest": "^22.0.1",
         "@primevue/themes": "^4.5.4",
         "@quasar/extras": "^1.18.0",

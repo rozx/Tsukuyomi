@@ -8,6 +8,7 @@ import { mergeBookEntityState } from '../services/localization/entities';
 import { entityKey } from '../services/localization/entity-identity';
 import { prepareBookRestore } from '../services/localization/restore';
 import { getDB } from '../utils/indexed-db';
+import { canonicalStringify } from '../utils/canonical-json';
 
 function snapshot(): Novel {
   return normalizeBookLanguages({
@@ -88,6 +89,33 @@ describe('明确实体恢复', () => {
     const desired = snapshot();
     expect(await prepareBookRestore(db, desired, undefined, 'empty-import')).toEqual(desired);
     expect(await db.get('sync-metadata', 'clock')).toBeUndefined();
+  });
+
+  it('恢复回执只保存固定长度签名，避免再次保存完整快照正文', async () => {
+    const db = await getDB();
+    const desired = snapshot();
+    desired.volumes![0]!.chapters![0]!.content![0]!.text = '待恢复正文'.repeat(10000);
+    await prepareBookRestore(db, desired, snapshot(), 'bounded-signature');
+    const receipt = (await db.getAll('entity-operations'))[0]!;
+    expect(receipt.signature).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(receipt.sourceSignature).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+
+  it('旧 JSON 签名回执可继续重试，仍拒绝已变化的本地数据', async () => {
+    const db = await getDB();
+    const desired = snapshot();
+    const current = snapshot();
+    const result = await prepareBookRestore(db, desired, current, 'legacy-signature');
+    const receipt = (await db.getAll('entity-operations'))[0]!;
+    await db.put('entity-operations', {
+      ...receipt,
+      signature: canonicalStringify(normalizeBookLanguages(desired)),
+      sourceSignature: canonicalStringify(normalizeBookLanguages(current)),
+    });
+    expect(await prepareBookRestore(db, desired, current, 'legacy-signature')).toEqual(result);
+    await expect(
+      prepareBookRestore(db, desired, { ...current, title: 'Changed' }, 'legacy-signature'),
+    ).rejects.toThrow('RESTORE_SOURCE_CHANGED');
   });
 });
 

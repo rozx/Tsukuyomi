@@ -907,9 +907,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         await SyncDataService.applyDownloadedData({ novels: [remote] });
         const addedBooks = mockBooksStore.bulkAddBooks.mock.calls[0]?.[0] as Array<any>;
         const paragraph = addedBooks?.[0]?.volumes?.[0]?.chapters?.[0]?.content?.[0];
-        expect(paragraph.translations.map((value: { id: string }) => value.id)).toEqual([
-          't-keep',
-        ]);
+        expect(paragraph.translations.map((value: { id: string }) => value.id)).toEqual(['t-keep']);
         expect(paragraph.deletedTranslations?.['t-old']?.revision).toEqual({
           counter: 5,
           actorId: 'remote',
@@ -3257,6 +3255,46 @@ describe('数据同步服务 (SyncDataService)', () => {
   });
 
   describe('overwriteFromSnapshot (恢复修订版本完全覆盖)', () => {
+    it('回滚备份逐本序列化，避免构造超出单本规模的全库 JSON 字符串', async () => {
+      const books = ['first', 'second'].map((id) => ({
+        id,
+        title: id,
+        createdAt: new Date(0),
+        lastEdited: new Date(0),
+        volumes: [
+          {
+            id: `v-${id}`,
+            title: '卷',
+            chapters: [
+              {
+                id: `c-${id}`,
+                title: '章',
+                createdAt: new Date(0),
+                lastEdited: new Date(0),
+                content: [
+                  { id: 'p', text: 'x'.repeat(45000), translations: [], selectedTranslationId: '' },
+                ],
+              },
+            ],
+          },
+        ],
+      }));
+      mockBooksStore.books = books;
+      spyOn(ChapterContentService, 'loadAllChapterContentsForNovels').mockResolvedValue(books);
+      const stringify = JSON.stringify;
+      spyOn(JSON, 'stringify').mockImplementation((value: unknown) => {
+        const result = stringify(value);
+        if (result && result.length > 70000) throw new RangeError('诊断限制：不允许全库字符串副本');
+        return result;
+      });
+      await SyncDataService.overwriteFromSnapshot({ novels: [] });
+      const { getDB } = await import('../utils/indexed-db');
+      const receipts = await (await getDB()).getAll('entity-operations');
+      expect(receipts.find((receipt) => receipt.scope === 'snapshot')?.signature).toMatch(
+        /^sha256:[0-9a-f]{64}$/,
+      );
+    });
+
     it('修订恢复为已删除实体建立新身份，并保留旧 tombstone', async () => {
       const current = {
         id: 'b',
