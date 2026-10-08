@@ -1,7 +1,6 @@
 import type { Novel } from 'src/models/novel';
 // 从独立色值模块导入，避免把 PrimeVue 主题（definePreset + Aura）拉进广泛使用的服务 bundle
 import { PRIMARY, SURFACE_DARK, TRANSLATION_TEXT_COLOR } from 'src/theme/color-tokens';
-import { ProxyService } from 'src/services/proxy-service';
 import { translateText } from 'src/i18n/translate';
 import type { AppLocale } from 'src/models/locale';
 
@@ -233,20 +232,14 @@ export class CoverService {
 
   /**
    * 获取书籍的封面 URL（如果有自定义封面则返回，否则返回默认封面）
-   * 在 SPA 构建中，外部 URL 会自动使用默认 CORS 代理
+   * 自定义封面直接使用原始 URL，避免图片展示流量经过 CORS 代理
    * @param book 书籍对象
    * @param locale 生成默认封面时的界面语言（仅影响无标题占位名）
    * @returns 封面 URL
    */
   static getCoverUrl(book: Novel, locale: AppLocale = 'zh-CN'): string {
     if (book.cover?.url) {
-      const coverUrl = book.cover.url;
-      // 如果是外部 URL（http:// 或 https://），在 SPA 构建中使用 CORS 代理
-      if (coverUrl.startsWith('http://') || coverUrl.startsWith('https://')) {
-        return ProxyService.getProxiedUrlForAI(coverUrl);
-      }
-      // 数据 URL 或其他格式直接返回
-      return coverUrl;
+      return book.cover.url;
     }
     // 生成默认封面
     return CoverService.generateDefaultCover(book.title, book.author, locale);
