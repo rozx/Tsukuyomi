@@ -35,7 +35,7 @@ export default {
     resume: 'Resume',
     mobileUnsupported: 'Local embeddings are unavailable on mobile',
     mobileHint:
-      'Model size and unstable mobile WebGPU support prevent local embedding on mobile. Generate embeddings on desktop; mobile devices can read them.',
+      'Model size and unstable mobile WebGPU support prevent local embedding on mobile. Mobile search uses keyword matching only; vectors stay on the device that generated them and are not synced to mobile.',
     notEnabled: 'Local embeddings are disabled',
     enableHint:
       'Enable this feature to download an embedding model (about 190 MiB) for semantic memory and chapter search. Related actions are hidden while disabled.',

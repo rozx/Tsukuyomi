@@ -78,9 +78,9 @@ export default {
       chapterTitle: '章節嵌入',
       chapterDescription: '為每章產生多段向量，讓 AI 依劇情／事件／人物語意找到相關章節',
       chapterAuto:
-        '章節嵌入在背景自動執行，段落或譯文變更後 60 秒防抖重算，無可設定項目。要查看／回填／重算進度，請在書籍詳情頁頂部的',
+        '章節嵌入在背景自動執行，段落或譯文變更後 60 秒防抖重算，無可設定項目。要查看／回填／重算進度，請在書籍詳情頁的',
       vectorIndex: '向量索引',
-      chapterAutoSuffix: '彈窗中操作。',
+      chapterAutoSuffix: '面板中操作（桌面與平板在側欄，窄螢幕在頂部系統列）。',
     },
     sites: {
       title: '網站對應',

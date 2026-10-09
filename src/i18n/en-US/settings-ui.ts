@@ -86,7 +86,8 @@ export default {
       chapterAuto:
         'Chapter embeddings run automatically in the background and are recomputed 60 seconds after paragraphs or translations change; there are no settings. To view, backfill, or rebuild progress, use the',
       vectorIndex: 'Vector index',
-      chapterAutoSuffix: 'popup at the top of the book details page.',
+      chapterAutoSuffix:
+        'panel on the book details page (in the side rail on desktop and tablet, or the top system bar on narrow screens).',
     },
     sites: {
       title: 'Site mappings',
