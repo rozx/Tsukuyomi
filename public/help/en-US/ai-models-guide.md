@@ -14,14 +14,14 @@ The **AI model workbench** has three areas:
 - **Model list**: grouped by OpenAI or Google Gemini, with total and enabled counts. Cards support **Duplicate** (disabled initially), **Edit**, and **Delete** (confirmation required, with undo).
 - **Task routing**: defaults for translation, proofreading/polishing, terminology translation, and the assistant. "Select automatically" in the dropdown means no explicit choice. These settings are included in import/export.
 
-Task defaults also sync through Gist with the app settings. Each task's choice merges by its own modification time, so editing other settings does not override it. If the chosen model has not synced to this device yet or was deleted, the choice is kept and the task temporarily shows as unselected ("Select automatically" in the desktop dropdown, "Unset" in the tablet/mobile picker); it comes back once the model arrives. The choice is cleared only when that model is disabled or no longer used for the task.
+Task defaults also sync through Gist with the app settings. Each task's choice merges by its own modification time, so editing other settings does not override it. If the chosen model has not synced to this device yet or was deleted, the choice is kept. Meanwhile the desktop dropdown shows "Select automatically", while the tablet/mobile picker shows the fallback model actually used (the first enabled model that supports the task), or "Unset" if there is none. The choice comes back once the model arrives. The choice is cleared only when that model is disabled or no longer used for the task.
 
 ### Mobile {#ai-models-guide-section-4}
 
 - AI models title and Add button.
 - With no models, an introductory card explains the two steps: add a connection, then select default tasks.
 - **My models**: provider groups with total/enabled counts. Tap a model to edit.
-- **Task defaults**: tap a task to select from a bottom sheet. Choose **Unset** to leave it without a default. Choices also sync through Gist; while the chosen model has not synced to this device, the task temporarily shows **Unset**. See the desktop notes above.
+- **Task defaults**: tap a task to select from a bottom sheet. Choose **Unset** to leave it without a default. Choices also sync through Gist; while the chosen model has not synced to this device, the task temporarily shows the fallback model (or **Unset** if no model is available). See the desktop notes above.
 - The model dialog is a bottom sheet with the same fields as desktop.
 
 ---

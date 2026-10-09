@@ -91,7 +91,7 @@ The panel is titled "Local vector index" with the subtitle "Runs locally in your
 ### Status and counts {#local-embedding-section-9}
 
 - **Status pill**: at the right of the title bar, showing Ready / Loading model / Could not load / Not ready / Disabled.
-- **"Chapter vectors"**: shows "Embedded X / Y" (X counts chapters embedded with the current model version), a progress bar, and "Pending: N" (this book's chapters waiting in the queue).
+- **"Chapter vectors"**: shows "Embedded X / Y" (X counts chapters embedded with the current model version), a progress bar, and "Pending: N" (chapters waiting in the embedding queue; the queue is shared across books, so this can include other books' tasks).
 - **"Memory vectors"**: likewise shows "Embedded X / Y", a progress bar, and "Pending: N".
 - **Bottom status block**: model version, backend (WebGPU or "WASM (slow)"), and current status.
 
