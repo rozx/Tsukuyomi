@@ -26,6 +26,7 @@ import { isAppLocale, resolveAppLocale } from 'src/models/locale';
 import type { AppLocale } from 'src/models/locale';
 import { LocalizedError } from 'src/utils/localized-error';
 import { normalizeTaskModelSettings } from 'src/services/settings/task-default-models';
+import { API_KEY_FIELDS, normalizeApiKeySettings } from 'src/services/settings/api-keys';
 
 // localStorage 仅用于向后兼容读取（历史版本曾使用 localStorage 存储 settings/syncs）
 const SETTINGS_STORAGE_KEY = 'tsukuyomi-settings';
@@ -43,6 +44,13 @@ function serializeSettingsWrite(owner: object, mutation: () => Promise<void>): P
   const next = previous.catch(() => undefined).then(mutation);
   settingsWrites.set(owner, next);
   return next;
+}
+
+/** 清空的 Key 不保留字段值，修改时间仍保留供同步传播。 */
+function removeEmptyApiKeys(settings: AppSettings): void {
+  for (const field of API_KEY_FIELDS) {
+    if (settings[field] === undefined) delete settings[field];
+  }
 }
 
 /**
@@ -63,6 +71,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   scraperConcurrencyLimit: 3,
   taskDefaultModels: {},
   taskDefaultModelsUpdatedAt: {},
+  apiKeysUpdatedAt: {},
   lastOpenedSettingsTab: 0,
   proxyEnabled: true,
   proxyUrl: DEFAULT_PROXY_LIST[0]!.url,
@@ -164,6 +173,10 @@ function normalizeLoadedSettings(raw: unknown): AppSettings {
     taskDefaultModels: {},
     taskDefaultModelsUpdatedAt: {},
     ...normalizeTaskModelSettings(settings),
+    tavilyApiKey: undefined,
+    firecrawlApiKey: undefined,
+    apiKeysUpdatedAt: {},
+    ...normalizeApiKeySettings(settings),
     lastEdited: existingLastEdited,
     proxySiteMapping: mergedMapping,
     quickStartDismissed:
@@ -174,6 +187,7 @@ function normalizeLoadedSettings(raw: unknown): AppSettings {
   };
 
   if (!isAppLocale(loadedSettings.uiLocale)) delete loadedSettings.uiLocale;
+  removeEmptyApiKeys(loadedSettings);
   return loadedSettings;
 }
 
@@ -555,12 +569,37 @@ export const useSettingsStore = defineStore('settings', {
         // 深度合并 taskDefaultModels
         // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
         const current = normalizeTaskModelSettings(this.settings);
+        const currentKeys = normalizeApiKeySettings(this.settings);
         const mergedSettings: AppSettings = {
           ...this.settings,
           ...current,
+          ...currentKeys,
           ...updates,
           lastEdited: updates.lastEdited ?? new Date(),
         };
+
+        const incomingKeys = normalizeApiKeySettings({
+          ...updates,
+          lastEdited: mergedSettings.lastEdited,
+        });
+        mergedSettings.apiKeysUpdatedAt = { ...currentKeys.apiKeysUpdatedAt };
+        for (const field of API_KEY_FIELDS) {
+          if (!Object.prototype.hasOwnProperty.call(updates, field)) continue;
+          const value = incomingKeys[field];
+          // 忽略损坏值；undefined / 空字符串是明确清空。
+          if (updates[field] !== undefined && typeof updates[field] !== 'string') {
+            mergedSettings[field] = currentKeys[field];
+            continue;
+          }
+          mergedSettings[field] = value;
+          if (value !== currentKeys[field] || currentKeys.apiKeysUpdatedAt?.[field] === undefined) {
+            mergedSettings.apiKeysUpdatedAt[field] = Math.max(
+              mergedSettings.lastEdited.getTime(),
+              (currentKeys.apiKeysUpdatedAt?.[field] ?? -1) + 1,
+            );
+          }
+        }
+        removeEmptyApiKeys(mergedSettings);
 
         if (updates.taskDefaultModels !== undefined) {
           const incoming = normalizeTaskModelSettings(updates);
@@ -649,11 +688,23 @@ export const useSettingsStore = defineStore('settings', {
           lastEdited: _removed,
           proxySiteMapping: _proxyMapping,
           syncs: _syncs,
+          tavilyApiKey: _tavilyKey,
+          firecrawlApiKey: _firecrawlKey,
+          apiKeysUpdatedAt: _keyTimes,
           ...settingsWithoutSpecial
         } = settings;
         const mergedSettings: Partial<AppSettings> = {
           ...settingsWithoutSpecial,
         };
+        const currentKeys = normalizeApiKeySettings(this.settings);
+        const incomingKeys = normalizeApiKeySettings(settings);
+        Object.assign(mergedSettings, incomingKeys);
+        if (currentKeys.apiKeysUpdatedAt || incomingKeys.apiKeysUpdatedAt) {
+          mergedSettings.apiKeysUpdatedAt = {
+            ...currentKeys.apiKeysUpdatedAt,
+            ...incomingKeys.apiKeysUpdatedAt,
+          };
+        }
         if (!isAppLocale(mergedSettings.uiLocale)) delete mergedSettings.uiLocale;
 
         if (settings.taskDefaultModels !== undefined) {
@@ -682,6 +733,7 @@ export const useSettingsStore = defineStore('settings', {
         // 深度合并 taskDefaultModels
         const finalSettings: AppSettings = {
           ...this.settings,
+          ...currentKeys,
           ...mergedSettings,
           // 如果有保留的 lastEdited，使用它；否则保留本地的 lastEdited（同步操作不应该更新 lastEdited）
           lastEdited: preservedLastEdited || this.settings.lastEdited,
@@ -690,6 +742,7 @@ export const useSettingsStore = defineStore('settings', {
             ? { proxySiteMapping: migratedProxySiteMapping }
             : {}),
         };
+        removeEmptyApiKeys(finalSettings);
 
         await saveSettingsToDB(finalSettings);
         this.settings = finalSettings;
@@ -798,14 +851,7 @@ export const useSettingsStore = defineStore('settings', {
      * 设置 Firecrawl API Key；传入空值时移除该字段（回到 keyless 模式）
      */
     async setFirecrawlApiKey(key: string | undefined): Promise<void> {
-      const trimmed = key?.trim();
-      if (trimmed) {
-        await this.updateSettings({ firecrawlApiKey: trimmed });
-        return;
-      }
-      const { firecrawlApiKey: _removed, ...rest } = this.settings;
-      this.settings = { ...rest, lastEdited: new Date() };
-      await saveSettingsToDB(this.settings);
+      await this.updateSettings({ firecrawlApiKey: key?.trim() || undefined });
     },
 
     /**

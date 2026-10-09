@@ -34,6 +34,7 @@ import type { DeletionRecord, SyncConfig } from 'src/models/sync';
 import type { AppSettings, ImportResult } from 'src/models/settings';
 import { importMemoriesPreservingIdentity } from './settings/memory-import';
 import { mergeTaskModelSettings } from './settings/task-default-models';
+import { mergeApiKeySettings } from './settings/api-keys';
 import { isEqual, omit } from 'lodash';
 import { isTimeDifferent, isNewlyAdded as checkIsNewlyAdded } from 'src/utils/time-utils';
 import { normalizeMemoriesForSync, stripNovelLocalFields } from 'src/utils/sync-strip';
@@ -1941,11 +1942,13 @@ export class SyncDataService {
       ? mergeUiLocalePreference(remoteAppSettings.uiLocale, localSettings.uiLocale)
       : mergeUiLocalePreference(localSettings.uiLocale, remoteAppSettings.uiLocale);
     const taskModels = mergeTaskModelSettings(localSettings, remoteAppSettings);
+    const apiKeys = mergeApiKeySettings(localSettings, remoteAppSettings);
     if (shouldApplyRemoteSettings) {
       const currentGistSync = GlobalConfig.getGistSyncSnapshot();
       await settingsStore.importSettings({
         ...remoteAppSettings,
         ...(!isManualRetrieval ? taskModels : {}),
+        ...(!isManualRetrieval ? apiKeys : {}),
         ...(uiLocale ? { uiLocale } : {}),
         quickStartDismissed: mergedQuickStartDismissed,
       });
@@ -1953,7 +1956,7 @@ export class SyncDataService {
         await settingsStore.updateGistSync(currentGistSync);
       }
     } else {
-      const updates: Partial<AppSettings> = { ...taskModels };
+      const updates: Partial<AppSettings> = { ...taskModels, ...apiKeys };
       if (mergedQuickStartDismissed && localSettings.quickStartDismissed !== true) {
         updates.quickStartDismissed = true;
       }
@@ -2516,6 +2519,7 @@ export class SyncDataService {
       'upload',
     );
     const taskModels = mergeTaskModelSettings(localAppSettings, remoteAppSettings);
+    const apiKeys = mergeApiKeySettings(localAppSettings, remoteAppSettings);
 
     if (
       !SyncDataService.shouldUseRemoteForUpload(
@@ -2526,6 +2530,7 @@ export class SyncDataService {
       return {
         ...localAppSettings,
         ...taskModels,
+        ...apiKeys,
         uiLocale: mergeUiLocalePreference(localAppSettings.uiLocale, remoteAppSettings.uiLocale),
         quickStartDismissed: mergedQuickStartDismissed,
       };
@@ -2556,6 +2561,7 @@ export class SyncDataService {
     return {
       ...remoteAppSettings,
       ...taskModels,
+      ...apiKeys,
       uiLocale: mergeUiLocalePreference(remoteAppSettings.uiLocale, localAppSettings.uiLocale),
       syncs: mergedSyncs,
       quickStartDismissed: mergedQuickStartDismissed,
@@ -2856,7 +2862,7 @@ export class SyncDataService {
     return failedEntryKeys;
   }
 
-  /** settings 条目：普通字段按整份设置时间合并，任务模型选择按任务时间合并。 */
+  /** settings 条目：普通字段按整份时间合并，任务模型选择和 API Key 按各自字段时间合并。 */
   private static async applyPartialSettingsEntry(
     remoteSettings: Record<string, unknown>,
   ): Promise<void> {
@@ -2869,6 +2875,7 @@ export class SyncDataService {
       ? new Date(remoteSettings.lastEdited as unknown as string).getTime()
       : 0;
     const taskModels = mergeTaskModelSettings(localSettings, remoteSettings);
+    const apiKeys = mergeApiKeySettings(localSettings, remoteSettings);
     if (remoteTime > localTime) {
       // quickStartDismissed 按单调语义合并（任一端为 true 即 true），
       // 与 legacy 路径的 mergeQuickStartDismissedFlag 保持一致，
@@ -2878,9 +2885,14 @@ export class SyncDataService {
         remoteSettings,
         'download',
       );
-      await settingsStore.importSettings({ ...remoteSettings, ...taskModels, quickStartDismissed });
-    } else if (Object.keys(taskModels).length) {
-      await settingsStore.importSettings(taskModels);
+      await settingsStore.importSettings({
+        ...remoteSettings,
+        ...taskModels,
+        ...apiKeys,
+        quickStartDismissed,
+      });
+    } else if (Object.keys(taskModels).length || Object.keys(apiKeys).length) {
+      await settingsStore.importSettings({ ...taskModels, ...apiKeys });
     }
   }
 

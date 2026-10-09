@@ -8,6 +8,7 @@ import type { Memory } from 'src/models/memory';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
 import { normalizeTaskModelSettings } from './task-default-models';
+import { normalizeApiKeySettings } from './api-keys';
 
 /**
  * 将 Date / number / string 转成毫秒时间戳。
@@ -221,8 +222,6 @@ function copyOptionalAppSettingsFields(target: AppSettings, source: AppSettings)
   if (typeof source.quickStartDismissed === 'boolean') {
     target.quickStartDismissed = source.quickStartDismissed;
   }
-  if (source.tavilyApiKey !== undefined) target.tavilyApiKey = source.tavilyApiKey;
-  if (source.firecrawlApiKey !== undefined) target.firecrawlApiKey = source.firecrawlApiKey;
   if (typeof source.firecrawlFallbackEnabled === 'boolean') {
     target.firecrawlFallbackEnabled = source.firecrawlFallbackEnabled;
   }
@@ -254,6 +253,7 @@ export function parseAppSettings(raw: unknown): AppSettings | undefined {
   );
 
   copyOptionalAppSettingsFields(result, source);
+  Object.assign(result, normalizeApiKeySettings(source));
 
   return result;
 }

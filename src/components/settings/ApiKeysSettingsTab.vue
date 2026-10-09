@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import Password from 'primevue/password';
 import Button from 'primevue/button';
 import ToggleSwitch from 'primevue/toggleswitch';
 import { useSettingsStore } from 'src/stores/settings';
 import { useFirecrawlKeySettings } from 'src/composables/settings/useFirecrawlKeySettings';
-import type { AppSettings } from 'src/models/settings';
 import { useI18n } from 'vue-i18n';
 
 const settingsStore = useSettingsStore();
@@ -17,29 +16,28 @@ const formatPeriodEnd = (iso: string | undefined) =>
   iso ? new Date(iso).toLocaleDateString(locale.value) : '';
 
 // 本地表单状态
-const tavilyApiKey = ref<string>('');
+const tavilyApiKey = ref(settingsStore.tavilyApiKey ?? '');
 
 // 确保表单状态与 store 同步
-const syncFormState = () => {
-  tavilyApiKey.value = settingsStore.tavilyApiKey ?? '';
-};
+watch(
+  () => settingsStore.tavilyApiKey,
+  (key, previousKey) => {
+    // 后台加载或同步只回填未编辑的表单，避免覆盖尚未保存的输入。
+    if (tavilyApiKey.value === (previousKey ?? '')) tavilyApiKey.value = key ?? '';
+  },
+);
 
 // 确保 store 已加载
 onMounted(async () => {
   if (!settingsStore.isLoaded) {
     await settingsStore.loadSettings();
   }
-  syncFormState();
 });
 
 // 保存 API Key
 const saveApiKey = async (key: string) => {
-  if (key) {
-    await settingsStore.updateSettings({ tavilyApiKey: key });
-  } else {
-    // 删除 API Key（使用类型断言以绕过 exactOptionalPropertyTypes 检查）
-    await settingsStore.updateSettings({ tavilyApiKey: undefined as any });
-  }
+  await settingsStore.updateSettings({ tavilyApiKey: key.trim() || undefined });
+  tavilyApiKey.value = settingsStore.tavilyApiKey ?? '';
 };
 
 // 获取 Tavily API Key 的链接

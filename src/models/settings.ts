@@ -128,12 +128,14 @@ export interface AppSettings {
    * Tavily 搜索 API Key
    * 用于网络搜索功能 (https://tavily.com/)
    */
-  tavilyApiKey?: string;
+  tavilyApiKey?: string | undefined;
   /**
    * Firecrawl API Key（https://firecrawl.dev/）
    * 未配置时使用 keyless 模式（按 IP 每日限额）
    */
-  firecrawlApiKey?: string;
+  firecrawlApiKey?: string | undefined;
+  /** 各 API Key 的修改时间（毫秒）；字段缺失但时间存在表示明确清空。 */
+  apiKeysUpdatedAt?: Partial<Record<'tavilyApiKey' | 'firecrawlApiKey', number>>;
   /**
    * 是否启用 Firecrawl 回退（网页抓取被拦截时，以及 AI 助手 / 导入的网络搜索与网页读取）
    * 默认值：true

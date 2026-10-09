@@ -131,6 +131,8 @@ Assign ordered fetch methods to a website. Available on Web and desktop.
 - **Check credits** shows remaining/plan credits and the billing-period end for a saved key.
 - When credits run out, batch import/update checking stops but keeps fetched chapters. Continue later or after adding credits.
 
+With Gist sync enabled, Tavily and Firecrawl keys sync independently by each key's modification time. Clearing and saving a key also syncs. Switching settings tabs or changing other settings does not override key changes.
+
 ---
 
 ## 5) 🔄 GitHub Gist sync {#settings-guide-section-19}
