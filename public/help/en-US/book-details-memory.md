@@ -23,8 +23,8 @@ Core:
 Metadata:
 
 - Creation time
-- Last access time for recency scoring
-- Local semantic vectors
+- Last access time for recency scoring. It is stored only on this device and never synced; Gist sync merges memories by content modification time, so reading, searching, or injecting a memory only updates the local access time and never triggers a sync or creates pending changes.
+- Local semantic vectors, stored only on this device and never synced; each device with local embeddings generates its own.
 
 ## 🚪 Open the panel {#book-details-memory-section-4}
 
@@ -124,13 +124,13 @@ Memories are selected in score order within the character budget, default 2000 c
 
 ### Semantic retrieval {#book-details-memory-section-18}
 
-Enable Local embeddings in Settings to generate 384-dimensional vectors. See [Local embeddings](/help/local-embedding).
+Turn on "Enable local embeddings" under **Settings → Local embeddings** to generate 384-dimensional vectors. See [Local embeddings](/help/local-embedding).
 
 - Model: `hotchpotch/bekko-embedding-v1-a25m`, about 123M total / 25M active parameters, 100+ languages, full 384-dimensional L2-normalized vectors and mean pooling. Queries and documents both encode raw text.
 - Long summary/content is split into segments up to 1200 characters and robustly aggregated.
 - Download: both backends share the compact default ONNX artifact, about 190 MiB, cached in the browser after first use.
 - Computation is local, without API usage; WebGPU is preferred with WASM fallback.
-- Physical mobile devices disable embeddings but retain keyword/recency selection.
+- Physical mobile devices (detected by user agent, regardless of window width) disable embeddings but retain keyword/recency selection.
 - Disabled/unavailable embeddings automatically use fallback weights.
 
 ## Search and filters {#book-details-memory-section-19}

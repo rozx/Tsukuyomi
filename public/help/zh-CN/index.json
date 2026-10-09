@@ -540,6 +540,15 @@
     }
   },
   {
+    "id": "v0.18.0",
+    "title": "v0.18.0",
+    "file": "RELEASE_NOTES_v0.18.0.md",
+    "path": "releaseNotes",
+    "category": "更新日志",
+    "description": "同步协议 v6 按章节小组增量同步、大书库同步与遗留文件清理、修订历史按书归组、本地嵌入换用 Bekko 模型并移入 Worker、「向量索引」面板重做",
+    "categoryId": "release-notes"
+  },
+  {
     "id": "v0.17.0",
     "title": "v0.17.0",
     "file": "RELEASE_NOTES_v0.17.0.md",

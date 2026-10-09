@@ -1,8 +1,8 @@
 # 🧬 Local Embeddings {#local-embedding-section-1}
 
-Local embeddings are Tsukuyomi's **offline semantic retrieval engine**. A browser model turns memories and chapters into vectors so AI can find context by meaning. Vector computation stays on the device and consumes no AI API usage. With Gist sync enabled, memory records and vectors are uploaded; context selected for AI still goes to the configured model provider.
+Local embeddings are Tsukuyomi's **offline semantic retrieval engine**. A browser model turns memories and chapters into vectors so AI can find context by meaning rather than keywords. Vector computation stays on the device and consumes no AI API usage. Vectors are **local device state**: Gist sync uploads memory content but not vectors, so each device builds its own. Context selected for AI still goes to the configured model provider; see the privacy notes below.
 
-> For controls, see [Settings → Local embeddings](/help/settings-guide#settings-guide-section-30). For memory workflows, see [Memories](/help/book-details-memory).
+> This guide is for users who want to understand or troubleshoot local embeddings. For controls, see [Settings → Local embeddings](/help/settings-guide#settings-guide-section-30). For memory workflows, see [Story memories](/help/book-details-memory).
 
 ---
 
@@ -10,8 +10,8 @@ Local embeddings are Tsukuyomi's **offline semantic retrieval engine**. A browse
 
 When enabled, background indexing covers:
 
-- **Memories**: summary and content are split at paragraph/sentence boundaries into segments of at most 1200 characters and robustly aggregated, avoiding truncation of long memories. Semantic similarity supplies the 0.85-weight component of relevance scoring. `search_memories` accepts natural-language queries.
-- **Chapters**: paragraphs form chunks targeting 100 characters; title plus first paragraph has its own chunk. `query_chapter` retrieves relevant passages without pre-generated summaries.
+- **Memories**: summary and content are split at paragraph/sentence boundaries into segments of at most 1200 characters and robustly aggregated, avoiding semantic drift from truncating long memories. Semantic similarity supplies the 0.85-weight component of relevance scoring during translation. AI can also call `search_memories` with natural-language queries.
+- **Chapters**: paragraphs form chunks targeting 100 characters; title plus first paragraph has its own chunk. `query_chapter` retrieves relevant passages in natural language without pre-generated summaries.
 
 Chapter semantic vectors consistently encode the source text so translated and untranslated chapters remain comparable; the target translation is used only when source text is missing. Keyword search, previews, and full-text indexes retain the source and the selected translation for the current target. Caches validate the target language and actual input signature, including translation changes that affect keywords and previews. A target change invalidates caches for background rebuild; old computations cannot overwrite the new cache. Retrieval may report rebuilding. Name expansion uses originals and current-target term/character/alias translations, never another language. Shared memories and memory vectors are retained across target changes.
 
@@ -21,7 +21,7 @@ When disabled:
 
 - Relevance falls back to keyword/recency weights of 0.75/0.25. Similar meaning expressed differently may be missed.
 - `query_chapter` and its prompt guidance are removed.
-- The Vector index entry is hidden and any open index panel closes.
+- The "Vector index" entry is hidden and any open panel closes.
 
 ---
 
@@ -34,64 +34,93 @@ When disabled:
 - **Dimensions**: full **384**, L2-normalized.
 - **Pooling**: mean pooling over valid tokens. Query and document use the same encoding path without task prefixes.
 - **Default artifact**: official `onnx/model.onnx`, about **190 MiB**. The static vocabulary table is int8-compressed while Transformer computation remains fp32. `dtype: fp32` selects this compact artifact, not a full fp32 vocabulary table.
-- **Version**: `bekko-embedding-v1-a25m@384@mean@raw`. Changes to model ID, dimensions, pooling, or input scheme update the version; old memory and chapter vectors become stale and are recomputed in the background.
+- **Version**: `bekko-embedding-v1-a25m@384@mean@raw`. Changes to model ID, dimensions, pooling, or input scheme update the version; old memory and chapter vectors become stale and must be recomputed (see section 5).
+
+> **Upgrading from GTE**: users who previously used the GTE model must download the Bekko model, and all existing vectors must be rebuilt. Until rebuilding finishes, memory scoring falls back to keywords and time decay, and chapter semantic search is unavailable.
 
 ### Backends {#local-embedding-section-5}
 
-Model loading, tokenization, and inference run locally in a dedicated browser Worker, without a server. WASM uses one thread inside the Worker and does not require cross-origin isolation. The Worker first checks for an available WebGPU adapter and device. If none is available, it loads WASM directly. Both backends use the same default artifact.
+Model loading, tokenization, and inference run in a dedicated browser Web Worker, off the page's main thread, so the interface does not freeze during download or inference. Everything still runs locally without a server. WASM uses one thread inside the Worker and does not require cross-origin isolation. The Worker first checks for an available WebGPU adapter and device. If none is available, it loads WASM directly; if WebGPU initialization fails, it also falls back to WASM automatically. Both backends use the same default artifact.
 
 | Backend    | Artifact and computation                         | Size     | Use                                                    |
 | :--------- | :----------------------------------------------- | :------- | :----------------------------------------------------- |
 | **WebGPU** | Default ONNX; int8 vocabulary / fp32 Transformer | ~190 MiB | Desktop browsers with WebGPU support                   |
 | **WASM**   | The same default ONNX artifact                   | ~190 MiB | Browsers without an available WebGPU adapter or device |
 
-> An unavailable adapter selects WASM for the session. Reload checks WebGPU again. Actual inference speed depends on hardware, input length, and backend.
+> An unavailable adapter selects WASM for the session. Clicking "Reload" in settings checks WebGPU again. Actual inference speed depends on hardware, input length, and backend.
 
 ### Mobile restriction {#local-embedding-section-6}
 
-Physical mobile platform detection locks the switch off. Browser WASM memory limits, typically around 2 GB, make a local model with several inference chunks prone to crashes. Keyword and recency retrieval remain available.
+When Quasar detects a physical mobile device, the "Enable local embeddings" switch is **locked** off. The "Local embeddings" settings tab is still visible, but the switch is grayed out and the reason is shown. Browser WASM memory limits, typically around 2 GB, make loading the model and running several inference chunks prone to crashes. Keyword and recency retrieval remain available. Because vectors are not synced, vectors built on a desktop do not appear on a phone.
+
+This check uses the device type, not the window width: narrowing a desktop browser window does not count as a mobile device.
 
 ---
 
 ## 3. Enable embeddings {#local-embedding-section-7}
 
-1. Open **Settings → Local embeddings** on a supported device.
-2. Enable the main switch.
-3. The first model download starts. Keep a stable connection and the window in the foreground; size depends on the backend.
-4. Browser Cache Storage retains the model for later warmup without downloading again.
-5. Wait for the banner to disappear and status to become `ready`.
-6. Open a book and choose the right-rail batch/vector index entry to build chapter and memory vectors. This entry moved from the top bar in v0.12.1.
+1. Open **Settings → Local embeddings**.
+2. Turn on "Enable local embeddings". If the browser has not cached the model yet, the download **starts immediately** (about 190 MiB, the same for WebGPU and WASM) with no confirmation popup. If the status later shows "Not loaded", you can also click "Download model" to start manually. **Keep a stable connection and the window in the foreground.**
+3. During the download, the settings card shows "Model loading progress" with a percentage, followed by the current phase: "Preparing model files…" → "Downloading model files…" → "Initializing model…".
+4. Browser Cache Storage retains the model, so **later launches warm it up automatically without downloading again**.
+5. Once the status shows "Ready", continue to the next step.
+6. Open any book and click the "Vector index" entry (see section 4) to inspect or build that book's chapter and memory vectors.
+
+About the progress display:
+
+- The percentage counts only bytes of `.onnx` weight files, so finishing config or tokenizer files does not inflate it.
+- While the total weight size is unknown, the bar is indeterminate (animated); it switches to a percentage once the size is known.
+- The download phase tops out at 95%, leaving the rest for model initialization. When initialization finishes, the progress block collapses and the status becomes "Ready".
+- Progress never goes backwards: automatic retries and the WebGPU → WASM fallback keep the value already shown.
+- Leaving and reopening the settings page restores the current loading progress.
 
 ---
 
-## 4. Batch embedding panel {#local-embedding-section-8}
+## 4. Vector index panel {#local-embedding-section-8}
 
-The entry appears in book details and opens a drawer for inspecting and controlling the queue.
+The "Vector index" entry appears only on **book details pages** while local embeddings are effectively enabled; it is hidden when local embeddings are off or on a physical mobile device. Its position follows the layout:
 
-Availability follows the effective local embeddings setting, independently of layout breakpoints. The entry is in the right tool rail on desktop and tablet layouts, and in the top bar on narrow layouts. Resizing a desktop browser does not disable it; physical mobile restrictions still apply. An open panel stays open when the layout changes. Mobile layouts use the same bottom sheet as the assistant and translation progress; desktop and tablet layouts use a right-side drawer.
+- Desktop layout: the right tool rail.
+- Tablet layout: the right side rail.
+- Narrow layouts: the top system bar.
+
+Availability follows the effective local embeddings setting, independently of layout breakpoints, so narrowing a desktop browser keeps it usable. Desktop and tablet layouts open a right-side drawer; the mobile layout opens the same bottom sheet as the assistant and translation progress. An open panel stays open when the layout changes and closes when you switch to another book.
+
+The panel is titled "Local vector index" with the subtitle "Runs locally in your browser", followed by the current book title and chapter count.
 
 ### Status and counts {#local-embedding-section-9}
 
-- Service: `idle` / `loading` / `ready` / `failed`, with `webgpu` or `wasm`.
-- Book chapters: embedded / total / stale.
-- Book memories: embedded / total / stale.
+- **Status pill**: at the right of the title bar, showing Ready / Loading model / Could not load / Not ready / Disabled.
+- **"Chapter vectors"**: shows "Embedded X / Y" (X counts chapters embedded with the current model version), a progress bar, and "Pending: N" (this book's chapters waiting in the queue).
+- **"Memory vectors"**: likewise shows "Embedded X / Y", a progress bar, and "Pending: N".
+- **Bottom status block**: model version, backend (WebGPU or "WASM (slow)"), and current status.
 
-> Nonzero stale counts often follow a model upgrade. Old vectors enter the recomputation queue; embedded totals may temporarily decrease.
+When stale (version-mismatched) vectors exist, an "Embedding space upgraded" banner appears at the top of the panel, listing the outdated chapter and memory counts, with a "Rebuild now" button. Stale vectors are not counted as embedded, so totals may drop noticeably after an upgrade.
+
+> Stale records are **not** recomputed automatically for every book. Missing and stale chapters and memories are queued automatically only for a book whose details page is opened while the model is ready (or when the model finishes loading while that page is open). For other books, open them to trigger this, or click "Rebuild now" / "Fill missing" in the panel.
 
 ### Actions {#local-embedding-section-10}
 
-- **Re-embed book chapters/memories**: queue missing or stale records.
-- **Batch recompute** in settings: stale records across books.
-- **Test query**: enter natural language and inspect top chapter/memory results and similarity scores.
-- **Pause/Resume**: manually suspend the queue. Sync adds its own temporary suspension and resumes afterward, as described below.
+- **Chapters**: "Fill missing" queues this book's unembedded or stale chapters; "Rebuild all" queues every chapter in the book for recomputation.
+- **Memories**: "Fill missing" queues this book's unembedded or stale memories.
+- **"Rebuild now"**: appears only in the stale banner and queues this book's stale chapters and memories at once.
+- These buttons are available only while the model is "Ready" and the queue is idle, avoiding conflicts with a running rebuild.
+- **"Test vector search"**: opens the query dialog (see below).
+- **"Pause" / "Resume"**: appear in the bottom status block only while the queue is running or paused, to suspend or continue it manually.
 
-### Progress {#local-embedding-section-11}
+**Test vector search dialog**: the intro reads "Describe a scene, character relationship, or keyword to search this book’s chapters and memories." Enter a query, then click "Query chapters" or "Query memories" (Enter runs a chapter query; memory queries match only items with the current model version).
 
-The active queue shows:
+- Before a search, the dialog shows a "Find scenes and memories" prompt.
+- While a search runs, a loading state appears.
+- Results are ranked by relevance, each with its rank number and score (hover tooltip "Relevance"). Select a chapter result to open the chapter, or a memory result to view its details.
+- This helps tune settings or investigate why a memory was not injected.
 
-- Completed/total, separately for memories and chapters
-- ETA based on the latest five batch durations
-- Current book ID, even while viewing another book
+### Progress and current task {#local-embedding-section-11}
+
+While the queue runs, progress appears inside each section; there is no separate banner at the top of the panel:
+
+- "Chapter vectors" and "Memory vectors" each show "Pending: N", plus an ETA (based on the latest five batch durations) while items are pending.
+- The current task card shows what the queue is processing: "This book · {kind} ×{count}" for this book, or, highlighted, "Another book · {kind} ×{count}" with that book's **title**, so you can see where the queue is busy even from another book's panel.
 
 Background memory and chapter inference uses groups of at most four inputs, split by length to reduce padding overhead. Interactive queries and paragraph reranking use groups of at most eight and take priority over waiting background jobs. Pauses between background batches reduce sustained CPU / GPU use, so whole-book rebuilds may take longer. Chapters can pause between batches; unfinished chapters remain queued and restart on resume, with results saved only after the whole chapter finishes. Panel statistics are read while the drawer is open, with updates from the same batch combined.
 
@@ -99,28 +128,28 @@ Background memory and chapter inference uses groups of at most four inputs, spli
 
 ## 5. Versions and stale vectors {#local-embedding-section-12}
 
-Model ID, dimensions, pooling, and input scheme define the embedding space. Changing any of them makes old/new cosine scores unreliable and requires recomputation.
+`MODEL_ID + dimensions + pooling + input scheme` together define the embedding space. Changing any of them puts old and new vectors in different spaces, makes cosine scores meaningless, and requires recomputation.
 
-`MODEL_VERSION` is stored on each memory/chunk. Shared stale checks classify:
+`MODEL_VERSION` records the current space and is stored on each embedded memory/chunk. Shared `isMemoryEmbeddingStale` / `isChapterChunkStale` checks classify:
 
 - **Current**: eligible for semantic retrieval and counted as embedded.
-- **Stale**: semantic scoring is skipped, keyword/recency remain, and backlog scanning queues a rebuild.
+- **Stale**: semantic scoring is skipped (falling back to keywords and time decay), and backfill scanning queues a rebuild.
 
-A model upgrade does not delete source data. Retrieval temporarily falls back until rebuilding finishes.
+**A model upgrade does not lose data**: old records remain retrievable with temporarily reduced scoring until rebuilding finishes.
 
-Startup also removes old model caches, such as `embeddinggemma` and `qwen3-embedding`, to reclaim disk space.
+While local embeddings are enabled, startup removes **old model caches** such as `embeddinggemma` and `qwen3-embedding` from browser Cache Storage to reclaim disk space. The old GTE model cache (about 340–465 MB) is **intentionally kept** for now and not deleted automatically; to reclaim that space, clear this site's data in the browser (the current model then needs to be downloaded again).
 
 ---
 
 ## 6. Sync suspension {#local-embedding-section-13}
 
-Sync and revision restoration temporarily suspend the queue:
+Cloud sync and revision restoration temporarily suspend the queue through a **dedicated gate**:
 
 - Either `isSyncing` or `isRestoringSyncSnapshot` closes the gate.
-- Reopening resumes only work suspended by the gate, preserving a manual Pause.
-- This avoids vector writes racing snapshot replacement or indexing partially restored data.
+- Reopening resumes **only** work suspended by the gate, preserving a manual "Pause".
+- This avoids vector writes racing `overwriteFromSnapshot` or indexing partially restored data.
 
-The panel shows a sync suspension banner until the gate opens.
+In the UI: the panel has no dedicated sync message. During sync the queue is paused, so the bottom status block shows "Resume". When sync finishes, the queue continues automatically without a click.
 
 ---
 
@@ -128,40 +157,40 @@ The panel shows a sync suspension banner until the gate opens.
 
 ### Download stays at 0% {#local-embedding-section-15}
 
-- Check Hugging Face CDN connectivity. Automatic retries wait 3, 8, and 20 seconds, up to three attempts. Inspect browser Network requests for details.
-- Corporate networks/VPNs may block the CDN. Check proxy/network allowlists.
-- Browser Cache Storage usually needs more than 500 MB free; insufficient disk can interrupt download.
+- **Check the network**: the model is hosted on the Hugging Face CDN. Automatic retries wait 3, 8, and 20 seconds, up to three attempts. Inspect requests in the browser's Network panel for details.
+- **Proxies**: corporate networks/VPNs may block the CDN. Try "Proxies" settings (web only) or allowlist the CDN in the browser.
+- **Disk space**: the model is about 190 MiB. Keep at least about 250 MB free for browser Cache Storage (config files and vector data add a little more); insufficient disk can interrupt the download.
 
-### Status remains `failed` {#local-embedding-section-16}
+### Status remains "Load failed" {#local-embedding-section-16}
 
-- Read console errors prefixed `[EmbeddingService]`.
-  - WebGPU driver incompatibility falls back to WASM; if WASM fails too, memory may be insufficient.
-  - A long background-tab pause during first loading may time out. Reopen the app; cached startup is faster.
-- Reload in the batch panel releases the old model and checks WebGPU again. After a Worker crash or request timeout, unfinished jobs remain queued and resume when the model recovers. Incomplete chapters never replace a saved chapter cache.
+- Read console errors prefixed `[EmbeddingService]`. Common causes:
+  - WebGPU driver incompatibility falls back to WASM; if WASM fails too, browser memory may be insufficient.
+  - Switching away from the tab for a long time during the first load may time out. Reopen the app; cached startup is faster.
+- In **Settings → Local embeddings**, click "Retry" when loading has failed or "Reload" when the model is ready; both release the old model and check WebGPU again. The vector index panel has no reload button. After a Worker crash or request timeout, unfinished jobs remain queued and resume when the model recovers. Incomplete chapters never replace a saved chapter cache.
 
 ### Poor retrieval {#local-embedding-section-17}
 
-- Test the query directly and inspect top results.
-- Check missing memories/chapters for stale status; re-embed and test again.
-- Mixed-language queries are supported. Enter plain text without a prefix; query prefixes were removed in v0.14.3.
+- Use the "Test vector search" dialog to run the query directly and inspect the results.
+- If a memory/chapter that should match is missing, check whether it is stale (the "Embedding space upgraded" banner appears at the top of the panel). Click "Rebuild now" or "Fill missing", then test again.
+- Mixed-language queries are supported natively. Enter plain text without a prefix; query prefixes were removed in v0.14.3.
 
 ### Queue still active after disabling {#local-embedding-section-18}
 
-A running batch finishes before the queue stops. Forced interruption would discard that batch. The banner should disappear shortly.
+This usually means a batch was running when you turned the switch off. The current batch finishes before the queue stops; forced interruption would discard that batch. The "Vector index" entry is hidden immediately; unprocessed items stay queued and continue automatically when you re-enable local embeddings.
 
 ---
 
 ## 8. Privacy and offline use {#local-embedding-section-19}
 
-- Inference runs in the browser without an external embedding API.
+- Inference runs in a browser Worker without an external embedding API.
 - Model weights download once into Cache Storage and can load offline.
-- Enabled Gist sync uploads memory vectors as part of memory records to your secret Gist. Tsukuyomi has no intermediary sync server. See [Sync settings](/help/settings-guide#settings-guide-section-19).
+- Gist sync uploads memory content, but **memory vectors and their model version tag are stripped before upload** (see [Sync settings](/help/settings-guide#settings-guide-section-19)). Vectors stay only in local IndexedDB, and each device with local embeddings enabled builds its own. **Tsukuyomi has no intermediary sync server.**
 
 ---
 
 ## Related guides {#local-embedding-section-20}
 
-- [Settings](/help/settings-guide)
-- [Memories](/help/book-details-memory)
-- [AI translation](/help/book-details-translation)
-- [System bar](/help/toolbar-guide)
+- [Settings → Local embeddings](/help/settings-guide#settings-guide-section-30)
+- [Story memories](/help/book-details-memory)
+- [Translation workflow](/help/book-details-translation)
+- [System bar and navigation](/help/toolbar-guide)

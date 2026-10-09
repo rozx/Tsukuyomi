@@ -542,6 +542,15 @@
   {
     "category": "更新紀錄",
     "categoryId": "release-notes",
+    "description": "同步協定 v6 依章節小組增量同步、大型書庫同步與遺留檔案清理、修訂歷史依書歸組、本機嵌入改用 Bekko 模型並移入 Worker、「向量索引」面板重做",
+    "file": "RELEASE_NOTES_v0.18.0.md",
+    "id": "v0.18.0",
+    "path": "releaseNotes",
+    "title": "v0.18.0"
+  },
+  {
+    "category": "更新紀錄",
+    "categoryId": "release-notes",
     "description": "簡中 / 繁中 / 英文三語言介面與說明文件、按書設定譯文目標語言、Firecrawl 抓取備援與網站對應、書籍更新檢查只讀目錄及同步協議 v4",
     "file": "RELEASE_NOTES_v0.17.0.md",
     "id": "v0.17.0",

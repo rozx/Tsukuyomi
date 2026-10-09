@@ -17,17 +17,19 @@
 - [Open the web app](https://tsukuyomi.rozx.moe/)
 - [Download the desktop app](https://github.com/rozx/Tsukuyomi/releases/latest)
 
-## 🌐 New in v0.17: Three-Language UI and Per-Book Target Language
+## ☁️ New in v0.18: Chapter-Level Incremental Sync and Lighter Local Embeddings
 
-The interface, help docs, and README are available in Simplified Chinese, Traditional Chinese, and English. Each book now has its own translation target language, and source text is no longer limited to Japanese.
+Sync now uploads and downloads chapters in small groups, so large libraries sync smoothly. Local embeddings switch to a smaller model that runs in a dedicated Worker and no longer freezes the UI.
 
-- **Interface language**: switch it under Settings → General → Interface language. On first launch it matches your system language, and the preference syncs with your settings.
-- **Per-book target language**: choose Simplified Chinese, Traditional Chinese, or English in the book's Translation settings. New books start with the interface language at creation time. Translations, volume and chapter titles, and term / character names are stored per language and never overwrite each other.
-- **Any source language**: the AI detects the source language paragraph by paragraph; paragraphs already in the target language can be kept as-is.
-- **Firecrawl fetch fallback**: when a site blocks proxy access, fetching falls back to Firecrawl (works without a key), replacing the old automatic proxy switching. Book update checks now read only the catalog and compare chapter text on demand.
-- **Sync protocol v6**: book metadata and chapter content sync separately. Chapters use stable groups based on their IDs, so adding or editing one chapter normally uploads only its group, changed metadata, and the manifest. Entity deletion protection and local-only memory access times are preserved. Manifest-based reads support libraries with more than 300 sync files. **For multiple devices, back up first, upgrade every device to a version supporting v6, then sync them one at a time. The first upgrade performs a full migration.**
+- **Sync protocol v6**: book metadata and chapter content are stored separately, and chapters are split into 16 fixed groups by chapter ID. Adding or editing one chapter normally uploads only its group, the changed metadata, and the manifest instead of the whole book.
+- **Large-library sync**: when GitHub truncates the file list at 300 files, the client fills in the missing files from the full sync manifest and keeps going. When nothing in the library changed, the full library scan is skipped.
+- **Leftover file cleanup and revision history**: under Settings → Sync, scan for and remove old remote files the manifest no longer references. Revision history groups file changes by book.
+- **More reliable settings sync**: Tavily / Firecrawl API keys and each task's default model merge by their own modification time, so other settings edits no longer override them and they are no longer cleared mid-sync.
+- **Bekko local embeddings**: the default model is now `bekko-embedding-v1-a25m` (384 dimensions, about 190 MiB shared by WebGPU and WASM), and inference runs in a Web Worker. The **Vector index** panel is redesigned and now reachable on tablets and narrow layouts too.
 
-[v0.17.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.17.0.md) · [Settings guide](public/help/en-US/settings-guide.md)
+**For multiple devices, back up first, upgrade every device to v0.18.0, then sync them one at a time. The first sync migrates the whole Gist to v6. If you use local embeddings, the model must be downloaded again and vectors rebuilt.**
+
+[v0.18.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.18.0.md) · [Settings guide](public/help/en-US/settings-guide.md) · [Local embeddings](public/help/en-US/local-embedding.md)
 
 ![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
@@ -101,8 +103,9 @@ Tsukuyomi answers questions with the current book as context and can act through
 
 ### ☁️ Cross-Device Sync
 
-- **Gist cloud sync**: optionally sync your data to your own GitHub Gist, with revision history and restore from usable snapshots.
+- **Gist cloud sync**: optionally sync your data to your own GitHub Gist, with revision history grouped by book, restore from usable snapshots, and cleanup of leftover remote files the manifest no longer references.
 - **Incremental manifest sync**: `manifest.json` with SHA-256 hashes picks out changed entries, and conditional requests cut down downloads. ETags are re-checked before upload; concurrent changes trigger a re-merge and retry.
+- **Chapter-group sync**: book metadata and chapter content are stored separately, and chapters are split into 16 fixed groups by ID, so editing one chapter uploads only its group. When the file list exceeds 300 files, missing files are filled in from the sync manifest, so large libraries sync completely.
 - **Consistent deletes**: the manifest carries deletions as tombstones, so an entry deleted on device A is not pushed back by device B.
 - **In-book deletion records**: terms, characters, and aliases have stable identities, and their deletion records stay with the book; deleted translation versions are recorded too, so devices returning from offline cannot resurrect them.
 - **Paragraph merging**: with a synced structural baseline, source edits and deletions made on one side are kept; translations are merged only for paragraphs whose source matches, and you are asked to review conflicts when both sides changed the structure.
@@ -185,7 +188,7 @@ Use the [web app](https://tsukuyomi.rozx.moe/) or [download the desktop app](htt
 4. In **Volume/chapter draft**, check the book details, chapter order, and text.
 5. Generate an **Import plan**, check the target book, missing chapters, and translation impact, then choose **Confirm import**. When it finishes, choose **Open novel**.
 
-See the [AI import workspace guide](public/help/en-US/import-guide.md) for more examples. You can also choose **Import from website** in the library to use the built-in rules for the Japanese novel sites `ncode.syosetu.com`, `novel18.syosetu.com`, `kakuyomu.jp`, and `syosetu.org`; other sites can be handed to the AI importer. App-format JSON book files can be added with **Import from JSON**, and full backups are restored from Settings.
+See the [AI import workspace guide](public/help/en-US/import-guide.md) for more examples. You can also choose **Import from website** in the library to use the built-in rules for the Japanese novel sites `ncode.syosetu.com`, `novel18.syosetu.com`, `kakuyomu.jp`, and `syosetu.org`; other sites can be handed to the AI importer. When a site blocks proxy access, fetching falls back to Firecrawl (works without a key), and book update checks read only the catalog, comparing chapter text on demand. App-format JSON book files can be added with **Import from JSON**, and full backups are restored from Settings.
 
 ### 3. Run from source
 
@@ -218,7 +221,7 @@ bun run dev
 | **Context**       | [Terminology](public/help/en-US/book-details-terminology.md) \| [Character settings](public/help/en-US/book-details-characters.md) \| [Memory](public/help/en-US/book-details-memory.md)            |
 | **AI import**     | [Import workspace: steps, splitting, and adding chapters](public/help/en-US/import-guide.md)                                                                                                        |
 | **Advanced**      | [Chat assistant](public/help/en-US/chat-assistant-guide.md) \| [Local embeddings and chapter search](public/help/en-US/local-embedding.md)                                                          |
-| **Release notes** | [v0.17.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.17.0.md)                                                                                                          |
+| **Release notes** | [v0.18.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.18.0.md)                                                                                                          |
 
 > The in-app **Help** page has the user guides; docs on the main branch are synced to the [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki) by a workflow.
 
