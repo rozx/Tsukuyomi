@@ -88,6 +88,32 @@ afterEach(() => {
 });
 
 describe('浏览器嵌入 Worker 接口', () => {
+  it('保留最新加载进度供稍后打开的设置面板读取，重新加载时清空旧进度', async () => {
+    FakeWorker.autoLifecycle = false;
+    const init = EmbeddingService.init();
+    const worker = FakeWorker.instances[0]!;
+    const request = worker.requests[0]!;
+    const progress = {
+      status: 'progress',
+      phase: 'downloading' as const,
+      file: 'onnx/model.onnx',
+      aggregatePercent: 48,
+    };
+    worker.send({
+      kind: 'event',
+      generation: request.generation,
+      event: 'progress',
+      detail: progress,
+    });
+    expect(EmbeddingService.getProgress()).toEqual(progress);
+    worker.result(request, { status: 'ready', backend: 'wasm', error: null });
+    await init;
+
+    FakeWorker.autoLifecycle = true;
+    await EmbeddingService.reload();
+    expect(EmbeddingService.getProgress()).toBeNull();
+  });
+
   it('并发初始化只创建一个模块 Worker，页面线程从不加载模型', async () => {
     await Promise.all([EmbeddingService.init(), EmbeddingService.init(), EmbeddingService.init()]);
     expect(FakeWorker.instances).toHaveLength(1);

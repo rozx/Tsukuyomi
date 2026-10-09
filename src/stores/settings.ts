@@ -402,7 +402,14 @@ export const useSettingsStore = defineStore('settings', {
     isLoaded: false,
     // 同步进度状态
     syncProgress: {
-      stage: '' as '' | 'downloading' | 'uploading' | 'applying' | 'merging',
+      stage: '' as
+        | ''
+        | 'downloading'
+        | 'uploading'
+        | 'applying'
+        | 'merging'
+        | 'preparing'
+        | 'finalizing',
       message: '',
       current: 0, // 当前进度
       total: 0, // 总数
@@ -1275,17 +1282,21 @@ export const useSettingsStore = defineStore('settings', {
 
     /**
      * 更新同步进度
-     * 注意：当 stage 未变化时，百分比只会增加不会减少（防止进度回退）
+     * 百分比表示整次同步的进度，阶段切换或并发重试都不能使它回退。
      */
     updateSyncProgress(progress: {
-      stage?: '' | 'downloading' | 'uploading' | 'applying' | 'merging';
+      stage?:
+        | ''
+        | 'downloading'
+        | 'uploading'
+        | 'applying'
+        | 'merging'
+        | 'preparing'
+        | 'finalizing';
       message?: string;
       current?: number;
       total?: number;
     }): void {
-      // 检查 stage 是否变化（stage 变化时允许重置百分比）
-      const stageChanged =
-        progress.stage !== undefined && progress.stage !== this.syncProgress.stage;
       const previousPercentage = this.syncProgress.percentage;
 
       if (progress.stage !== undefined) {
@@ -1301,17 +1312,20 @@ export const useSettingsStore = defineStore('settings', {
         this.syncProgress.total = progress.total;
       }
       // 计算百分比
-      if (this.syncProgress.total > 0) {
+      if (
+        Number.isFinite(this.syncProgress.current) &&
+        Number.isFinite(this.syncProgress.total) &&
+        this.syncProgress.total > 0
+      ) {
         const newPercentage = Math.round(
           (this.syncProgress.current / this.syncProgress.total) * 100,
         );
-        // 当 stage 未变化时，百分比只能增加不能减少（防止进度回退）
-        if (stageChanged || newPercentage >= previousPercentage) {
-          this.syncProgress.percentage = newPercentage;
-        }
-        // 如果新百分比更小且 stage 未变化，保持原百分比（但更新 current/total 用于调试）
-      } else {
-        this.syncProgress.percentage = 0;
+        // 未完成时不能因四舍五入提前显示 100%，异常计数也不能超出标度。
+        const maximum = this.syncProgress.current >= this.syncProgress.total ? 100 : 99;
+        this.syncProgress.percentage = Math.max(
+          previousPercentage,
+          Math.min(maximum, newPercentage),
+        );
       }
     },
 

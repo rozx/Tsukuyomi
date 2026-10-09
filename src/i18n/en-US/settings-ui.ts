@@ -46,6 +46,10 @@ export default {
       },
     },
     embedding: {
+      loadingProgress: 'Model loading progress',
+      preparingDownload: 'Preparing model files…',
+      downloadingFiles: 'Downloading model files…',
+      initializingModel: 'Initializing model…',
       statusIdle: 'Not loaded',
       statusLoading: 'Loading…',
       statusReady: 'Ready',

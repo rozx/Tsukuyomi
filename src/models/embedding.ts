@@ -10,6 +10,7 @@ export type EmbeddingEventName = 'progress' | 'status-changed' | 'ready' | 'erro
 
 export interface EmbeddingProgressEvent {
   status: string;
+  phase?: 'preparing' | 'downloading' | 'initializing' | 'ready';
   name?: string;
   file?: string;
   progress?: number;

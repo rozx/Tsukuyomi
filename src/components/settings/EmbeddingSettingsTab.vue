@@ -29,6 +29,7 @@ const effectiveEnableLocalEmbedding = computed(() => !isMobile.value && enableLo
 const embeddingStatus = ref<EmbeddingStatus>(EmbeddingService.getStatus());
 const downloadProgress = ref<number | null>(null);
 const downloadFile = ref('');
+const downloadPhase = ref<NonNullable<EmbeddingProgressEvent['phase']>>('preparing');
 const lastError = ref<string | null>(null);
 
 const syncFormState = () => {
@@ -109,15 +110,33 @@ const updateMinScoreThreshold = async (event: SliderSlideEndEvent) => {
   await settingsStore.updateMemoryInjection({ minScoreThreshold: value });
 };
 
-const handleDownload = async () => {
-  downloadProgress.value = 0;
+const resetDownloadProgress = () => {
+  downloadProgress.value = null;
+  downloadFile.value = '';
+  downloadPhase.value = 'preparing';
   lastError.value = null;
+};
+
+const updateDownloadProgress = (detail: EmbeddingProgressEvent) => {
+  // 单文件 progress 不能代表整个模型；没有权重总量时保留活动进度。
+  if (Number.isFinite(detail.aggregatePercent)) {
+    downloadProgress.value = Math.max(
+      downloadProgress.value ?? 0,
+      Math.min(95, detail.aggregatePercent!),
+    );
+  }
+  if (detail.phase) downloadPhase.value = detail.phase;
+  if (detail.file) downloadFile.value = detail.file;
+  if (detail.phase === 'initializing') downloadFile.value = '';
+};
+
+const handleDownload = async () => {
+  resetDownloadProgress();
   await EmbeddingService.warmup();
 };
 
 const handleRetry = async () => {
-  downloadProgress.value = 0;
-  lastError.value = null;
+  resetDownloadProgress();
   await EmbeddingService.reload();
 };
 
@@ -128,10 +147,15 @@ onMounted(async () => {
     await settingsStore.loadSettings();
   }
   syncFormState();
+  embeddingStatus.value = EmbeddingService.getStatus();
+  const currentProgress = EmbeddingService.getProgress();
+  if (embeddingStatus.value === 'loading' && currentProgress)
+    updateDownloadProgress(currentProgress);
 
   unsubscribers.push(
     EmbeddingService.addEventListener('status-changed', (e: CustomEvent) => {
       embeddingStatus.value = (e.detail as { status: EmbeddingStatus }).status;
+      if (embeddingStatus.value === 'loading') resetDownloadProgress();
       if (embeddingStatus.value !== 'loading') {
         downloadProgress.value = null;
         downloadFile.value = '';
@@ -145,14 +169,7 @@ onMounted(async () => {
   unsubscribers.push(
     EmbeddingService.addEventListener('progress', (e: CustomEvent) => {
       const detail = e.detail as EmbeddingProgressEvent;
-      if (detail.aggregatePercent != null) {
-        downloadProgress.value = detail.aggregatePercent;
-      } else if (detail.progress != null) {
-        downloadProgress.value = Math.round(detail.progress);
-      }
-      if (detail.file) {
-        downloadFile.value = detail.file;
-      }
+      if (embeddingStatus.value === 'loading') updateDownloadProgress(detail);
     }),
   );
 
@@ -176,10 +193,22 @@ const toggleCardClass = computed(() =>
 );
 const enableLabelClass = computed(() => (isMobile.value ? 'text-moon/50' : 'text-moon/90'));
 const enableDescClass = computed(() => (isMobile.value ? 'text-moon/50' : 'text-moon/70'));
-const showProgressBar = computed(
-  () => embeddingStatus.value === 'loading' && downloadProgress.value != null,
+const showProgressBar = computed(() => embeddingStatus.value === 'loading');
+const progressValue = computed(() => downloadProgress.value ?? undefined);
+const progressMode = computed(() =>
+  downloadProgress.value === null ? 'indeterminate' : 'determinate',
 );
-const progressValue = computed(() => downloadProgress.value ?? 0);
+const downloadPhaseLabel = computed(() => {
+  switch (downloadPhase.value) {
+    case 'downloading':
+      return t('settingsUi.embedding.downloadingFiles');
+    case 'initializing':
+    case 'ready':
+      return t('settingsUi.embedding.initializingModel');
+    default:
+      return t('settingsUi.embedding.preparingDownload');
+  }
+});
 const showError = computed(() => !!lastError.value && embeddingStatus.value === 'failed');
 const statusAction = computed<{
   label: string;
@@ -286,7 +315,20 @@ const semanticDescription = computed(() => {
         </div>
 
         <div v-if="showProgressBar">
-          <ProgressBar :value="progressValue" :show-value="true" class="h-2" />
+          <div class="flex items-center justify-between text-xs text-moon/70 mb-2">
+            <span>{{ t('settingsUi.embedding.loadingProgress') }}</span>
+            <span v-if="downloadProgress !== null" class="tabular-nums"
+              >{{ downloadProgress }}%</span
+            >
+          </div>
+          <ProgressBar
+            :value="progressValue"
+            :mode="progressMode"
+            :show-value="false"
+            class="h-2 embedding-download-progress"
+            :aria-label="t('settingsUi.embedding.loadingProgress')"
+          />
+          <p class="text-xs text-moon/70 mt-2">{{ downloadPhaseLabel }}</p>
           <p v-if="downloadFile" class="text-xs text-moon/50 mt-1 truncate">{{ downloadFile }}</p>
         </div>
 
@@ -404,3 +446,15 @@ const semanticDescription = computed(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.embedding-download-progress :deep(.p-progressbar-value) {
+  transition: width 400ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .embedding-download-progress :deep(.p-progressbar-value) {
+    transition: none;
+  }
+}
+</style>

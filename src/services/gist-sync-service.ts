@@ -256,6 +256,10 @@ const CHUNK_SIZE = MAX_FILE_SIZE;
  * 创建 Gist 时每批文件数量
  */
 const CREATE_BATCH_SIZE = 10;
+// 上传内部进度：准备文件 0–20%，已完成请求 20–90%，上传后验证 90–100%。
+const UPLOAD_PROGRESS_TOTAL = 100;
+const UPLOAD_PREP_END = 20;
+const UPLOAD_TRANSFER_END = 90;
 
 /**
  * 重试配置
@@ -814,7 +818,7 @@ export class GistSyncService {
 
   /**
    * 准备 uploadToGist 的所有文件内容（settings + 每本书），同时驱动进度回调。
-   * 返回文件 map、uploadStats 和进度计数。
+   * 返回文件 map 和 uploadStats；对外使用固定的 0–100 进度标度。
    */
   private async prepareUploadFiles(
     data: {
@@ -836,10 +840,6 @@ export class GistSyncService {
       chunked: boolean;
       chunkCount?: number;
     }>;
-    novelsWithContent: Novel[];
-    preparePhaseItems: number;
-    totalItems: number;
-    processedItems: number;
   }> {
     const novelsWithContent = await ChapterContentService.loadAllChapterContentsForNovels(
       data.novels,
@@ -866,30 +866,32 @@ export class GistSyncService {
       chunkCount?: number;
     }> = [];
 
-    // 准备阶段：设置文件(1) + 每本书(N)；上传批次估算为 70% 占比（下限 3）
+    // 准备阶段只按已经序列化的文件推进，不估算尚未确定的上传批次数。
     const preparePhaseItems = 1 + novelsWithContent.length;
-    const estimatedUploadItems = Math.max(Math.ceil(preparePhaseItems * 0.7), 3);
-    const totalItems = preparePhaseItems + estimatedUploadItems;
     let processedItems = 0;
+    const reportPrepared = (message: string) =>
+      this.reportProgress(
+        onProgress,
+        Math.round((processedItems / preparePhaseItems) * UPLOAD_PREP_END),
+        UPLOAD_PROGRESS_TOTAL,
+        message,
+      );
 
-    this.reportProgress(onProgress, processedItems, totalItems, this.text('preparingSettings'));
+    reportPrepared(this.text('preparingSettings'));
 
     processedItems = 1;
-    this.reportProgress(onProgress, processedItems, totalItems, this.text('settingsPrepared'));
+    reportPrepared(this.text('settingsPrepared'));
 
     // 2. 每本书的文件
     for (let novelIndex = 0; novelIndex < novelsWithContent.length; novelIndex++) {
       const novel = novelsWithContent[novelIndex];
       processedItems = novelIndex + 2;
       if (!novel) {
-        this.reportProgress(
-          onProgress,
-          processedItems,
-          totalItems,
+        reportPrepared(
           this.formatPrepareProgressMessage(
             this.text('skipInvalidBook'),
             processedItems,
-            totalItems,
+            preparePhaseItems,
           ),
         );
         continue;
@@ -897,21 +899,18 @@ export class GistSyncService {
 
       await this.buildNovelFilesForUpload(novel, files, uploadStats);
 
-      this.reportProgress(
-        onProgress,
-        processedItems,
-        totalItems,
+      reportPrepared(
         this.formatPrepareProgressMessage(
           this.text('preparingBook', { title: novel.title }),
           processedItems,
-          totalItems,
+          preparePhaseItems,
         ),
       );
     }
 
-    this.reportProgress(onProgress, processedItems, totalItems, this.text('prepared'));
+    reportPrepared(this.text('prepared'));
 
-    return { files, uploadStats, novelsWithContent, preparePhaseItems, totalItems, processedItems };
+    return { files, uploadStats };
   }
 
   /** 安全地触发进度回调（onProgress 可为 undefined） */
@@ -960,21 +959,13 @@ export class GistSyncService {
         throw this.fail('GIST_CLIENT_MISSING', 'clientMissing');
       }
 
-      const { files, uploadStats, preparePhaseItems, totalItems } = await this.prepareUploadFiles(
+      const { files, uploadStats } = await this.prepareUploadFiles(
         { ...data, novels: data.novels.map(normalizeBookLanguages) },
         onProgress,
       );
-      const estimatedUploadItems = totalItems - preparePhaseItems;
 
       const params = this.getGistParams(config);
-      const outcome = await this.resolveGistAfterUpload(
-        params,
-        files,
-        preparePhaseItems,
-        estimatedUploadItems,
-        totalItems,
-        onProgress,
-      );
+      const outcome = await this.resolveGistAfterUpload(params, files, onProgress);
       resolvedGistId = outcome.gistId;
 
       // 验证上传的文件（必须在返回成功之前验证）
@@ -987,6 +978,12 @@ export class GistSyncService {
           uploadStats,
         );
       }
+      this.reportProgress(
+        onProgress,
+        UPLOAD_PROGRESS_TOTAL,
+        UPLOAD_PROGRESS_TOTAL,
+        this.text('synced'),
+      );
 
       return this.buildUploadSuccessResult({
         gistId: outcome.gistId,
@@ -1007,9 +1004,6 @@ export class GistSyncService {
   private async resolveGistAfterUpload(
     params: { username: string; token: string; gistId?: string },
     files: Record<string, { content: string } | null>,
-    preparePhaseItems: number,
-    estimatedUploadItems: number,
-    totalItems: number,
     onProgress:
       | ((progress: { current: number; total: number; message: string }) => void)
       | undefined,
@@ -1021,30 +1015,21 @@ export class GistSyncService {
     let gistId = params.gistId;
     let gistUrl: string | undefined;
     let isRecreated = false;
-    let totalItemsRef = totalItems;
 
     if (gistId) {
-      const updateOutcome = await this.updateExistingGistWithFiles(
-        gistId,
-        files,
-        preparePhaseItems,
-        estimatedUploadItems,
-        totalItemsRef,
-        onProgress,
-      );
-      totalItemsRef = updateOutcome.totalItems;
+      const updateOutcome = await this.updateExistingGistWithFiles(gistId, files, onProgress);
       if (updateOutcome.gistId) gistId = updateOutcome.gistId;
       if (updateOutcome.gistUrl) gistUrl = updateOutcome.gistUrl;
 
       // 如果 update 路径没能成功（例如 Gist 不存在），退化到创建新 Gist
       if (!gistUrl) {
-        const createOutcome = await this.createNewGistFromFiles(files, totalItemsRef, onProgress);
+        const createOutcome = await this.createNewGistFromFiles(files, onProgress);
         gistId = createOutcome.gistId;
         gistUrl = createOutcome.gistUrl;
         isRecreated = true;
       }
     } else {
-      const createOutcome = await this.createNewGistFromFiles(files, totalItemsRef, onProgress);
+      const createOutcome = await this.createNewGistFromFiles(files, onProgress);
       gistId = createOutcome.gistId;
       gistUrl = createOutcome.gistUrl;
     }
@@ -1179,22 +1164,18 @@ export class GistSyncService {
 
   /**
    * 将 files 按 BATCH_SIZE 分批 PATCH 到已有 Gist；首批成功后记录 gistId/gistUrl。
-   * 返回（可能已更新的）totalItems、gistId、gistUrl。
+   * 返回 gistId、gistUrl。
    */
   private async updateExistingGistWithFiles(
     existingGistId: string,
     files: Record<string, { content: string } | null>,
-    preparePhaseItems: number,
-    estimatedUploadItems: number,
-    totalItemsIn: number,
     onProgress:
       | ((progress: { current: number; total: number; message: string }) => void)
       | undefined,
-  ): Promise<{ totalItems: number; gistId: string | undefined; gistUrl: string | undefined }> {
+  ): Promise<{ gistId: string | undefined; gistUrl: string | undefined }> {
     if (!this.octokit) throw this.fail('GIST_CLIENT_MISSING', 'clientMissing');
     let gistId: string | undefined = existingGistId;
     let gistUrl: string | undefined;
-    let totalItems = totalItemsIn;
 
     try {
       const currentGist = await this.octokit.rest.gists.get({ gist_id: existingGistId });
@@ -1205,27 +1186,24 @@ export class GistSyncService {
       const BATCH_SIZE = 10;
       const totalBatches = Math.ceil(allFiles.length / BATCH_SIZE);
 
-      // 进度：上传阶段起点基于准备阶段末尾；批次数超过估算时递增 totalItems（只增不减）
-      const uploadPhaseStart = preparePhaseItems;
-      if (totalBatches > estimatedUploadItems) {
-        totalItems = preparePhaseItems + totalBatches;
-      }
-
-      this.reportProgress(onProgress, uploadPhaseStart, totalItems, this.text('uploading'));
+      this.reportTransferProgress(onProgress, 0, totalBatches, this.text('uploading'));
 
       const batchResult = await this.runUpdateBatches(
         existingGistId,
         allFiles,
         BATCH_SIZE,
         totalBatches,
-        uploadPhaseStart,
-        totalItems,
         onProgress,
       );
       if (batchResult.firstGistId) gistId = batchResult.firstGistId;
       if (batchResult.firstGistUrl) gistUrl = batchResult.firstGistUrl;
 
-      this.reportProgress(onProgress, totalItems, totalItems, this.text('uploadedVerifying'));
+      this.reportTransferProgress(
+        onProgress,
+        totalBatches,
+        totalBatches,
+        this.text('uploadedVerifying'),
+      );
     } catch (error) {
       // 明确的更新失败或冲突：向外抛；其他错误（例如 Gist 不存在）吞掉，让调用方走"创建"路径
       if (error instanceof ManifestProtocolError || isExplicitUpdateFailure(error)) {
@@ -1233,7 +1211,25 @@ export class GistSyncService {
       }
     }
 
-    return { totalItems, gistId, gistUrl };
+    return { gistId, gistUrl };
+  }
+
+  /** 当前批次仅在请求成功后计入，验证完成前最多到 90%。 */
+  private reportTransferProgress(
+    onProgress:
+      | ((progress: { current: number; total: number; message: string }) => void)
+      | undefined,
+    completed: number,
+    total: number,
+    message: string,
+  ): void {
+    const fraction = total > 0 ? completed / total : 1;
+    this.reportProgress(
+      onProgress,
+      UPLOAD_PREP_END + Math.round(fraction * (UPLOAD_TRANSFER_END - UPLOAD_PREP_END)),
+      UPLOAD_PROGRESS_TOTAL,
+      message,
+    );
   }
 
   private async assertGistProtocol(
@@ -1265,8 +1261,6 @@ export class GistSyncService {
     allFiles: Array<[string, { content: string } | null]>,
     batchSize: number,
     totalBatches: number,
-    uploadPhaseStart: number,
-    totalItems: number,
     onProgress:
       | ((progress: { current: number; total: number; message: string }) => void)
       | undefined,
@@ -1278,10 +1272,10 @@ export class GistSyncService {
       const batchIndex = Math.floor(i / batchSize);
       const batchFiles = Object.fromEntries(allFiles.slice(i, i + batchSize));
 
-      this.reportProgress(
+      this.reportTransferProgress(
         onProgress,
-        uploadPhaseStart + batchIndex + 1,
-        totalItems,
+        batchIndex,
+        totalBatches,
         this.text('uploadingBatch', { current: batchIndex + 1, total: totalBatches }),
       );
 
@@ -1291,6 +1285,12 @@ export class GistSyncService {
           firstGistId = response.data.id;
           firstGistUrl = response.data.html_url;
         }
+        this.reportTransferProgress(
+          onProgress,
+          batchIndex + 1,
+          totalBatches,
+          this.text('uploadingBatch', { current: batchIndex + 1, total: totalBatches }),
+        );
       } catch (batchError) {
         throw this.buildBatchUpdateFailure(batchIndex, totalBatches, batchError);
       }
@@ -1352,7 +1352,6 @@ export class GistSyncService {
    */
   private async createNewGistFromFiles(
     files: Record<string, { content: string } | null>,
-    totalItems: number,
     onProgress:
       | ((progress: { current: number; total: number; message: string }) => void)
       | undefined,
@@ -1363,20 +1362,21 @@ export class GistSyncService {
     const createEntries = Object.entries(filesForCreate);
 
     if (createEntries.length <= CREATE_BATCH_SIZE) {
-      this.reportProgress(onProgress, totalItems, totalItems, this.text('creating'));
+      this.reportTransferProgress(onProgress, 0, 1, this.text('creating'));
       const response = await this.octokit.rest.gists.create({
         description: 'Tsukuyomi - Moonlit Translator - Settings and Novels',
         public: false,
         files: filesForCreate,
       });
+      this.reportTransferProgress(onProgress, 1, 1, this.text('createdVerifying'));
       return { gistId: response.data.id!, gistUrl: response.data.html_url ?? undefined };
     }
 
     const totalCreateBatches = Math.ceil(createEntries.length / CREATE_BATCH_SIZE);
-    this.reportProgress(
+    this.reportTransferProgress(
       onProgress,
-      totalItems - totalCreateBatches,
-      totalItems,
+      0,
+      totalCreateBatches,
       this.text('creatingBatch', { current: 1, total: totalCreateBatches }),
     );
 
@@ -1389,17 +1389,22 @@ export class GistSyncService {
     });
     const newGistId = response.data.id!;
     const newGistUrl: string | undefined = response.data.html_url ?? undefined;
-
-    // 后续批次：update
-    await this.runCreateSubsequentBatches(
-      newGistId,
-      createEntries,
-      totalCreateBatches,
-      totalItems,
+    this.reportTransferProgress(
       onProgress,
+      1,
+      totalCreateBatches,
+      this.text('creatingBatch', { current: 1, total: totalCreateBatches }),
     );
 
-    this.reportProgress(onProgress, totalItems, totalItems, this.text('createdVerifying'));
+    // 后续批次：update
+    await this.runCreateSubsequentBatches(newGistId, createEntries, totalCreateBatches, onProgress);
+
+    this.reportTransferProgress(
+      onProgress,
+      totalCreateBatches,
+      totalCreateBatches,
+      this.text('createdVerifying'),
+    );
 
     return { gistId: newGistId, gistUrl: newGistUrl };
   }
@@ -1409,7 +1414,6 @@ export class GistSyncService {
     newGistId: string,
     createEntries: Array<[string, { content: string }]>,
     totalCreateBatches: number,
-    totalItems: number,
     onProgress:
       | ((progress: { current: number; total: number; message: string }) => void)
       | undefined,
@@ -1417,14 +1421,20 @@ export class GistSyncService {
     for (let i = CREATE_BATCH_SIZE; i < createEntries.length; i += CREATE_BATCH_SIZE) {
       const batchIndex = Math.floor(i / CREATE_BATCH_SIZE);
       const batchFiles = Object.fromEntries(createEntries.slice(i, i + CREATE_BATCH_SIZE));
-      this.reportProgress(
+      this.reportTransferProgress(
         onProgress,
-        totalItems - totalCreateBatches + batchIndex + 1,
-        totalItems,
+        batchIndex,
+        totalCreateBatches,
         this.text('creatingBatch', { current: batchIndex + 1, total: totalCreateBatches }),
       );
       try {
         await this.octokit!.rest.gists.update({ gist_id: newGistId, files: batchFiles });
+        this.reportTransferProgress(
+          onProgress,
+          batchIndex + 1,
+          totalCreateBatches,
+          this.text('creatingBatch', { current: batchIndex + 1, total: totalCreateBatches }),
+        );
       } catch (batchError) {
         throw this.buildBatchCreateFailure(batchIndex, totalCreateBatches, batchError);
       }

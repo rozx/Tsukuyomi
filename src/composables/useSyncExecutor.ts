@@ -94,11 +94,13 @@ export interface SyncExecutorResult {
   restorableItems: RestorableItem[];
 }
 
-// 进度阶段分配常量
+// 整体进度：下载 40%、应用 10%、本地准备 10%、上传 35%、保存状态 5%。
 const OVERALL_TOTAL = 100;
-const DOWNLOAD_PHASE_MAX = 50;
+const DOWNLOAD_PHASE_MAX = 40;
 const APPLY_PHASE_MAX = 10;
-const UPLOAD_PHASE_START = DOWNLOAD_PHASE_MAX + APPLY_PHASE_MAX;
+const APPLY_PHASE_END = DOWNLOAD_PHASE_MAX + APPLY_PHASE_MAX;
+const UPLOAD_PHASE_START = 60;
+const UPLOAD_PHASE_END = 95;
 
 /** 伪 CAS 检测到并发写入时的最大重试轮数 */
 const MAX_CONCURRENT_WRITE_RETRIES = 3;
@@ -379,7 +381,7 @@ export function useSyncExecutor() {
    */
   const makeUploadProgressHandler = (prefixMsg: (m: string) => string) => {
     return (progress: { current: number; total: number; message: string }) => {
-      const uploadPhaseRange = OVERALL_TOTAL - UPLOAD_PHASE_START;
+      const uploadPhaseRange = UPLOAD_PHASE_END - UPLOAD_PHASE_START;
       const mapped =
         progress.total > 0
           ? UPLOAD_PHASE_START + Math.round((progress.current / progress.total) * uploadPhaseRange)
@@ -391,6 +393,16 @@ export function useSyncExecutor() {
         message: prefixMsg(progress.message),
       });
     };
+  };
+
+  /** 传输完成后仍需保存同步状态和本地基准，最后 5% 留给这些步骤。 */
+  const beginFinalizing = (prefixMsg: (m: string) => string) => {
+    settingsStore.updateSyncProgress({
+      stage: 'finalizing',
+      message: prefixMsg(t('savingState')),
+      current: UPLOAD_PHASE_END,
+      total: OVERALL_TOTAL,
+    });
   };
 
   /**
@@ -500,7 +512,7 @@ export function useSyncExecutor() {
     settingsStore.updateSyncProgress({
       stage: 'applying',
       message: prefixMsg(t('migrationMerged')),
-      current: UPLOAD_PHASE_START,
+      current: APPLY_PHASE_END,
       total: OVERALL_TOTAL,
     });
     return true;
@@ -554,7 +566,7 @@ export function useSyncExecutor() {
     settingsStore.updateSyncProgress({
       stage: 'applying',
       message: prefixMsg(t('applied')),
-      current: UPLOAD_PHASE_START,
+      current: APPLY_PHASE_END,
       total: OVERALL_TOTAL,
     });
     return true;
@@ -703,11 +715,18 @@ export function useSyncExecutor() {
         onError(t('uploadFailed'), uploadResult.error || t('createFailed'));
         return { success: false, restorableItems };
       }
+      beginFinalizing(prefixMsg);
       if (uploadResult.gistId) {
         await settingsStore.setGistId(uploadResult.gistId);
       }
       await settingsStore.updateLastSyncTime(syncSnapshotTime);
       await recordSyncedStructureBaselines(bundle, 'all');
+      settingsStore.updateSyncProgress({
+        stage: 'finalizing',
+        message: prefixMsg(t('syncDone')),
+        current: OVERALL_TOTAL,
+        total: OVERALL_TOTAL,
+      });
       if (onSuccess) onSuccess(t('syncDone'), t('firstSynced'));
       return { success: true, restorableItems };
     } catch (error) {
@@ -836,6 +855,7 @@ export function useSyncExecutor() {
         { preparedManifest: bundle.localManifest },
       );
 
+      beginFinalizing(prefixMsg);
       await persistUploadState(uploadResult, syncSnapshotTime);
       const baselinesRecorded = await recordSyncedStructureBaselines(
         bundle,
@@ -844,7 +864,7 @@ export function useSyncExecutor() {
       await confirmLocalCheckpoint(bundle, baselinesRecorded);
 
       settingsStore.updateSyncProgress({
-        stage: 'uploading',
+        stage: 'finalizing',
         message: prefixMsg(t('syncDone')),
         current: OVERALL_TOTAL,
         total: OVERALL_TOTAL,
@@ -871,12 +891,7 @@ export function useSyncExecutor() {
     onSuccess: SyncExecutorOptions['onSuccess'],
     restorableItems: RestorableItem[],
   ): Promise<SyncExecutorResult> => {
-    settingsStore.updateSyncProgress({
-      stage: 'uploading',
-      message: prefixMsg(t('doneNoChanges')),
-      current: OVERALL_TOTAL,
-      total: OVERALL_TOTAL,
-    });
+    beginFinalizing(prefixMsg);
     try {
       await settingsStore.updateLastSyncTime(syncSnapshotTime);
       await settingsStore.cleanupOldDeletionRecords();
@@ -887,6 +902,12 @@ export function useSyncExecutor() {
       const baselinesRecorded = await recordSyncedStructureBaselines(bundle, knownHashes);
       await confirmLocalCheckpoint(bundle, baselinesRecorded);
     }
+    settingsStore.updateSyncProgress({
+      stage: 'finalizing',
+      message: prefixMsg(t('doneNoChanges')),
+      current: OVERALL_TOTAL,
+      total: OVERALL_TOTAL,
+    });
     if (onSuccess) onSuccess(t('syncDone'), t('upToDate'));
     return { success: true, restorableItems };
   };
@@ -949,6 +970,12 @@ export function useSyncExecutor() {
     // 快照时刻取在 bundle 构建之前：此后发生的任何本地编辑都不在本次上传中，
     // 它们的 lastEdited 必须 > lastSyncTime（见 persistUploadState）
     const syncSnapshotTime = Date.now();
+    settingsStore.updateSyncProgress({
+      stage: 'preparing',
+      message: prefixMsg(t('preparingLocal')),
+      current: APPLY_PHASE_END,
+      total: OVERALL_TOTAL,
+    });
     const latestConfig = resolveConfig(configOverride);
     const knownHashes = latestConfig.knownRemoteHashes ?? {};
     const localState = await captureSyncLocalState(localFingerprintInput(), latestConfig);
@@ -1177,9 +1204,9 @@ export function useSyncExecutor() {
 
     // ── 阶段 2：构建本地 bundle ──
     settingsStore.updateSyncProgress({
-      stage: 'applying',
+      stage: 'preparing',
       message: prefixMsg(t('preparingLocal')),
-      current: DOWNLOAD_PHASE_MAX,
+      current: APPLY_PHASE_END,
       total: OVERALL_TOTAL,
     });
 
@@ -1246,6 +1273,7 @@ export function useSyncExecutor() {
       );
 
       // 持久化新的远端状态（失败不影响推送成功判定）
+      beginFinalizing(prefixMsg);
       await persistUploadState(uploadResult, syncSnapshotTime);
       await recordSyncedStructureBaselines(bundle, manifestToHashes(uploadResult.manifest));
 
@@ -1257,7 +1285,7 @@ export function useSyncExecutor() {
       }
 
       settingsStore.updateSyncProgress({
-        stage: 'uploading',
+        stage: 'finalizing',
         message: prefixMsg(t('forceDone')),
         current: OVERALL_TOTAL,
         total: OVERALL_TOTAL,

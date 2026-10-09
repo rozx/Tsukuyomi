@@ -44,6 +44,10 @@ export default {
       },
     },
     embedding: {
+      loadingProgress: '模型載入進度',
+      preparingDownload: '正在準備模型檔案…',
+      downloadingFiles: '正在下載模型檔案…',
+      initializingModel: '正在初始化模型…',
       statusIdle: '未載入',
       statusLoading: '載入中…',
       statusReady: '已就緒',

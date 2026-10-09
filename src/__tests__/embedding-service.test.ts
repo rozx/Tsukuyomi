@@ -30,6 +30,8 @@ import {
 } from '../services/embedding-service';
 import { MODEL_ID } from '../services/embedding-service';
 import { vi } from 'vitest';
+import './setup';
+import type { EmbeddingProgressEvent } from '../models/embedding';
 
 function makeFloat32(values: number[]): Float32Array {
   return new Float32Array(values);
@@ -62,6 +64,108 @@ describe('EmbeddingService - 懒加载与状态', () => {
 
   afterEach(() => {
     EmbeddingService.__resetForTesting();
+  });
+
+  test('配置文件完成不会让模型下载提前到 100%，权重下载进度也不会回退', async () => {
+    const events: EmbeddingProgressEvent[] = [];
+    const unsubscribe = EmbeddingService.addEventListener('progress', (event: CustomEvent) => {
+      events.push(event.detail as EmbeddingProgressEvent);
+    });
+    mockPipelineFactory = (_task, _model, options) => {
+      const { progress_callback: progress } = options as {
+        progress_callback: (event: EmbeddingProgressEvent) => void;
+      };
+      progress({ status: 'progress', file: 'config.json', loaded: 10, total: 10 });
+      progress({ status: 'done', file: 'config.json' });
+      progress({ status: 'progress', file: 'onnx/model.onnx', loaded: 500, total: 1000 });
+      progress({ status: 'progress', file: 'tokenizer.json', loaded: 0, total: 100 });
+      progress({ status: 'done', file: 'onnx/model.onnx' });
+      return Promise.resolve(() => fakePooledOutput(1, 0.5));
+    };
+    try {
+      await EmbeddingService.init();
+
+      expect(events[1]!.aggregatePercent).toBeUndefined();
+      expect(events[2]!.aggregatePercent).toBeGreaterThan(0);
+      expect(events[2]!.aggregatePercent).toBeLessThan(100);
+      expect(events[3]!.aggregatePercent).toBeGreaterThanOrEqual(events[2]!.aggregatePercent!);
+      expect(events[4]!.aggregatePercent).toBeLessThan(100);
+      expect(events.at(-1)!.aggregatePercent).toBe(100);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  test('命中缓存也要等模型初始化完成，才报告 100%', async () => {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const events: EmbeddingProgressEvent[] = [];
+    const unsubscribe = EmbeddingService.addEventListener('progress', (event: CustomEvent) => {
+      events.push(event.detail as EmbeddingProgressEvent);
+    });
+    mockPipelineFactory = async (_task, _model, options) => {
+      const { progress_callback: progress } = options as {
+        progress_callback: (event: EmbeddingProgressEvent) => void;
+      };
+      progress({ status: 'done', file: 'config.json' });
+      progress({ status: 'done', file: 'onnx/model.onnx' });
+      entered.resolve();
+      await release.promise;
+      return () => fakePooledOutput(1, 0.5);
+    };
+    const init = EmbeddingService.init();
+    try {
+      await entered.promise;
+      expect(EmbeddingService.getStatus()).toBe('loading');
+      expect(events.at(-1)).toMatchObject({ phase: 'initializing', aggregatePercent: 95 });
+      release.resolve();
+      await init;
+      expect(EmbeddingService.getStatus()).toBe('ready');
+      expect(events.at(-1)).toMatchObject({ phase: 'ready', aggregatePercent: 100 });
+    } finally {
+      release.resolve();
+      await init;
+      unsubscribe();
+    }
+  });
+
+  test('自动重试保留已完成下载进度，手动重新加载开始新的进度', async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const events: EmbeddingProgressEvent[] = [];
+    const unsubscribe = EmbeddingService.addEventListener('progress', (event: CustomEvent) => {
+      events.push(event.detail as EmbeddingProgressEvent);
+    });
+    mockPipelineFactory = (_task, _model, options) => {
+      const { progress_callback: progress } = options as {
+        progress_callback: (event: EmbeddingProgressEvent) => void;
+      };
+      attempts += 1;
+      progress({
+        status: 'progress',
+        file: 'onnx/model.onnx',
+        loaded: attempts === 1 ? 800 : 100,
+        total: 1000,
+      });
+      return attempts === 1
+        ? Promise.reject(new Error('暂时断网'))
+        : Promise.resolve(() => fakePooledOutput(1, 0.5));
+    };
+    try {
+      const init = EmbeddingService.init();
+      await vi.advanceTimersByTimeAsync(30000);
+      await init;
+      expect(attempts).toBe(2);
+      expect(events[0]!.aggregatePercent).toBe(76);
+      expect(events[1]!.aggregatePercent).toBe(76);
+      expect(events.at(-1)!.aggregatePercent).toBe(100);
+      events.length = 0;
+      await EmbeddingService.reload();
+      expect(events[0]!.aggregatePercent).toBe(9);
+    } finally {
+      unsubscribe();
+      vi.useRealTimers();
+    }
   });
 
   test('单条与批量查询共享正在计算及已完成的向量，文档推理独立', async () => {

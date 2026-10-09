@@ -198,9 +198,7 @@ const syncProgress = computed(() => settingsStore.syncProgress);
 
 const syncStageLabel = computed(() => {
   const stage = syncProgress.value.stage;
-  return stage && ['downloading', 'uploading', 'applying', 'merging'].includes(stage)
-    ? t(`syncUi.panel.stage.${stage}`)
-    : '';
+  return stage ? t(`syncUi.panel.stage.${stage}`) : '';
 });
 
 // 以下 computed 把模板里剩余的 && / 三元收敛进来，进一步压低模板圈复杂度
@@ -255,16 +253,18 @@ const onSyncButtonClick = () => {
 
       <div v-if="showProgress" class="pt-2 border-t border-white/10">
         <div class="flex items-center justify-between mb-2">
-          <span class="text-xs text-moon/70">{{ syncStageLabel }}</span>
-          <span class="text-xs text-moon/50">{{ syncProgress.percentage }}%</span>
+          <span class="text-xs text-moon/70">{{ t('syncUi.panel.overallProgress') }}</span>
+          <span class="text-xs text-moon/50 tabular-nums">{{ syncProgress.percentage }}%</span>
         </div>
         <ProgressBar
           :value="syncProgress.percentage"
           :show-value="false"
           style="height: 6px"
           class="sync-progress-bar"
+          :aria-label="t('syncUi.panel.overallProgress')"
         />
-        <p class="text-xs text-moon/50 mt-2 truncate" style="max-width: 274px">
+        <p class="text-xs text-moon/70 mt-2">{{ syncStageLabel }}</p>
+        <p class="text-xs text-moon/50 mt-1 break-words" :title="syncProgress.message">
           {{ syncProgress.message }}
         </p>
       </div>
@@ -322,7 +322,7 @@ const onSyncButtonClick = () => {
 </template>
 
 <style scoped>
-.sync-progress-bar :deep(.p-progressbar) {
+.sync-progress-bar {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 3px;
 }
@@ -330,5 +330,12 @@ const onSyncButtonClick = () => {
 .sync-progress-bar :deep(.p-progressbar-value) {
   background: var(--p-primary-color);
   border-radius: 3px;
+  transition: width 400ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-progress-bar :deep(.p-progressbar-value) {
+    transition: none;
+  }
 }
 </style>

@@ -58,6 +58,64 @@ describe('GistSyncService.uploadToGist 上传后验证失败', () => {
     mock.restore();
   });
 
+  it('首次创建及分批创建都按已完成工作推进，验证完成前不报 100%', async () => {
+    for (const { novelCount, gistId } of [
+      { novelCount: 0, gistId: undefined },
+      { novelCount: 11, gistId: undefined },
+      { novelCount: 0, gistId: 'existing' },
+      { novelCount: 11, gistId: 'existing' },
+    ]) {
+      const service = new GistSyncService();
+      const novels = Array.from({ length: novelCount }, (_, i) => makeNovel(`b${i}`, `书 ${i}`));
+      spyOn(ChapterContentService, 'loadAllChapterContentsForNovels').mockResolvedValue(
+        novels as never,
+      );
+      const progress: number[] = [];
+      const duringRequests: number[] = [];
+      let beforeVerify = -1;
+      const uploadedFiles: Record<string, { content: string; size: number }> = {};
+      const writeFiles = (args: { files: Record<string, { content: string }> }) => {
+        duringRequests.push(progress.at(-1)!);
+        for (const [name, file] of Object.entries(args.files)) {
+          uploadedFiles[name] = { ...file, size: new TextEncoder().encode(file.content).length };
+        }
+        return Promise.resolve({
+          data: { id: 'created', html_url: 'https://gist.github.com/created' },
+        });
+      };
+      stubOctokit(service, {
+        rest: {
+          gists: {
+            create: writeFiles,
+            update: writeFiles,
+            get: () => {
+              beforeVerify = progress.at(-1)!;
+              return Promise.resolve({ data: { files: uploadedFiles } });
+            },
+          },
+        },
+      });
+
+      const result = await service.uploadToGist(
+        makeConfig(gistId ? { gistId } : undefined),
+        {
+          aiModels: [],
+          appSettings: { lastEdited: new Date(0) } as never,
+          novels: novels as never,
+          memories: [],
+        },
+        ({ current, total }) => progress.push((current / total) * 100),
+      );
+
+      expect(result.success).toBe(true);
+      expect(duringRequests[0]).toBe(20);
+      expect(duringRequests.every((value) => value < 90)).toBe(true);
+      expect(beforeVerify).toBe(90);
+      expect(progress.at(-1)).toBe(100);
+      expect(progress.every((value, i) => i === 0 || value >= progress[i - 1]!)).toBe(true);
+    }
+  });
+
   it('首次上传创建 Gist 后验证不可恢复地失败时，失败结果应带回已创建的 gistId', async () => {
     const service = new GistSyncService();
     const config = makeConfig();

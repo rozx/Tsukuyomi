@@ -10,6 +10,7 @@
  */
 
 import { createCustomEventSubscriber, dispatchCustomEvent } from 'src/utils/dispatch-custom-event';
+import { EmbeddingDownloadProgress } from './embedding-download-progress';
 
 import { MODEL_ID, MODEL_VERSION, DIMENSIONS } from 'src/models/embedding';
 import type {
@@ -87,64 +88,7 @@ export class EmbeddingRuntime {
 
   private static readonly events = new EventTarget();
 
-  /**
-   * 聚合进度跟踪：file → { loaded, total }
-   * transformers.js 每切一个文件会把 progress 重置为 0，导致进度条回跳；
-   * 这里按文件维度累积字节，产出单根单调递增的进度条。
-   */
-  private static readonly progressByFile = new Map<string, { loaded: number; total: number }>();
-
-  /** 重置聚合进度——init 开始时调用 */
-  private static resetProgressAggregate(): void {
-    this.progressByFile.clear();
-  }
-
-  /**
-   * 根据一条原始 transformers progress event 更新文件维度的字节进度 Map。
-   * - 带 total 的进度事件：直接覆盖该文件的 {loaded,total}
-   * - 不带 total 的 'done' 事件：把该文件标记为已完成（loaded = total）
-   */
-  private static recordFileProgress(event: EmbeddingProgressEvent): void {
-    const file = event.file;
-    if (!file) return;
-    if (typeof event.total === 'number' && event.total > 0) {
-      const loaded = typeof event.loaded === 'number' ? event.loaded : 0;
-      this.progressByFile.set(file, { loaded, total: event.total });
-      return;
-    }
-    if (event.status === 'done') {
-      const existing = this.progressByFile.get(file);
-      if (existing) {
-        this.progressByFile.set(file, { loaded: existing.total, total: existing.total });
-      }
-    }
-  }
-
-  /**
-   * 汇总所有文件的字节进度，产出聚合 loaded / total / percent。
-   */
-  private static summarizeAggregate(): {
-    aggregateLoaded: number;
-    aggregateTotal: number;
-    aggregatePercent: number;
-  } {
-    let aggLoaded = 0;
-    let aggTotal = 0;
-    for (const { loaded, total } of this.progressByFile.values()) {
-      aggLoaded += loaded;
-      aggTotal += total;
-    }
-    const aggPercent = aggTotal > 0 ? Math.min(100, Math.round((aggLoaded / aggTotal) * 100)) : 0;
-    return { aggregateLoaded: aggLoaded, aggregateTotal: aggTotal, aggregatePercent: aggPercent };
-  }
-
-  /**
-   * 根据一条原始 transformers progress event 更新内部聚合，并返回应广播的事件对象
-   */
-  private static enrichWithAggregate(event: EmbeddingProgressEvent): EmbeddingProgressEvent {
-    this.recordFileProgress(event);
-    return { ...event, ...this.summarizeAggregate() };
-  }
+  private static readonly downloadProgress = new EmbeddingDownloadProgress();
 
   /**
    * 订阅 EmbeddingService 事件:
@@ -217,9 +161,10 @@ export class EmbeddingRuntime {
     if (this.status === 'ready') return;
     if (this.initPromise) return this.initPromise;
 
+    // 自动重试和 WebGPU → WASM 回退属于同一次加载，保留已经完成的下载进度。
+    if (this.status !== 'loading') this.downloadProgress.reset();
     this.setStatus('loading');
     this.lastError = null;
-    this.resetProgressAggregate();
 
     this.initPromise = (async () => {
       try {
@@ -244,7 +189,7 @@ export class EmbeddingRuntime {
           dtype: config.dtype,
           device: config.device,
           progress_callback: (event: EmbeddingProgressEvent) => {
-            dispatchCustomEvent(this.events, 'progress', this.enrichWithAggregate(event));
+            dispatchCustomEvent(this.events, 'progress', this.downloadProgress.update(event));
           },
         });
 
@@ -252,6 +197,7 @@ export class EmbeddingRuntime {
         this.activeBackend = config.device;
         this.retryCount = 0; // 成功后重置重试计数
         this.setStatus('ready');
+        dispatchCustomEvent(this.events, 'progress', this.downloadProgress.complete());
         dispatchCustomEvent(this.events, 'ready', {
           modelVersion: MODEL_VERSION,
           backend: config.device,
@@ -641,6 +587,7 @@ export class EmbeddingRuntime {
    * 测试专用:重置内部状态。
    */
   static __resetForTesting(): void {
+    this.downloadProgress.reset();
     this.clearQueryCache();
     this.wakeCooldown?.();
     this.nextBackgroundAt = 0;

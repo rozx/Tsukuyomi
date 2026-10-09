@@ -8,6 +8,7 @@ import type {
   EmbeddingStatus,
   EmbeddingTask,
   EmbeddingWorkerEvent,
+  EmbeddingProgressEvent,
 } from 'src/models/embedding';
 export { MODEL_ID, MODEL_VERSION, DIMENSIONS } from 'src/models/embedding';
 export type {
@@ -23,6 +24,7 @@ export class EmbeddingService {
   private static activeBackend: EmbeddingBackend | null = null;
   private static lastError: Error | null = null;
   private static initPromise: Promise<void> | null = null;
+  private static progress: EmbeddingProgressEvent | null = null;
   private static readonly events = new EventTarget();
   static addEventListener = createCustomEventSubscriber<
     'progress' | 'status-changed' | 'ready' | 'error'
@@ -47,6 +49,9 @@ export class EmbeddingService {
   static getLastError(): Error | null {
     return this.lastError;
   }
+  static getProgress(): EmbeddingProgressEvent | null {
+    return this.progress ? { ...this.progress } : null;
+  }
 
   private static fail(error: Error): void {
     this.lastError = error;
@@ -57,6 +62,7 @@ export class EmbeddingService {
   private static receive(message: EmbeddingWorkerEvent): void {
     switch (message.event) {
       case 'progress':
+        this.progress = { ...message.detail };
         this.dispatch('progress', message.detail);
         break;
       case 'status-changed':
@@ -97,6 +103,7 @@ export class EmbeddingService {
     return this.beginInitialization('init');
   }
   private static beginInitialization(action: 'init' | 'reload'): Promise<void> {
+    this.progress = null;
     this.lastError = null;
     this.activeBackend = null;
     this.setStatus('loading');
@@ -258,5 +265,6 @@ export class EmbeddingService {
     this.activeBackend = null;
     this.lastError = null;
     this.initPromise = null;
+    this.progress = null;
   }
 }
