@@ -692,7 +692,13 @@ export class EmbeddingQueue {
         }
         const bookId = await lookupMemoryBookId(entry.id);
         if (bookId) {
-          syncMemoryEmbeddingCaches(bookId, entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
+          syncMemoryEmbeddingCaches(
+            bookId,
+            entry.id,
+            embeddings,
+            MEMORY_EMBEDDING_VERSION,
+            entry.text,
+          );
           dispatchMemoryChanged({ bookId, memoryId: entry.id, action: 'embedding-updated' });
         }
       } catch (error) {
