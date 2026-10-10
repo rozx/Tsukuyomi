@@ -36,7 +36,7 @@ When disabled:
 - **Default artifact**: official `onnx/model.onnx`, about **190 MiB**. The static vocabulary table is int8-compressed while Transformer computation remains fp32. `dtype: fp32` selects this compact artifact, not a full fp32 vocabulary table.
 - **Version**: `bekko-embedding-v1-a25m@384@mean@raw`. Changes to model ID, dimensions, pooling, or input scheme update the version; old memory and chapter vectors become stale and must be recomputed (see section 5).
 
-> **Upgrading from GTE**: users who previously used the GTE model must download the Bekko model, and all existing vectors must be rebuilt. Until the model finishes downloading, memory scoring uses keywords and time decay. Once the model is ready, old memories whose vectors have not been rebuilt are rarely auto-injected or found by `search_memories` (in semantic mode, keywords and time decay alone cannot reach the minimum score), and chapter semantic search is unavailable. Opening a book's details page rebuilds that book's vectors automatically, so rebuild soon after upgrading.
+> **Upgrading from GTE**: users who previously used the GTE model must download the Bekko model, and all existing vectors must be rebuilt. Until the model finishes downloading, memory scoring uses keywords and time decay. Once the model is ready, an old memory whose vector has not been rebuilt switches to keyword + time-decay scoring on its own when its raw keyword confidence is at least 0.8, so it can still be auto-injected or found by `search_memories`; partial matches are not recalled. Chapter semantic search is unavailable until rebuilt. Opening a book's details page rebuilds that book's vectors automatically, so rebuild soon after upgrading.
 
 ### Backends {#local-embedding-section-5}
 
@@ -133,9 +133,9 @@ Background memory and chapter inference uses groups of at most four inputs, spli
 `MODEL_VERSION` records the current space and is stored on each embedded memory/chunk. Shared `isMemoryEmbeddingStale` / `isChapterChunkStale` checks classify:
 
 - **Current**: eligible for semantic retrieval and counted as embedded.
-- **Stale**: semantic scoring is skipped, and backfill scanning queues a rebuild. While the model is ready, other memories are still scored in semantic mode, so stale records keep only the small keyword and time-decay weights and usually miss the injection threshold. Scoring switches entirely to keywords and time decay only when no record can use semantics.
+- **Stale**: semantic scoring is skipped, and backfill scanning queues a rebuild. While the model is ready, other memories are still scored in semantic mode. A stale record (or a new memory not yet embedded) switches to keyword 0.75 + time decay 0.25 when its raw keyword confidence is at least 0.8; otherwise it keeps only the small semantic-mode weights and misses the injection threshold.
 
-**A model upgrade does not lose data**: old records and memory content are kept, but they largely sit out retrieval and injection until rebuilt; after rebuilding, full capability returns.
+**A model upgrade does not lose data**: old records and memory content are kept, and until rebuilt only memories with strong keyword matches are retrieved or injected; after rebuilding, full capability returns.
 
 While local embeddings are enabled, startup removes **old model caches** such as `embeddinggemma` and `qwen3-embedding` from browser Cache Storage to reclaim disk space. The old GTE model cache (about 340–465 MB) is **intentionally kept** for now and not deleted automatically; to reclaim that space, clear this site's data in the browser (the current model then needs to be downloaded again).
 

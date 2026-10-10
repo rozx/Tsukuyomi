@@ -42,7 +42,7 @@ export default {
     openSettings: '前往設定啟用',
     upgraded: 'Embedding 空間已升級',
     staleHint:
-      '偵測到舊版向量：{items}。重建前這些記憶基本不會被注入或檢索到，章節搜尋暫時無法使用；重建後恢復語意召回。',
+      '偵測到舊版向量：{items}。重建前只有關鍵詞強命中的記憶能被注入或檢索到，章節搜尋暫時無法使用；重建後恢復語意召回。',
     staleChapters: '{count} 個章節',
     staleMemories: '{count} 條記憶',
     rebuildNow: '立即重建',

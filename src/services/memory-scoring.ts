@@ -449,6 +449,23 @@ export const FALLBACK_WEIGHTS = {
 } as const;
 
 /**
+ * 语义模式下，没有可用向量的记忆（模型升级后的 stale 向量、尚未嵌入的新记忆）
+ * 只有关键词原始置信度达到该值时才逐条降级到 fallback 权重。
+ * 部分命中仍按语义权重计分，避免缺向量条目靠弱关键词挤进注入。
+ */
+export const UNEMBEDDED_FALLBACK_MIN_KEYWORD = 0.8;
+
+/** 是否对该条记忆使用 fallback 权重：查询无向量时整体降级；记忆缺向量时需关键词强命中。 */
+function shouldUseFallbackWeights(
+  semanticMode: boolean,
+  hasUsableVector: boolean,
+  keyword: number,
+): boolean {
+  if (!semanticMode) return true;
+  return !hasUsableVector && keyword >= UNEMBEDDED_FALLBACK_MIN_KEYWORD;
+}
+
+/**
  * 根据 context 合并低权重辅助信号：章节标题/自然语言 query 与正文实体各自打分，
  * 取更强者。embedding 模式下该信号固定只占 0.10，不能单独决定召回。
  */
@@ -462,7 +479,8 @@ function resolveKeyword(memory: Memory, context: ScoringContext): number {
 
 /**
  * 对单条记忆打分,返回完整 breakdown 结构体。
- * embedding 不可用时按原始关键词置信度降级，访问时间仅保留在 breakdown 中展示。
+ * embedding 不可用时按原始关键词置信度降级；记忆本身缺可用向量时，
+ * 关键词强命中才逐条降级（见 UNEMBEDDED_FALLBACK_MIN_KEYWORD）。
  */
 export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreakdown {
   const chunkEmbeddings = resolveChunkEmbeddings(context);
@@ -480,23 +498,25 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
     : 0;
   const keyword = resolveKeyword(memory, context);
   const recency = calculateRecencyFactor(memory, context.now);
+  const hasUsableVector = versionOk && memoryEmbeddings.length > 0;
+  const useFallback = shouldUseFallbackWeights(semanticMode, hasUsableVector, keyword);
 
   let semanticWeighted: number;
   let keywordWeighted: number;
   let recencyWeighted: number;
-  if (semanticMode) {
-    semanticWeighted = semantic * SCORING_WEIGHTS.semantic;
-    keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
-    recencyWeighted = recency * SCORING_WEIGHTS.recency;
-  } else {
+  if (useFallback) {
     semanticWeighted = 0;
     keywordWeighted = keyword * FALLBACK_WEIGHTS.keyword;
     recencyWeighted = recency * FALLBACK_WEIGHTS.recency;
+  } else {
+    semanticWeighted = semantic * SCORING_WEIGHTS.semantic;
+    keywordWeighted = keyword * SCORING_WEIGHTS.keyword;
+    recencyWeighted = recency * SCORING_WEIGHTS.recency;
   }
   const total = semanticWeighted + keywordWeighted + recencyWeighted;
 
   return {
-    scoringMode: semanticMode ? 'semantic' : 'fallback',
+    scoringMode: useFallback ? 'fallback' : 'semantic',
     semantic,
     keyword,
     recency,
@@ -513,7 +533,8 @@ export function scoreMemory(memory: Memory, context: ScoringContext): ScoreBreak
  * 和 `scoreMemory` 单条打分的关键区别:
  * 1. dense 先做多分段稳健聚合，再用绝对余弦与批内对比度校准置信度，最后乘 RRF 名次分。
  * 2. keyword 同样转成 RRF 名次分，但仍乘原始命中置信度，避免弱部分匹配被抬成高分。
- * 3. query embedding 可用时固定采用语义优先权重；不可用时才整体切换到 fallback 权重。
+ * 3. query embedding 可用时采用语义优先权重；不可用时整体切换到 fallback 权重。
+ *    记忆本身缺可用向量（stale / 未嵌入）且关键词强命中时，该条逐条降级到 fallback 权重。
  *
  * 返回与输入下标一一对应的 ScoredMemory 数组(未排序,保持输入顺序)。
  *
@@ -553,18 +574,16 @@ export function scoreMemoriesBatch(memories: Memory[], context: ScoringContext):
     const semantic = semanticSignals[i] ?? 0;
     const keyword = rawKeywords[i] ?? 0;
     const recency = calculateRecencyFactor(memory, context.now);
-    const semanticWeighted = semantic * (semanticMode ? SCORING_WEIGHTS.semantic : 0);
-    const keywordWeighted =
-      keyword *
-      (keywordRanks[i] ?? 0) *
-      (semanticMode ? SCORING_WEIGHTS.keyword : FALLBACK_WEIGHTS.keyword);
-    const recencyWeighted =
-      recency * (semanticMode ? SCORING_WEIGHTS.recency : FALLBACK_WEIGHTS.recency);
+    const useFallback = shouldUseFallbackWeights(semanticMode, rawSemantics[i] !== null, keyword);
+    const weights = useFallback ? FALLBACK_WEIGHTS : SCORING_WEIGHTS;
+    const semanticWeighted = useFallback ? 0 : semantic * SCORING_WEIGHTS.semantic;
+    const keywordWeighted = keyword * (keywordRanks[i] ?? 0) * weights.keyword;
+    const recencyWeighted = recency * weights.recency;
 
     return {
       memory,
       breakdown: {
-        scoringMode: semanticMode ? 'semantic' : 'fallback',
+        scoringMode: useFallback ? 'fallback' : 'semantic',
         semantic,
         keyword,
         recency,

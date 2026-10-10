@@ -116,6 +116,8 @@ Without embeddings:
 | Keywords | 0.75   | Same keyword evidence |
 | Recency  | 0.25   | Same recency evidence |
 
+**Memories without a usable vector (stale after a model upgrade, or new and not yet embedded)**: when a query vector is available, such a memory switches to the keyword fallback weights above only if its raw keyword confidence is at least 0.8. Partial matches keep the semantic-led weights (keyword 0.10 + time decay 0.05) and stay below the minimum relevance threshold.
+
 > Raw cosine below 0.30 provides no semantic evidence. With at least four candidates, medium similarities need to exceed the batch median by 0.08 for full contrast confidence, preventing an entirely irrelevant batch from gaining maximum relevance by rank alone.
 
 ### Character budget {#book-details-memory-section-17}

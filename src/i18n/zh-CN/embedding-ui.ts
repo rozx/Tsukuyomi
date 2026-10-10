@@ -42,7 +42,7 @@ export default {
     openSettings: '前往设置开启',
     upgraded: 'Embedding 空间已升级',
     staleHint:
-      '检测到旧版向量：{items}。重建前这些记忆基本不会被注入或检索到，章节搜索暂不可用；重建后恢复语义召回。',
+      '检测到旧版向量：{items}。重建前只有关键词强命中的记忆能被注入或检索到，章节搜索暂不可用；重建后恢复语义召回。',
     staleChapters: '{count} 个章节',
     staleMemories: '{count} 条记忆',
     rebuildNow: '立即重建',
