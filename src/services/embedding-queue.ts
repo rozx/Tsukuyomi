@@ -119,11 +119,10 @@ export class EmbeddingQueue {
   private static runScheduled = false;
   private static currentTask: EmbeddingQueueCurrentTask | null = null;
   private static serviceRevision = 0;
-  /**
-   * 同步/恢复期间由外部 gate 临时暂停时置位；用于在同步结束后只恢复"由 gate 挂起"的场景,
-   * 避免把用户主动点击的 pause 一起解除。
-   */
-  private static syncGatePaused = false;
+  /** 用户（或设置开关）主动暂停；与同步闸门分开记录,闸门释放时不会被一起清除 */
+  private static userPaused = false;
+  /** 同步/恢复闸门是否生效；只由 applySyncGate 置位和清除,生效期间任何 resume 都不能放行 */
+  private static syncGateActive = false;
 
   // 分 kind 的会话统计
   private static totalEnqueued = { memory: 0, chapter: 0 };
@@ -337,23 +336,24 @@ export class EmbeddingQueue {
   // 暂停 / 恢复
   // ==========================================================================
   static pause(): void {
-    if (this.syncGatePaused) {
-      // 闸门期间用户主动暂停：转为用户暂停，闸门释放时不再自动恢复
-      this.syncGatePaused = false;
-      this.emitProgress();
-      return;
-    }
-    if (this.paused) return;
-    this.paused = true;
-    this.emitProgress();
+    if (this.userPaused) return;
+    this.userPaused = true;
+    this.updatePaused();
   }
 
   static resume(): void {
-    // 同步 / 恢复期间不能绕过闸门写 IndexedDB；闸门释放时会自动恢复
-    if (!this.paused || this.syncGatePaused) return;
-    this.paused = false;
+    // 只撤销用户暂停；同步 / 恢复闸门生效时队列保持暂停,闸门释放后才继续写 IndexedDB
+    if (!this.userPaused) return;
+    this.userPaused = false;
+    this.updatePaused();
+  }
+
+  /** 暂停状态 = 用户暂停 ∨ 闸门生效；由暂停转为运行时调度 run */
+  private static updatePaused(): void {
+    const wasPaused = this.paused;
+    this.paused = this.userPaused || this.syncGateActive;
     this.emitProgress();
-    this.scheduleRun();
+    if (wasPaused && !this.paused) this.scheduleRun();
   }
 
   static isPaused(): boolean {
@@ -366,25 +366,16 @@ export class EmbeddingQueue {
 
   /**
    * 同步/恢复期间的外部 gate：
-   * - shouldPause=true 时,若队列当前未暂停则挂起,并记下"挂起是 gate 触发的"
-   * - shouldPause=false 时,只解除由 gate 造成的挂起;若用户通过 UI 主动 pause 过就保留
+   * - shouldPause=true 时无条件记为闸门生效,队列挂起;生效期间 resume() 不能放行
+   * - shouldPause=false 时解除闸门;若用户通过 UI / 设置主动 pause 过则保持暂停
    *
-   * 这是为了避免 sync 结束后把用户手动点击的暂停一起抹掉(BatchEmbeddingsPanel / MemoryPanel
-   * 暴露了手动 pause/resume 按钮)。
+   * 闸门与用户暂停分开记录,避免同步期间的 pause/resume 解除闸门,也避免 sync 结束后把
+   * 用户手动点击的暂停一起抹掉(BatchEmbeddingsPanel / MemoryPanel 暴露了手动 pause/resume 按钮)。
    */
   static applySyncGate(shouldPause: boolean): void {
-    if (shouldPause) {
-      if (this.paused) return;
-      this.paused = true;
-      this.syncGatePaused = true;
-      this.emitProgress();
-      return;
-    }
-    if (!this.syncGatePaused) return;
-    this.syncGatePaused = false;
-    this.paused = false;
-    this.emitProgress();
-    this.scheduleRun();
+    if (this.syncGateActive === shouldPause) return;
+    this.syncGateActive = shouldPause;
+    this.updatePaused();
   }
 
   /**
@@ -429,7 +420,7 @@ export class EmbeddingQueue {
       etaMs: this.estimateEtaMs(),
       running: this.processing,
       paused: this.paused,
-      syncGated: this.syncGatePaused,
+      syncGated: this.syncGateActive,
       breakdown,
       currentTask: this.currentTask,
     };
@@ -701,7 +692,8 @@ export class EmbeddingQueue {
     this.pending = [];
     this.processing = false;
     this.paused = false;
-    this.syncGatePaused = false;
+    this.userPaused = false;
+    this.syncGateActive = false;
     this.runScheduled = false;
     this.currentTask = null;
     this.serviceRevision = 0;
