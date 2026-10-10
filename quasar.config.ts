@@ -276,6 +276,12 @@ export default defineConfig((ctx: any) => {
       extendElectronMainConf(conf: { external?: string[] }) {
         conf.external = [...(conf.external ?? []), 'velopack'];
       },
+      // UnPackaged 目录只复制 package.json、不含 patches/，保留 patchedDependencies 会让
+      // `bun install --production` 找不到补丁文件而失败。补丁只影响渲染进程依赖，
+      // 构建时已从根目录打过补丁的 node_modules 打包进 bundle，打包产物无需再次应用。
+      extendPackageJson(pkg: { patchedDependencies?: unknown }) {
+        delete pkg.patchedDependencies;
+      },
       preloadScripts: ['electron-preload'],
       inspectPort: 5858,
       bundler: 'packager',
