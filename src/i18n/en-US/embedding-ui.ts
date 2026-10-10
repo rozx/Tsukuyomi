@@ -35,14 +35,14 @@ export default {
     resume: 'Resume',
     mobileUnsupported: 'Local embeddings are unavailable on mobile',
     mobileHint:
-      'Model size and unstable mobile WebGPU support prevent local embedding on mobile. Generate embeddings on desktop; mobile devices can read them.',
+      'Model size and unstable mobile WebGPU support prevent local embedding on mobile. Mobile search scores by keyword matching and time decay; vectors stay on the device that generated them and are not synced to mobile.',
     notEnabled: 'Local embeddings are disabled',
     enableHint:
       'Enable this feature to download an embedding model (about 190 MiB) for semantic memory and chapter search. Related actions are hidden while disabled.',
     openSettings: 'Enable in settings',
     upgraded: 'Embedding space upgraded',
     staleHint:
-      'Outdated embeddings were found for {items}. Search falls back while chapter search is unavailable. Rebuild to restore semantic retrieval.',
+      'Outdated embeddings were found for {items}. Until rebuilt, only memories with strong keyword matches are injected or found, and chapter search is unavailable. Rebuild to restore semantic retrieval.',
     staleChapters: '{count} chapter | {count} chapters',
     staleMemories: '{count} memory | {count} memories',
     rebuildNow: 'Rebuild now',
@@ -58,7 +58,7 @@ export default {
     queryLoading: 'Searching {target}…',
     queryScore: 'Relevance',
     queryHint:
-      'Enter runs a chapter query. Memory queries match only items with the current model version.',
+      'Enter runs a chapter query. Memory queries match current-model vectors; memories without a usable vector can also appear on a strong keyword match.',
     queryChapters: 'Query chapters',
     queryMemories: 'Query memories',
     queryResults: '{target} query results',

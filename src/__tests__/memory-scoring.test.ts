@@ -14,6 +14,7 @@ import {
   FALLBACK_WEIGHTS,
   MAX_TOTAL_SCORE,
   DEFAULT_MIN_SCORE,
+  UNEMBEDDED_FALLBACK_MIN_KEYWORD,
 } from 'src/services/memory-scoring';
 import type { ScoredMemory } from 'src/services/memory-scoring';
 
@@ -205,7 +206,29 @@ describe('memory-scoring - scoreMemory', () => {
     expect(breakdown.total).toBeCloseTo(MAX_TOTAL_SCORE, 5);
   });
 
-  test('查询 embedding 可用但记忆缺向量时不提升辅助信号权重', () => {
+  test('查询 embedding 可用但记忆缺向量且关键词只部分命中时不提升辅助信号权重', () => {
+    const now = 1_000_000_000;
+    const memory = makeMemory({
+      summary: '小明',
+      lastAccessedAt: now,
+    });
+    const breakdown = scoreMemory(memory, {
+      chunkEntities: [{ name: '小明' }, { name: '小红' }],
+      chunkEmbedding: [1, 0],
+      now,
+    });
+
+    // 关键词置信度不足时不能切回 fallback 抬高辅助信号，仍按语义模式小权重计分。
+    expect(breakdown.scoringMode).toBe('semantic');
+    expect(breakdown.semantic).toBe(0);
+    expect(breakdown.keyword).toBeCloseTo(0.5, 5);
+    expect(breakdown.keyword).toBeLessThan(UNEMBEDDED_FALLBACK_MIN_KEYWORD);
+    expect(breakdown.keywordWeighted).toBeCloseTo(0.5 * SCORING_WEIGHTS.keyword, 5);
+    expect(breakdown.recencyWeighted).toBeCloseTo(SCORING_WEIGHTS.recency, 5);
+    expect(breakdown.total).toBeLessThan(DEFAULT_MIN_SCORE);
+  });
+
+  test('查询 embedding 可用但记忆缺向量且关键词强命中时按 fallback 权重计分', () => {
     const now = 1_000_000_000;
     const memory = makeMemory({
       summary: '小明',
@@ -217,13 +240,32 @@ describe('memory-scoring - scoreMemory', () => {
       now,
     });
 
-    // 查询已进入 embedding 模式；单条记忆缺向量时不能偷偷切回 fallback 抬高辅助信号。
+    expect(breakdown.scoringMode).toBe('fallback');
     expect(breakdown.semantic).toBe(0);
-    expect(breakdown.keyword).toBeCloseTo(1, 5);
-    expect(breakdown.recency).toBeCloseTo(1, 5);
-    expect(breakdown.keywordWeighted).toBeCloseTo(SCORING_WEIGHTS.keyword, 5);
-    expect(breakdown.recencyWeighted).toBeCloseTo(SCORING_WEIGHTS.recency, 5);
-    expect(breakdown.total).toBeLessThan(DEFAULT_MIN_SCORE);
+    expect(breakdown.semanticWeighted).toBe(0);
+    expect(breakdown.keywordWeighted).toBeCloseTo(FALLBACK_WEIGHTS.keyword, 5);
+    expect(breakdown.recencyWeighted).toBeCloseTo(FALLBACK_WEIGHTS.recency, 5);
+    expect(breakdown.total).toBeGreaterThan(DEFAULT_MIN_SCORE);
+  });
+
+  test('版本不匹配的 stale 记忆关键词强命中时同样按 fallback 权重计分', () => {
+    const now = 1_000_000_000;
+    const memory = makeMemory({
+      summary: '小明',
+      embeddings: [[1, 0]],
+      embeddingModel: 'v-old',
+      lastAccessedAt: now,
+    });
+    const breakdown = scoreMemory(memory, {
+      chunkEntities: [{ name: '小明' }],
+      chunkEmbedding: [1, 0],
+      now,
+      expectedModelVersion: 'v-new',
+    });
+
+    expect(breakdown.scoringMode).toBe('fallback');
+    expect(breakdown.semantic).toBe(0);
+    expect(breakdown.total).toBeGreaterThan(DEFAULT_MIN_SCORE);
   });
 
   test('旧单向量 embedding 字段不再参与语义评分', () => {
@@ -813,11 +855,72 @@ describe('memory-scoring - scoreMemoriesBatch', () => {
     });
 
     const byId = new Map(result.map((s) => [s.memory.id, s]));
-    // c 被当作无 semantic，但仍可通过 keyword 排名通道参与融合。
+    // c 没有可用向量且关键词完整命中 → 逐条降级为 fallback 权重，重建前仍可被召回。
     expect(byId.get('c')!.breakdown.semantic).toBe(0);
-    expect(byId.get('c')!.breakdown.keywordWeighted).toBeCloseTo(SCORING_WEIGHTS.keyword, 5);
-    // a、b 语义值正常计算。
+    expect(byId.get('c')!.breakdown.scoringMode).toBe('fallback');
+    expect(byId.get('c')!.breakdown.keywordWeighted).toBeCloseTo(FALLBACK_WEIGHTS.keyword, 5);
+    // a、b 有可用向量，仍按语义优先权重计分。
     expect(byId.get('a')!.breakdown.semantic).toBeGreaterThan(0);
+    expect(byId.get('a')!.breakdown.scoringMode).toBe('semantic');
+    expect(byId.get('b')!.breakdown.scoringMode).toBe('semantic');
+  });
+
+  test('缺向量记忆关键词只部分命中时不降级，达不到注入阈值', () => {
+    const now = Date.now();
+    const memories: Memory[] = [
+      makeMemory({ id: 'embedded', summary: '无关', embeddings: [makeEmbedding([0, 1, 0])] }),
+      makeMemory({ id: 'pending', summary: '小明', lastAccessedAt: now }),
+    ];
+
+    const result = scoreMemoriesBatch(memories, {
+      chunkEntities: [{ name: '小明' }, { name: '小红' }],
+      chunkEmbedding: makeEmbedding([1, 0, 0]),
+      now,
+    });
+    const pending = result.find((s) => s.memory.id === 'pending')!.breakdown;
+
+    expect(pending.scoringMode).toBe('semantic');
+    expect(pending.keyword).toBeLessThan(UNEMBEDDED_FALLBACK_MIN_KEYWORD);
+    expect(pending.total).toBeLessThan(DEFAULT_MIN_SCORE);
+  });
+
+  test('缺向量记忆没有关键词命中时，仅靠时间衰减不能越过注入阈值', () => {
+    const now = Date.now();
+    const result = scoreMemoriesBatch(
+      [
+        makeMemory({ id: 'embedded', summary: '小明', embeddings: [makeEmbedding([1, 0, 0])] }),
+        makeMemory({ id: 'recent-pending', summary: '其他内容', lastAccessedAt: now }),
+      ],
+      {
+        chunkEntities: [{ name: '小明' }],
+        chunkEmbedding: makeEmbedding([1, 0, 0]),
+        now,
+      },
+    );
+    const pending = result.find((s) => s.memory.id === 'recent-pending')!.breakdown;
+
+    expect(pending.scoringMode).toBe('semantic');
+    expect(pending.total).toBeLessThan(DEFAULT_MIN_SCORE);
+  });
+
+  test('全部记忆都缺向量时与关闭嵌入的 fallback 打分一致', () => {
+    const now = Date.now();
+    const memories: Memory[] = [
+      makeMemory({ id: 'x', summary: '小明', lastAccessedAt: now }),
+      makeMemory({ id: 'y', summary: '小明和小红', lastAccessedAt: now - 10 * MS_PER_DAY }),
+    ];
+    const context = { chunkEntities: [{ name: '小明' }], now };
+
+    const withQuery = scoreMemoriesBatch(memories, {
+      ...context,
+      chunkEmbedding: makeEmbedding([1, 0, 0]),
+    });
+    const withoutQuery = scoreMemoriesBatch(memories, context);
+
+    withQuery.forEach((scored, i) => {
+      expect(scored.breakdown.scoringMode).toBe('fallback');
+      expect(scored.breakdown.total).toBeCloseTo(withoutQuery[i]!.breakdown.total, 6);
+    });
   });
 
   test('空数组直接返回空', () => {

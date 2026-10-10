@@ -554,6 +554,7 @@ defineExpose({ toggle });
           :status-text="statusLabel.text"
           :running="progress.running"
           :paused="progress.paused"
+          :sync-gated="progress.syncGated"
           @pause="pauseQueue"
           @resume="resumeQueue"
         />

@@ -17,17 +17,19 @@
 - [開啟網頁版](https://tsukuyomi.rozx.moe/)
 - [下載桌面版](https://github.com/rozx/Tsukuyomi/releases/latest)
 
-## 🌐 v0.17 新增：三語言介面與按書目標語言
+## ☁️ v0.18 新增：按章節增量同步與更輕量的本機嵌入
 
-介面、說明文件與 README 提供簡體中文、繁體中文和 English。每本書可以單獨選擇譯文目標語言，原文不再限定日語。
+同步改為按章節小組上傳與下載，大型書庫也能順暢同步；本機嵌入改用更小的模型，並在獨立 Worker 中執行，不再卡住介面。
 
-- **介面語言**：在「設定 → 一般設定 → 介面語言」切換，首次使用時配對系統語言，偏好隨設定同步。
-- **按書目標語言**：在書籍「翻譯設定」選擇簡體中文、繁體中文或 English；新書預設取建立時的介面語言，各語言的譯文、卷章標題和術語 / 角色譯名分別保存，互不覆蓋。
-- **原文不限語言**：AI 按段落判斷原文語言，已經是目標語言的段落可原樣保留。
-- **Firecrawl 抓取備援**：網站攔截代理存取時自動改用 Firecrawl（無需 Key 也可使用），取代原來的「自動切換代理服務」；書籍更新檢查改為只讀目錄，按需逐章比對正文。
-- **同步協議 v6**：書籍目錄與章節正文分開同步，正文按章節 ID 分成固定小組。新增或修改一章通常只上傳所在小組、變更的目錄與清單；不再重傳整本書的所有分塊。保留實體刪除保護與記憶存取時間本機化。清單讀取支援超過 300 個同步檔案的多書庫。**多裝置同步請先備份，將所有裝置升級到支援 v6 的版本，再逐台同步；首次升級會執行一次完整遷移。**
+- **同步協定 v6**：書籍目錄與章節正文分開存放，正文按章節 ID 固定分成 16 個小組。新增或修改一章通常只上傳所在小組、變更的目錄與清單，不再重傳整本書。
+- **大型書庫同步**：GitHub 檔案清單超過 300 個檔案被截斷時，依完整同步清單補齊檔案繼續同步；書庫沒有變化時略過全庫掃描。
+- **遺留檔案清理與修訂歷史**：在「設定 → 同步設定」掃描並清理遠端不再引用的舊檔案；修訂歷史按書籍歸組顯示檔案變化。
+- **設定同步更可靠**：Tavily / Firecrawl API Key 與各任務的預設模型分別按修改時間合併，不再被其他設定覆蓋或在同步途中被清空。
+- **Bekko 本機嵌入**：預設模型換成 `bekko-embedding-v1-a25m`（384 維，WebGPU / WASM 共用約 190 MiB），推論移入 Web Worker；「向量索引」面板重新設計，平板與窄螢幕也有入口。
 
-[閱讀 v0.17.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.17.0.md) · [設定說明](public/help/zh-TW/settings-guide.md)
+**多裝置同步請先備份，再將所有裝置升級到 v0.18.0，最後逐台同步；首次同步會將 Gist 完整遷移到 v6。啟用本機嵌入的使用者需要重新下載模型並重建向量。**
+
+[閱讀 v0.18.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.18.0.md) · [設定說明](public/help/zh-TW/settings-guide.md) · [本機嵌入](public/help/zh-TW/local-embedding.md)
 
 ![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
@@ -101,8 +103,9 @@ Tsukuyomi 採用 Bring Your Own Key 模式，內建兩種提供商：
 
 ### ☁️ 跨裝置同步
 
-- **Gist 雲端同步**: 可選擇將資料同步到自己的 GitHub Gist，支援查看修訂歷史和還原可用快照。
+- **Gist 雲端同步**: 可選擇將資料同步到自己的 GitHub Gist，支援查看按書籍歸組的修訂歷史、還原可用快照，並清理遠端不再引用的遺留檔案。
 - **Manifest 增量同步**: 基於 `manifest.json` 與 SHA-256 雜湊選擇變化條目，使用條件請求減少下載；上傳前複核 ETag，偵測到並行變化後重新合併重試。
+- **按章節小組同步**: 書籍目錄與章節正文分開存放，正文按章節 ID 固定分成 16 組，修改一章只上傳所在小組、目錄與清單，其他小組不再重傳；檔案清單超過 300 個時依同步清單補齊，大型書庫也能完整同步。
 - **跨端刪除一致**: Manifest 使用墓碑（tombstones）傳遞刪除語意，A 裝置刪除的條目不會被 B 裝置重新推回。
 - **書內實體刪除記錄**: 術語、角色、別名擁有穩定身分，刪除記錄隨書長期保留；刪除的譯文版本同樣留有記錄，離線裝置回流時不會復活。
 - **段落合併**: 有同步結構基準時，保留單端的原文修訂與刪除；只有原文一致的段落才合併譯文，兩端都改過結構時提示檢查衝突。
@@ -185,7 +188,7 @@ Tsukuyomi 採用 Bring Your Own Key 模式，內建兩種提供商：
 4. 在「卷章草稿」檢查書籍資料、章節順序和正文。
 5. 產生「匯入方案」，核對目標書籍、缺失章節和譯文影響，再點選「確認匯入」。完成後點「打開小說」。
 
-更多範例見 [AI 匯入工作台指南](public/help/zh-TW/import-guide.md)。也可以在書庫中選擇「從網站匯入」，使用內建的日文小說網站規則處理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他網站可轉交 AI 匯入器。應用程式格式的 JSON 書籍檔案可透過「從 JSON 匯入」添加，完整資料備份在設定中還原。
+更多範例見 [AI 匯入工作台指南](public/help/zh-TW/import-guide.md)。也可以在書庫中選擇「從網站匯入」，使用內建的日文小說網站規則處理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他網站可轉交 AI 匯入器。網站攔截代理存取時會自動改用 Firecrawl 抓取（無需 Key 也可使用）；書籍更新檢查只讀取目錄，可按需逐章比對正文。應用程式格式的 JSON 書籍檔案可透過「從 JSON 匯入」添加，完整資料備份在設定中還原。
 
 ### 3. 從原始碼執行
 
@@ -218,7 +221,7 @@ bun run dev
 | **核心邏輯** | [術語管理](public/help/zh-TW/book-details-terminology.md) \| [角色設定](public/help/zh-TW/book-details-characters.md) \| [記憶系統](public/help/zh-TW/book-details-memory.md)  |
 | **AI 匯入**  | [匯入工作台：分步操作、拆章與補章](public/help/zh-TW/import-guide.md)                                                                                                          |
 | **進階工具** | [聊天助手實戰](public/help/zh-TW/chat-assistant-guide.md) \| [本地嵌入與章節檢索](public/help/zh-TW/local-embedding.md)                                                        |
-| **更新紀錄** | [v0.17.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.17.0.md)                                                                                                   |
+| **更新紀錄** | [v0.18.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.18.0.md)                                                                                                   |
 
 > 應用程式內「說明」可查閱使用指南；主分支文件透過工作流程同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)（簡體中文）。
 

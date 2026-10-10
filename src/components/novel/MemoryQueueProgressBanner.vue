@@ -37,6 +37,7 @@ defineEmits<{ togglePause: [] }>();
       size="small"
       severity="secondary"
       text
+      :disabled="queueProgress.paused && queueProgress.syncGated"
       @click="$emit('togglePause')"
     />
   </div>

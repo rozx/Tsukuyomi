@@ -540,6 +540,15 @@
     }
   },
   {
+    "id": "v0.18.0",
+    "title": "v0.18.0",
+    "file": "RELEASE_NOTES_v0.18.0.md",
+    "path": "releaseNotes",
+    "category": "Release notes",
+    "description": "Sync protocol v6 with chapter-group incremental sync, large-library sync and leftover file cleanup, revision history grouped by book, local embeddings switched to Bekko in a Worker, and a redesigned Vector index panel",
+    "categoryId": "release-notes"
+  },
+  {
     "id": "v0.17.0",
     "title": "v0.17.0",
     "file": "RELEASE_NOTES_v0.17.0.md",

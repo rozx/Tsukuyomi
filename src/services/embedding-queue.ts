@@ -87,6 +87,8 @@ export interface EmbeddingQueueProgress {
   etaMs: number | null;
   running: boolean;
   paused: boolean;
+  /** 同步 / 恢复闸门正在挂起队列，此时手动恢复无效 */
+  syncGated: boolean;
   breakdown: {
     memory: EmbeddingQueueBreakdown;
     chapter: EmbeddingQueueBreakdown;
@@ -110,6 +112,13 @@ function buildMemorySegments(memory: Memory): string[] {
   return [summary, ...contentSegments.filter((segment) => segment !== summary)];
 }
 
+/** 一条待嵌入记忆：分段文本 + 计算向量时的正文 / 摘要（写入时用于比对内容是否已变） */
+interface MemoryBatchEntry {
+  id: string;
+  segments: string[];
+  text: { content: string; summary: string };
+}
+
 export class EmbeddingQueue {
   private static pending: QueueItem[] = [];
   private static processing = false;
@@ -117,11 +126,10 @@ export class EmbeddingQueue {
   private static runScheduled = false;
   private static currentTask: EmbeddingQueueCurrentTask | null = null;
   private static serviceRevision = 0;
-  /**
-   * 同步/恢复期间由外部 gate 临时暂停时置位；用于在同步结束后只恢复"由 gate 挂起"的场景,
-   * 避免把用户主动点击的 pause 一起解除。
-   */
-  private static syncGatePaused = false;
+  /** 用户（或设置开关）主动暂停；与同步闸门分开记录,闸门释放时不会被一起清除 */
+  private static userPaused = false;
+  /** 同步/恢复闸门是否生效；只由 applySyncGate 置位和清除,生效期间任何 resume 都不能放行 */
+  private static syncGateActive = false;
 
   // 分 kind 的会话统计
   private static totalEnqueued = { memory: 0, chapter: 0 };
@@ -335,16 +343,24 @@ export class EmbeddingQueue {
   // 暂停 / 恢复
   // ==========================================================================
   static pause(): void {
-    if (this.paused) return;
-    this.paused = true;
-    this.emitProgress();
+    if (this.userPaused) return;
+    this.userPaused = true;
+    this.updatePaused();
   }
 
   static resume(): void {
-    if (!this.paused) return;
-    this.paused = false;
+    // 只撤销用户暂停；同步 / 恢复闸门生效时队列保持暂停,闸门释放后才继续写 IndexedDB
+    if (!this.userPaused) return;
+    this.userPaused = false;
+    this.updatePaused();
+  }
+
+  /** 暂停状态 = 用户暂停 ∨ 闸门生效；由暂停转为运行时调度 run */
+  private static updatePaused(): void {
+    const wasPaused = this.paused;
+    this.paused = this.userPaused || this.syncGateActive;
     this.emitProgress();
-    this.scheduleRun();
+    if (wasPaused && !this.paused) this.scheduleRun();
   }
 
   static isPaused(): boolean {
@@ -357,25 +373,16 @@ export class EmbeddingQueue {
 
   /**
    * 同步/恢复期间的外部 gate：
-   * - shouldPause=true 时,若队列当前未暂停则挂起,并记下"挂起是 gate 触发的"
-   * - shouldPause=false 时,只解除由 gate 造成的挂起;若用户通过 UI 主动 pause 过就保留
+   * - shouldPause=true 时无条件记为闸门生效,队列挂起;生效期间 resume() 不能放行
+   * - shouldPause=false 时解除闸门;若用户通过 UI / 设置主动 pause 过则保持暂停
    *
-   * 这是为了避免 sync 结束后把用户手动点击的暂停一起抹掉(BatchEmbeddingsPanel / MemoryPanel
-   * 暴露了手动 pause/resume 按钮)。
+   * 闸门与用户暂停分开记录,避免同步期间的 pause/resume 解除闸门,也避免 sync 结束后把
+   * 用户手动点击的暂停一起抹掉(BatchEmbeddingsPanel / MemoryPanel 暴露了手动 pause/resume 按钮)。
    */
   static applySyncGate(shouldPause: boolean): void {
-    if (shouldPause) {
-      if (this.paused) return;
-      this.paused = true;
-      this.syncGatePaused = true;
-      this.emitProgress();
-      return;
-    }
-    if (!this.syncGatePaused) return;
-    this.syncGatePaused = false;
-    this.paused = false;
-    this.emitProgress();
-    this.scheduleRun();
+    if (this.syncGateActive === shouldPause) return;
+    this.syncGateActive = shouldPause;
+    this.updatePaused();
   }
 
   /**
@@ -420,6 +427,7 @@ export class EmbeddingQueue {
       etaMs: this.estimateEtaMs(),
       running: this.processing,
       paused: this.paused,
+      syncGated: this.syncGateActive,
       breakdown,
       currentTask: this.currentTask,
     };
@@ -509,10 +517,18 @@ export class EmbeddingQueue {
     const serviceRevision = this.serviceRevision;
     try {
       if (head.kind === 'memory') {
-        await this.processMemoryBatch(
+        const unpersistedIds = await this.processMemoryBatch(
           batchItems.map((item) => item.id),
           serviceRevision,
         );
+        if (unpersistedIds.length > 0) {
+          // 推理或写入期间同步 / 恢复闸门生效：丢弃未写入条目的旧向量，闸门释放后按新内容重算
+          const unpersisted = new Set(unpersistedIds);
+          this.requeueFront(batchItems.filter((item) => unpersisted.has(item.id)));
+          this.currentTask = null;
+          this.emitProgress();
+          return;
+        }
       } else {
         if (!(await this.processChapter(batchItems[0]!))) return;
       }
@@ -520,10 +536,7 @@ export class EmbeddingQueue {
       console.warn('[EmbeddingQueue] 批处理失败,继续下一批:', error);
       this.dispatch('error', { error, batchItems });
       if (!EmbeddingService.isReady() || this.serviceRevision !== serviceRevision) {
-        for (const item of [...batchItems].reverse()) {
-          if (!this.pending.some((pending) => pending.kind === item.kind && pending.id === item.id))
-            this.pending.unshift(item);
-        }
+        this.requeueFront(batchItems);
         this.currentTask = null;
         this.emitProgress();
         return;
@@ -596,30 +609,39 @@ export class EmbeddingQueue {
     }
   }
 
+  /** 把未完成的批次按原顺序放回队首（跳过已在队列中的条目） */
+  private static requeueFront(items: QueueItem[]): void {
+    for (const item of [...items].reverse()) {
+      if (!this.pending.some((pending) => pending.kind === item.kind && pending.id === item.id))
+        this.pending.unshift(item);
+    }
+  }
+
   /**
-   * 处理一批 memory id
+   * 处理一批 memory id。返回因同步闸门生效而未写入、需重新入队的 id（空数组表示整批完成）。
    */
-  private static async processMemoryBatch(ids: string[], serviceRevision: number): Promise<void> {
-    const memories: Array<{ id: string; segments: string[] } | null> = await Promise.all(
+  private static async processMemoryBatch(
+    ids: string[],
+    serviceRevision: number,
+  ): Promise<string[]> {
+    const memories: Array<MemoryBatchEntry | null> = await Promise.all(
       ids.map(async (id) => {
         try {
           const mem = await getMemoryByIdFromDB(id);
           if (!mem) return null;
           const segments = buildMemorySegments(mem);
           if (segments.length === 0) return null;
-          return { id, segments };
+          return { id, segments, text: { content: mem.content, summary: mem.summary } };
         } catch {
           return null;
         }
       }),
     );
 
-    const valid = memories.filter(
-      (memory): memory is { id: string; segments: string[] } => memory !== null,
-    );
+    const valid = memories.filter((memory): memory is MemoryBatchEntry => memory !== null);
     if (valid.length === 0) {
       this.completed.memory += ids.length;
-      return;
+      return [];
     }
 
     const segmentJobs = valid.flatMap((memory) =>
@@ -643,27 +665,49 @@ export class EmbeddingQueue {
       });
     }
 
-    await Promise.all(
-      valid.map(async (entry) => {
-        const embeddings = vectorsByMemory.get(entry.id);
-        if (!embeddings?.length) return;
-        try {
-          // 写 IDB（leaf）+ 同步进程内缓存 + 派发 'embedding-updated' 事件。
-          // 全部走叶子模块（memory-embedding-lookup / memory-cache），避免 EmbeddingQueue
-          // 反向 import MemoryService 形成循环依赖。
-          await updateMemoryEmbeddingInDB(entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
-          const bookId = await lookupMemoryBookId(entry.id);
-          if (bookId) {
-            syncMemoryEmbeddingCaches(bookId, entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
-            dispatchMemoryChanged({ bookId, memoryId: entry.id, action: 'embedding-updated' });
-          }
-        } catch (error) {
-          console.warn(`[EmbeddingQueue] 持久化 memory embedding 失败 (${entry.id}):`, error);
+    // 逐条写入：闸门生效后不再写入；每条写入还在 IDB 事务内比对正文 / 摘要，
+    // 推理期间被同步、快照恢复或用户改写的记忆不会落下旧内容的向量，改为重新入队。
+    const unpersisted: string[] = [];
+    for (let index = 0; index < valid.length; index++) {
+      if (this.syncGateActive) {
+        unpersisted.push(...valid.slice(index).map((entry) => entry.id));
+        break;
+      }
+      const entry = valid[index]!;
+      const embeddings = vectorsByMemory.get(entry.id);
+      if (!embeddings?.length) continue;
+      try {
+        // 写 IDB（leaf）+ 同步进程内缓存 + 派发 'embedding-updated' 事件。
+        // 全部走叶子模块（memory-embedding-lookup / memory-cache），避免 EmbeddingQueue
+        // 反向 import MemoryService 形成循环依赖。
+        const written = await updateMemoryEmbeddingInDB(
+          entry.id,
+          embeddings,
+          MEMORY_EMBEDDING_VERSION,
+          entry.text,
+        );
+        if (!written) {
+          unpersisted.push(entry.id);
+          continue;
         }
-      }),
-    );
+        const bookId = await lookupMemoryBookId(entry.id);
+        if (bookId) {
+          syncMemoryEmbeddingCaches(
+            bookId,
+            entry.id,
+            embeddings,
+            MEMORY_EMBEDDING_VERSION,
+            entry.text,
+          );
+          dispatchMemoryChanged({ bookId, memoryId: entry.id, action: 'embedding-updated' });
+        }
+      } catch (error) {
+        console.warn(`[EmbeddingQueue] 持久化 memory embedding 失败 (${entry.id}):`, error);
+      }
+    }
 
-    this.completed.memory += ids.length;
+    this.completed.memory += ids.length - unpersisted.length;
+    return unpersisted;
   }
 
   /**
@@ -691,7 +735,8 @@ export class EmbeddingQueue {
     this.pending = [];
     this.processing = false;
     this.paused = false;
-    this.syncGatePaused = false;
+    this.userPaused = false;
+    this.syncGateActive = false;
     this.runScheduled = false;
     this.currentTask = null;
     this.serviceRevision = 0;

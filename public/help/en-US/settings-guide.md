@@ -54,7 +54,9 @@ Configure default task models.
 
 - Selectors show only enabled models marked eligible for that task.
 - Each task can be **Not set**.
-- A selection is cleared if its model is later disabled or made ineligible.
+- Each task's selection has its own modification time and syncs with app settings, merging per task. Editing other settings does not override it. If two devices change the same task at the same moment, clearing the selection wins.
+- If the selected model has not synced to this device yet or was deleted, the selection is kept and the selector temporarily shows **Not set**. The task then falls back to the first enabled model eligible for it.
+- Only when the model still exists but is disabled or no longer eligible does the AI model page clear the selection. This check waits while sync or a revision snapshot restore is running, or while models are still loading.
 
 ---
 
@@ -160,16 +162,24 @@ Configure and run Gist sync.
 - Interval: **1–1440 minutes**.
 - Conditional requests check for remote changes first. An unchanged response does not consume GitHub API quota, allowing shorter intervals.
 
+### Sync progress {#settings-guide-sync-progress}
+
+While sync runs, the **Sync status** panel in the system bar (see [System bar and navigation](/help/toolbar-guide)) shows an **Overall progress** percentage and bar:
+
+- Progress never goes backwards and stays at 99% or below until the sync state is saved.
+- The current stage appears below the bar: **Preparing local data**, **Downloading**, **Applying**, **Merging**, **Uploading**, or **Saving sync state**, followed by a description of the current step.
+
 ### Incremental sync and concurrent changes {#settings-guide-section-23}
 
 Since v0.10.1, sync uses a **manifest**:
 
-- **Changed uploads only**: editing one book uploads that book and the manifest; unchanged books, models, covers, and memories are not resent.
+- **Changed uploads only**: only entries whose content hash changed are uploaded, plus the manifest; unchanged books, models, covers, and memories are not resent. Editing a book normally uploads only its changed chapter groups, its metadata if changed, and the manifest. See [Multilingual protocol and entity deletion](/help/settings-guide#settings-guide-language-sync).
 - **Selective download**: only changed entries are parsed and merged.
-- **Concurrency protection**: before upload, remote state is checked again. Concurrent writes trigger pull/merge and up to three retries, then an error asks you to try later.
+- **Concurrency protection**: before upload starts, remote state is checked again. Concurrent writes trigger pull/merge and another attempt, up to three attempts per sync. If the conflict persists, **Another device is writing frequently. Try again later.** appears. This retry applies only to the pre-upload check.
+- **Stopping mid-upload**: uploads run in batches, and the remote is checked again before each batch. If the remote changes during upload, sync stops immediately with **Remote data changed during upload. Upload stopped; sync again.** It does not retry automatically.
 - **Cross-device matching**: chapters with different local IDs can match by source `webUrl`. Volumes can match by source title while preserving translations, reducing duplicates.
 - **Snapshot boundary**: edits after local packaging remain pending for the next sync; they are not treated as uploaded or remotely deleted.
-- **Failed-entry retry**: download, parse, or application failures do not mark the entry synced. It is fetched again next time.
+- **Failures abort the round**: if any entry fails to download, parse, or apply, or local data cannot be read, the whole sync round stops without uploading or advancing sync state. The data is fetched again next time, so a stale local copy cannot overwrite newer remote data. A remote read failure shows **Some remote data could not be read. Sync stopped; please try again later.**; an apply failure shows **Some remote data could not be applied. Sync state was not advanced; please try again later.**
 - **Deletion propagation**: manifest tombstones prevent another device from pushing deleted entries back.
 - **Pending changes**: the header counts books, models, covers, settings, memories, and deletion records. Open the sync popover to inspect individual changes; memory tracking was completed in v0.11.1.
 
@@ -203,7 +213,7 @@ For remote corruption or device migration, replace remote visible data with loca
 
 ### Multilingual protocol and entity deletion {#settings-guide-language-sync}
 
-- Book metadata and content are stored separately. Chapter IDs assign content to up to 16 fixed groups per book; empty groups use no files. Adding a chapter normally uploads its group, book metadata, and manifest. Content-only edits also skip unchanged metadata. Large groups can still be chunked, but inserting or reordering chapters does not reshuffle other groups.
+- Book metadata and content are stored separately. Chapter IDs assign content to up to 16 fixed groups per book; empty groups use no files. Adding or editing a chapter normally uploads its group, book metadata, and manifest, without re-uploading other groups. Editing content updates the book's modification time, so metadata is usually uploaded too. Large groups can still be chunked, but inserting or reordering chapters does not reshuffle other groups.
 - The first v6 upgrade migrates all existing books, so this upload can still be large. Interrupted migrations retain the old book content for retry. Historical restore assembles every required group and stops if any group is missing or corrupt.
 - 300 is the GitHub API file-list response limit, not a library capacity limit. Larger libraries can sync through the manifest and files pinned to the same revision, with hash verification and failure handling preserved. A multi-batch legacy upgrade first saves a temporary file inventory so the original books remain readable after interruption. The inventory is removed when the final manifest is published. If neither index is available, the operation stops to protect the data.
 
@@ -226,6 +236,13 @@ With sync enabled and a Gist ID:
 - Expand a revision's file changes
 - Restore a revision
 
+An expanded revision shows **Revision contents** with an "N items · M files" summary at the top, and the hint **Grouped by book. Expand an item to view its files.** at the bottom:
+
+- **Grouped by book**: files for the same book are combined into one item whose summary counts each category: **Book data**, **Chapter data**, **Memories**, and **Chunk index**. If the book is not in the local library, the first 8 characters of its ID replace the title.
+- **Other items**: app settings, AI model settings, and cover history are combined into **App configuration**. The manifest appears as **Sync manifest**; unrecognized files appear as **Other file**.
+- **Size and change**: each item and file shows its size and a signed size change. Groups that were entirely added or removed are marked **Added** or **Removed**. Expand an item to see each file's category, name, size, and change.
+- **Leftover files**: when the revision's manifest is complete and readable, book files outside that revision's restored library are grouped under **Leftover files** with "Excluded from this revision’s restored library · N files". If they still exist in the latest version, use [Clean up remote leftover files](/help/settings-guide#settings-guide-sync-cleanup) to remove them.
+
 > Since v0.11.1, restoration supports the manifest layout fully, including models, cover history, and memories. Older aggregate revisions use the legacy parser.
 
 A local backup with chapter source and translations is created first. Failure to read any required entry aborts restoration and preserves current data. Application failure rolls back independently stored chapter content as well as metadata.
@@ -233,6 +250,11 @@ A local backup with chapter source and translations is created first. Failure to
 ### Clean up remote leftover files {#settings-guide-sync-cleanup}
 
 In sync settings, select **Scan for leftover files**, review the files grouped by book and their sizes, then confirm removal. The scan uses the latest remote manifest, not your local library. Only previewed, unreferenced files are removed; active data and earlier revisions are preserved.
+
+- **Availability**: shown when Gist sync is enabled and a Gist ID is set, above **Revision history**.
+- **Preview**: after scanning, "N files to remove · size" appears; when some sizes are unknown, the size is prefixed with "≥". Files are grouped by book, followed by **Only the latest version is cleaned up. Earlier revisions keep their files.** The scan button becomes **Scan again**.
+- **Removal**: select **Remove these N files** and confirm in the dialog. The remote revision is checked again before removal.
+- When nothing can be removed, **No removable leftover files found in this scan.** appears.
 
 Cleanup stops if the manifest is damaged, a format upgrade is incomplete, or required content is known to be missing. If the remote revision changes before confirmation, scan again. Gists with more than 300 files are marked as partially scanned: only returned, verified candidates are considered, and extra files for active entries are kept. You can scan again after cleanup, but this cannot guarantee that all leftovers are gone. A complete inventory requires fetching the entire Gist through Git.
 
@@ -265,8 +287,11 @@ Local vectors support semantic memory search and `query_chapter`. See [Local emb
 - Automatic backend order:
   - **WebGPU** when a GPU adapter is available.
   - **WASM** when no adapter is available. Both backends use the same default artifact.
+- If WebGPU fails to load, the model reloads on WASM automatically. Other load failures retry automatically up to three times. Completed download progress is kept during fallback and retries.
+- Inference runs in a separate Web Worker and does not block the page.
 - Version: `bekko-embedding-v1-a25m@384@mean@raw`. Changes to model, dimensions, pooling, or input scheme update the version; stale vectors are recomputed in the background.
 - Automatic warmup requires embeddings enabled and an already cached model. The first download takes time.
+- **Model loading progress**: while loading, a **Model loading progress** percentage and bar appear, with **Preparing model files…**, **Downloading model files…**, and **Initializing model…** below in turn, plus the current file name during download. The percentage tracks the model weight download and stays at 95% or below until initialization finishes. If the total file size is not known yet, the bar is indeterminate.
 
 ### Memory injection {#settings-guide-section-33}
 

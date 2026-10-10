@@ -255,7 +255,7 @@
   {
     "category": "使用指南",
     "categoryId": "guides",
-    "description": "本地嵌入引擎完整說明：gte-multilingual-base 模型（CLS pooling）、WebGPU/WASM 後端、批量嵌入面板、長文分段嵌入、模型版本與 stale 重算、同步 sync gate、故障排查",
+    "description": "本地嵌入引擎完整說明：bekko-embedding-v1-a25m 模型（384 維 mean pooling）、Web Worker 推論與 WebGPU/WASM 後端、向量索引面板、長文分段嵌入、模型版本與 stale 重算、同步 sync gate、故障排查",
     "file": "local-embedding.md",
     "id": "local-embedding",
     "path": "help/zh-TW",
@@ -538,6 +538,15 @@
       "记忆和章节向量索引有什么区别": "book-details-memory-section-34",
       "如何决定什么信息值得记录": "book-details-memory-section-35"
     }
+  },
+  {
+    "category": "更新紀錄",
+    "categoryId": "release-notes",
+    "description": "同步協定 v6 依章節小組增量同步、大型書庫同步與遺留檔案清理、修訂歷史依書歸組、本機嵌入改用 Bekko 模型並移入 Worker、「向量索引」面板重做",
+    "file": "RELEASE_NOTES_v0.18.0.md",
+    "id": "v0.18.0",
+    "path": "releaseNotes",
+    "title": "v0.18.0"
   },
   {
     "category": "更新紀錄",

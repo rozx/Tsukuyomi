@@ -1372,18 +1372,27 @@ export class SyncDataService {
       await aiModelService.saveModel(model);
     }
 
-    aiModelsStore.models = finalModels.map((m) => ({
+    // 删除期间 store 同时登记已写入的新模型与待删除的旧模型：删除失败时外层回滚能看到新模型并清理，
+    // 重试同步也仍能找到旧模型再次删除；全部删除成功后再收窄为最终列表
+    const toStoreModel = (m: (typeof finalModels)[number]) => ({
       ...m,
       lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
-    }));
+    });
+    aiModelsStore.models = [
+      ...finalModels.map(toStoreModel),
+      ...aiModelsStore.models.filter((m) => !finalModelIds.has(m.id)),
+    ];
 
     for (const staleId of staleModelIds) {
       try {
         await aiModelService.deleteModel(staleId);
       } catch (e) {
         console.warn('[SyncDataService] 删除旧模型失败:', staleId, e);
+        throw e;
       }
     }
+
+    aiModelsStore.models = finalModels.map(toStoreModel);
   }
 
   /**
@@ -1527,6 +1536,7 @@ export class SyncDataService {
         await booksStore.deleteBook(staleId);
       } catch (e) {
         console.warn('[SyncDataService] 删除旧书籍失败:', staleId, e);
+        throw e;
       }
     }
   }
@@ -1855,6 +1865,7 @@ export class SyncDataService {
         await MemoryService.deleteMemory(bookId, staleId);
       } catch (error) {
         console.warn(`[SyncDataService] 删除旧 Memory ${staleId} 失败:`, error);
+        throw error;
       }
     }
   }
@@ -2148,13 +2159,23 @@ export class SyncDataService {
   /** 导入/旧格式合并共用，保留内容时间和设备访问时间。 */
   private static async writeImportedMemory(memory: Memory, bookId = memory.bookId): Promise<void> {
     try {
-      await MemoryService.createMemoryWithId(bookId, memory.id, memory.content, memory.summary, {
-        createdAt: memory.createdAt,
-        lastAccessedAt: memory.lastAccessedAt,
-        updatedAt: memoryModifiedAt(memory),
-      });
+      // 远端记录可能含空摘要（同步 upsert 允许），导入时不能因字段校验让整轮同步失败
+      await MemoryService.createMemoryWithId(
+        bookId,
+        memory.id,
+        memory.content,
+        memory.summary,
+        {
+          createdAt: memory.createdAt,
+          lastAccessedAt: memory.lastAccessedAt,
+          updatedAt: memoryModifiedAt(memory),
+        },
+        { allowEmptyText: true },
+      );
     } catch (error) {
+      // 与 persistMergedMemories 一致：写入失败必须中止本轮应用，避免随后上传丢失该记忆
       console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
+      throw error;
     }
   }
 

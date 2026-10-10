@@ -1,8 +1,8 @@
 # 🛠️ System Bar and Navigation {#toolbar-guide-section-1}
 
-Tsukuyomi adapts its system bar to each device while keeping the same core functions: **navigation, AI thinking, sync, notifications, and right panels**.
+Tsukuyomi adapts its system bar to each device while keeping the same core functions: **navigation, AI thinking, sync, notifications, right panels, and the vector index**.
 
-> Since v0.12.1, desktop uses a workspace with icon rails and separate chat/progress panels. Batch embeddings moved from the top bar to the right rail. Tablet/mobile retain compact status chips.
+> Since v0.12.1, desktop uses a workspace with icon rails and separate chat/progress panels. Tablet/mobile retain compact status chips. The Vector index entry is available in all three layouts: the desktop right rail, the tablet book-details side rail, and the mobile top system bar.
 
 ---
 
@@ -30,20 +30,20 @@ From left to right:
 - **Menu (`☰`)**: expand/collapse the left rail.
 - **Brand**: logo, name, and Moonlit Translator subtitle.
 - **AI thinking**:
-  - ✨ when idle.
-  - A status pill and animated dots while thinking or processing.
+  - ✨ with "AI thinking" when idle.
+  - A status pill with "AI Thinking" or "AI Processing" and a pulsing dot while a task runs.
   - Opens the thinking panel: active model/type/status/time, reasoning messages, ten recently completed tasks, stop, and clear.
 - **Sync status**:
 
 | State    | Display                 | Meaning                                                              |
 | :------- | :---------------------- | :------------------------------------------------------------------- |
 | Disabled | Cloud / Sync            | No Gist configuration or automatic sync disabled                     |
-| Unsynced | Cloud / Unsynced        | Local and remote state have not aligned                              |
+| Unsynced | Cloud / Not synced      | Local and remote state have not aligned                              |
 | Synced   | Cloud check / countdown | Time until the next sync                                             |
 | Pending  | Up arrow / N changes    | Books, models, covers, settings, memories, or deletions await upload |
-| Syncing  | Spinner                 | Upload, download, or merge in progress                               |
+| Syncing  | Spinner / Syncing       | Upload, download, or merge in progress                               |
 
-Open the sync panel for upload/download/details, last and next sync times, remote statistics, and stage progress. Download is unavailable when disabled, already syncing, or missing a Gist ID.
+Click to open the "Sync status" panel: "Last synced", "Next sync", the "Pending changes" list, and "Remote data" counts (books / AI models). While syncing, it shows an "Overall progress" percentage and bar; the percentage never goes backwards. The current stage appears under the bar: "Preparing local data" / "Downloading" / "Uploading" / "Applying" / "Merging" / "Saving sync state". The bottom of the panel has a "Sync" button; turning on "Force push local data to remote (replace remote)" changes it to "Force push to remote". The button is unavailable when Gist sync is disabled, a sync is running, or deleted items are being restored.
 
 - **Message history**: 🔔 opens previous notifications. Unread counts above 99 show `99+`. Filter by error/warning/success/info, delete one or all messages, and undo supported actions.
 
@@ -51,12 +51,13 @@ Open the sync panel for upload/download/details, last and next sync times, remot
 
 ### 2) Left rail (`AppSideMenu`) {#toolbar-guide-section-4}
 
-The narrow rail displays icons; hover or choose `☰` to expand.
+The narrow rail displays icons; choose `☰` to expand it into a full menu that also shows the "Navigation" group and the "Favorite books" list.
 
 Main navigation:
 
 - 🏠 **Home** — `/`
 - 📚 **Books** — `/books`
+- 📥 **AI import** — `/import`
 - ✨ **AI models** — `/ai`
 
 Bottom navigation:
@@ -66,13 +67,13 @@ Bottom navigation:
 
 ### 3) Right rail (`AppRightPanelDesktop`) {#toolbar-guide-section-5}
 
-A resizable panel with rail entries:
+When collapsed, the right side is an icon rail. Selecting an entry expands its panel (drag to resize); the panel's close button folds it back into the rail. Rail entries:
 
 - 💬 **Tsukuyomi**: chat sessions, messages, input, book/chapter/paragraph context, todos, and context usage.
 - 📊 **Translation progress**: translation/polishing/proofreading progress. A badge counts active tasks; a new task activates its panel and can be canceled there.
-- 🧬 **Vector index**, only in book details: chapter/memory counts, stale entries, batch rebuild, test query, pause/resume. Requires local embeddings; see [Local embeddings](/help/local-embedding).
+- ⚡ **Vector index**, only in book details when local embeddings are actually available: opens the "Local vector index" panel. See [Local embedding access](/help/toolbar-guide#toolbar-guide-section-10) below.
 
-> Selecting an entry activates that panel. Inactive panels do not mount their watchers.
+> Selecting an entry activates that panel. Inactive panels do not mount their watchers. On the AI import page (`/import`), the right side always shows the import assistant chat.
 
 ### 4) Footer (`AppFooter`) {#toolbar-guide-section-6}
 
@@ -91,59 +92,79 @@ See [Settings → About](/help/settings-guide).
 
 ## 📱 Tablet layout {#toolbar-guide-section-7}
 
-A compact system bar:
+A compact system bar plus a left navigation rail; the Books and book-details pages also have a vertical tool rail on the right:
 
 ```
 +--------------------------------------------------------+
 |  TabletSysBar: brand | version | AI | Sync | Notify    |
-+--------------------------------------------------------+
-|                                                        |
-|              Workspace (route content)                 |
-|                                                        |
-+--------------------------------------------------------+
++------+------------------------------------------+------+
+| Nav  |                                          | Side |
+| rail |        Workspace (route content)         | rail |
+|      |                                          |      |
++------+------------------------------------------+------+
 ```
 
 ### System bar {#toolbar-guide-section-8}
 
-- **Left**: brand and version.
-- **Right**: AI thinking, sync, and message history chips, with shorter labels and the same behavior as desktop.
+- **Left**: brand and current version.
+- **Right**: AI thinking, sync, and notification chips, with the same behavior as desktop in a more compact form: "AI thinking" when idle, "AI is thinking" during a task; the sync chip shows "Sync", "Syncing", "N changes", or "Synced".
 
 ### Navigation and right panel {#toolbar-guide-section-9}
 
-- The menu icon opens a Quasar drawer with Home, Books, AI, Settings, and Help.
-- Separate chat/progress controls open the right panel as needed. Behavior matches desktop without an icon rail.
+- **Left navigation rail** (`TabletNavRail`): the logo returns home; main entries are Home / Library / AI import / AI models, with Help / Settings pinned at the bottom.
+- **Right tool rail** (`TabletSideRail`, on Books and book details): list/contents toggle, Tsukuyomi, and Translation progress (with a task badge). Book details also shows the Vector index button when local embeddings are available.
+- Tsukuyomi and Translation progress slide in from the right as overlay panels; tap the mask to close. Behavior matches desktop.
 
 ### Local embedding access {#toolbar-guide-section-10}
 
-Tablet has no dedicated Vector index button. A physical mobile device disables embeddings by platform detection. A desktop browser resized to tablet width can enable them under Settings, but the batch drawer renders only in desktop layout.
+The Vector index button exists in all three layouts and appears only on **book details** (`/books/:id` and subroutes) when local embeddings are **actually available**:
+
+- Desktop: the right icon rail (⚡).
+- Tablet: the book-details right tool rail.
+- Mobile: the leftmost chip in the top system bar.
+
+It opens the "Local vector index" panel. The panel is mounted once in the main layout: a right drawer on desktop and tablet, a bottom sheet on mobile. It stays open across breakpoint changes and closes automatically when you switch to another book or local embeddings become unavailable. Panel contents:
+
+- Status: "Ready" / "Loading model" / "Could not load" / "Not ready" / "Disabled".
+- "Chapter vectors": "Embedded X / Y", pending count, and progress bar, with "Fill missing" and "Rebuild all".
+- "Memory vectors": the same progress display, with "Fill missing".
+- When old vectors are detected, an "Embedding space upgraded" banner offers "Rebuild now".
+- "Test vector search": search this book's chapters or memories in natural language.
+- The footer shows the model, backend, and queue status, with "Pause" / "Resume" for the embedding queue.
+
+Availability is decided by the **device user agent** (`isMobileDevice()`), not window width: phones, tablets, and other mobile devices always have it disabled; a desktop browser narrowed to tablet or phone width can still use it after turning it on under **Settings → Local embeddings**. See [Local embeddings](/help/local-embedding).
 
 ---
 
 ## 📲 Mobile layout {#toolbar-guide-section-11}
 
-A minimal system bar and full-width content:
+A minimal system bar, full-width content, and a bottom tab bar:
 
 ```
-+----------------------------------+
-|  MobileSysBar:                   |
-|  logo | AI | Sync | Help         |
-+----------------------------------+
-|                                  |
-|     Route content (full width)   |
-|                                  |
-+----------------------------------+
++----------------------------------------+
+|  MobileSysBar:                         |
+|  logo | Vectors | AI | Sync | 🔔 | Help |
++----------------------------------------+
+|                                        |
+|      Route content (full width)        |
+|                                        |
++----------------------------------------+
+|  MobileTabBar: Home | Library | Chat   |
+|                AI | Settings           |
++----------------------------------------+
 ```
 
 ### System bar {#toolbar-guide-section-12}
 
 - **Left**: logo, name, and version.
 - **Right**:
-  - AI thinking
-  - Sync
-  - Message history
+  - **Vector index** (⚡, only on book details when local embeddings are available; opens a bottom sheet)
+  - AI thinking ("AI is thinking" during a task)
+  - Sync ("Syncing", "N changes", or "Synced" when applicable)
+  - Notifications
   - **Help**, a mobile-specific chip opening `/help`
 
-> Mobile navigation uses Home shortcuts, drawers, and routes, without a left rail. Local embeddings and `query_chapter` are unavailable on mobile devices to avoid WASM memory failures.
+> The main mobile navigation is the bottom tab bar: Home / Library / Tsukuyomi / AI models / Settings. Tsukuyomi and Translation progress open as bottom sheets; there is no left rail. Local embeddings (including semantic search in `query_chapter`) are gated by the device user agent and disabled on phones and other mobile devices to avoid WASM memory failures; a desktop browser narrowed to phone width is not affected.
 
 ---
 
@@ -166,7 +187,7 @@ Sync configuration, manual sync, queue pause, and message clearing update the sy
 A: Removed in v0.12. AI uses `query_chapter` for source retrieval without pre-generated summaries.
 
 **Q: Where is Vector index?**
-A: It appears only on `/books/:id` and subroutes when local embeddings are enabled. See [Local embeddings](/help/local-embedding).
+A: It appears only on `/books/:id` and subroutes when local embeddings are actually available: in the desktop right rail, the tablet book-details tool rail, or the mobile top system bar. Enable it under **Settings → Local embeddings** first; it cannot be enabled on mobile devices. See [Local embeddings](/help/local-embedding).
 
 **Q: Why does Syncing stay visible?**
 A: Check the Gist configuration, network, and token permissions. Open message history for the error.

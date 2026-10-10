@@ -35,13 +35,14 @@ export default {
     resume: '恢复',
     mobileUnsupported: '移动设备不支持本地嵌入',
     mobileHint:
-      '模型过大、WebGPU 在移动浏览器上不稳定，本功能在移动端被强制禁用。请在桌面端开启并生成向量，手机端只读使用。',
+      '模型过大、WebGPU 在移动浏览器上不稳定，本功能在移动端被强制禁用。手机端检索使用关键词匹配和时间衰减评分；向量只保存在生成它的设备上，不会同步到手机。',
     notEnabled: '本地嵌入未启用',
     enableHint:
       '启用后可在本地下载嵌入模型（约 190 MiB），支持语义记忆检索与章节向量搜索。关闭状态下所有相关操作按钮均已隐藏。',
     openSettings: '前往设置开启',
     upgraded: 'Embedding 空间已升级',
-    staleHint: '检测到旧版向量：{items}。检索会自动降级，章节搜索暂不可用；重建后恢复语义召回。',
+    staleHint:
+      '检测到旧版向量：{items}。重建前只有关键词强命中的记忆能被注入或检索到，章节搜索暂不可用；重建后恢复语义召回。',
     staleChapters: '{count} 个章节',
     staleMemories: '{count} 条记忆',
     rebuildNow: '立即重建',
@@ -55,7 +56,8 @@ export default {
     queryIdleHint: '输入描述，再选择查询章节或记忆。',
     queryLoading: '正在检索{target}…',
     queryScore: '相关度',
-    queryHint: '回车默认执行章节查询；记忆查询仅匹配当前模型版本的条目。',
+    queryHint:
+      '回车默认执行章节查询；记忆查询按当前模型版本的向量匹配，尚无可用向量的记忆在关键词强命中时也会返回。',
     queryChapters: '查询章节',
     queryMemories: '查询记忆',
     queryResults: '{target}查询结果',

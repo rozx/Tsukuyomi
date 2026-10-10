@@ -63,7 +63,7 @@ export default {
       semanticNeedsEmbedding: 'Turn on “Local embeddings” above first',
       enable: 'Enable local embeddings',
       mobileHint:
-        'Local embeddings are not supported on mobile (the model is too large and WebGPU is unstable). Mobile search uses keyword matching only. Vectors are local to each device and are not synced; enabling them on desktop affects only that desktop’s semantic search.',
+        'Local embeddings are not supported on mobile (the model is too large and WebGPU is unstable). Mobile search uses keyword matching and time decay only. Vectors are local to each device and are not synced; enabling them on desktop affects only that desktop’s semantic search.',
       desktopHint:
         'When enabled, an embedding model is downloaded to the browser for semantic memory retrieval and chapter vector search. The first download is about 190 MiB. When off, keyword retrieval remains available and vector generation pauses.',
       modelTitle: 'Embedding model',
@@ -86,7 +86,8 @@ export default {
       chapterAuto:
         'Chapter embeddings run automatically in the background and are recomputed 60 seconds after paragraphs or translations change; there are no settings. To view, backfill, or rebuild progress, use the',
       vectorIndex: 'Vector index',
-      chapterAutoSuffix: 'popup at the top of the book details page.',
+      chapterAutoSuffix:
+        'panel on the book details page (in the side rail on desktop and tablet, or the top system bar on narrow screens).',
     },
     sites: {
       title: 'Site mappings',

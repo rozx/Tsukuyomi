@@ -13,6 +13,8 @@ defineProps<{
   statusText: string;
   running: boolean;
   paused: boolean;
+  /** 同步闸门挂起中：恢复按钮禁用，同步结束后自动继续 */
+  syncGated?: boolean;
 }>();
 
 defineEmits<{
@@ -67,6 +69,7 @@ defineEmits<{
         size="small"
         severity="success"
         icon="pi pi-play"
+        :disabled="syncGated"
         @click="$emit('resume')"
       />
     </div>

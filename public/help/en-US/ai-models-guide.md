@@ -12,14 +12,16 @@ The **AI model workbench** has three areas:
 
 - **Header**: search by name, provider, model ID, or default task; Add AI model; model counts below.
 - **Model list**: grouped by OpenAI or Google Gemini, with total and enabled counts. Cards support **Duplicate** (disabled initially), **Edit**, and **Delete** (confirmation required, with undo).
-- **Task routing**: defaults for translation, proofreading/polishing, terminology translation, and the assistant. These settings are included in import/export.
+- **Task routing**: defaults for translation, proofreading/polishing, terminology translation, and the assistant. "Select automatically" in the dropdown means no explicit choice. These settings are included in import/export.
+
+Task defaults also sync through Gist with the app settings. Each task's choice merges by its own modification time, so editing other settings does not override it. If the chosen model has not synced to this device yet or was deleted, the choice is kept. Meanwhile the desktop dropdown shows "Select automatically", while the tablet/mobile picker shows the fallback model actually used (the first enabled model that supports the task), or "Unset" if there is none. The choice comes back once the model arrives. The choice is cleared only when that model is disabled or no longer used for the task.
 
 ### Mobile {#ai-models-guide-section-4}
 
 - AI models title and Add button.
 - With no models, an introductory card explains the two steps: add a connection, then select default tasks.
 - **My models**: provider groups with total/enabled counts. Tap a model to edit.
-- **Task defaults**: tap a task to select from a bottom sheet. Choose **Not set** to leave it without a default.
+- **Task defaults**: tap a task to select from a bottom sheet. Choose **Unset** to leave it without a default. Choices also sync through Gist; while the chosen model has not synced to this device, the task temporarily shows the fallback model (or **Unset** if no model is available). See the desktop notes above.
 - The model dialog is a bottom sheet with the same fields as desktop.
 
 ---
@@ -95,7 +97,7 @@ These settings apply to both providers, including model listing, generation, and
 Each model controls its proxy independently:
 
 - **Use CORS proxy** is on by default and forwards public API requests through the configured proxy server.
-- Same-origin URLs, local services such as Ollama, and LAN addresses always connect directly, regardless of the switch.
+- Same-origin URLs, local services such as Ollama (`localhost`, `127.x.x.x`), and LAN addresses (such as `10.x.x.x`, `172.16–31.x.x`, `192.168.x.x`, `*.local`) always connect directly, even with "Use CORS proxy" on.
 - Turn it off for public self-hosted services with CORS configured or endpoints that do not need a proxy.
 - The switch applies only to Web. Electron always connects directly.
 

@@ -35,14 +35,14 @@ export default {
     resume: '恢復',
     mobileUnsupported: '行動裝置不支援本機嵌入',
     mobileHint:
-      '模型過大，且 WebGPU 在行動瀏覽器上不穩定，因此行動裝置停用此功能。請於桌面啟用並產生向量，手機僅供讀取。',
+      '模型過大，且 WebGPU 在行動瀏覽器上不穩定，因此行動裝置停用此功能。手機端檢索使用關鍵詞比對和時間衰減評分；向量只保存在產生它的裝置上，不會同步到手機。',
     notEnabled: '本機嵌入尚未啟用',
     enableHint:
       '啟用後可下載嵌入模型（約 190 MiB），支援語意記憶檢索及章節向量搜尋。停用時隱藏相關操作按鈕。',
     openSettings: '前往設定啟用',
     upgraded: 'Embedding 空間已升級',
     staleHint:
-      '偵測到舊版向量：{items}。檢索會自動降級，章節搜尋暫時無法使用；重建後恢復語意召回。',
+      '偵測到舊版向量：{items}。重建前只有關鍵詞強命中的記憶能被注入或檢索到，章節搜尋暫時無法使用；重建後恢復語意召回。',
     staleChapters: '{count} 個章節',
     staleMemories: '{count} 條記憶',
     rebuildNow: '立即重建',
@@ -56,7 +56,8 @@ export default {
     queryIdleHint: '輸入描述，再選擇查詢章節或記憶。',
     queryLoading: '正在檢索{target}…',
     queryScore: '相關度',
-    queryHint: 'Enter 預設執行章節查詢；記憶查詢僅比對目前模型版本的項目。',
+    queryHint:
+      'Enter 預設執行章節查詢；記憶查詢依目前模型版本的向量比對，尚無可用向量的記憶在關鍵詞強命中時也會傳回。',
     queryChapters: '查詢章節',
     queryMemories: '查詢記憶',
     queryResults: '{target}查詢結果',

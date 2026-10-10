@@ -76,17 +76,22 @@ export function syncMemoryEmbeddingCaches(
   memoryId: string,
   embeddings: number[][],
   embeddingModel: string,
+  expectedText?: { content: string; summary: string },
 ): void {
+  // 写库后、刷新缓存前记忆可能已被同步 / 编辑改写：只给内容仍一致的缓存条目挂上向量
+  const matches = (memory: Memory) =>
+    !expectedText ||
+    (memory.content === expectedText.content && memory.summary === expectedText.summary);
   const cacheKey = buildMemoryCacheKey(bookId, memoryId);
   const cachedSingle = memoryCache.get(cacheKey);
-  if (cachedSingle) {
+  if (cachedSingle && matches(cachedSingle)) {
     memoryCache.set(cacheKey, withMemoryEmbeddings(cachedSingle, embeddings, embeddingModel));
   }
 
   const cachedBook = bookMemoryCache.get(bookId);
   if (cachedBook) {
     const next = cachedBook.data.map((m) =>
-      m.id === memoryId ? withMemoryEmbeddings(m, embeddings, embeddingModel) : m,
+      m.id === memoryId && matches(m) ? withMemoryEmbeddings(m, embeddings, embeddingModel) : m,
     );
     bookMemoryCache.set(bookId, {
       data: next,

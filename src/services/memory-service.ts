@@ -216,6 +216,7 @@ export class MemoryService {
     memoryId: string,
     content: string,
     summary: string,
+    allowEmptyText = false,
   ): void {
     if (!bookId) {
       throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
@@ -223,6 +224,15 @@ export class MemoryService {
     if (!memoryId) {
       throw new LocalizedError('MEMORY_ID_REQUIRED', 'aiEntityFeedback.memoryIdRequired');
     }
+    // 同步 / 快照导入允许空正文 / 摘要（与 upsertMemoryForSync 一致），但仍须是字符串，
+    // 避免损坏的远端数据把 undefined / 对象写进字符串字段
+    if (typeof content !== 'string') {
+      throw new LocalizedError('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired');
+    }
+    if (typeof summary !== 'string') {
+      throw new LocalizedError('MEMORY_SUMMARY_REQUIRED', 'aiEntityFeedback.memorySummaryRequired');
+    }
+    if (allowEmptyText) return;
     if (!content) {
       throw new LocalizedError('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired');
     }
@@ -493,6 +503,13 @@ export class MemoryService {
     if (!memory.bookId) {
       throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
+    // 远端可能是空字符串，但必须是字符串：损坏数据不能写进字符串字段
+    if (typeof memory.content !== 'string') {
+      throw new LocalizedError('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired');
+    }
+    if (typeof memory.summary !== 'string') {
+      throw new LocalizedError('MEMORY_SUMMARY_REQUIRED', 'aiEntityFeedback.memorySummaryRequired');
+    }
     const { storage, embeddingDecision } = await withMemoryWrite(async (store) => {
       const existing = (await store.get(memory.id)) as MemoryStorage | undefined;
 
@@ -558,8 +575,9 @@ export class MemoryService {
     content: string,
     summary: string,
     timestamps?: { createdAt?: number; lastAccessedAt?: number; updatedAt?: number },
+    options?: { allowEmptyText?: boolean },
   ): Promise<Memory> {
-    this.assertMemoryFields(bookId, memoryId, content, summary);
+    this.assertMemoryFields(bookId, memoryId, content, summary, options?.allowEmptyText);
 
     try {
       const { existing, memory, evictedId } = await withMemoryWrite(async (store) => {
