@@ -1372,7 +1372,17 @@ export class SyncDataService {
       await aiModelService.saveModel(model);
     }
 
-    // 先删除过期模型再提交 store：删除失败时 store 仍保留该模型，重试同步会再次删除它
+    // 删除期间 store 同时登记已写入的新模型与待删除的旧模型：删除失败时外层回滚能看到新模型并清理，
+    // 重试同步也仍能找到旧模型再次删除；全部删除成功后再收窄为最终列表
+    const toStoreModel = (m: (typeof finalModels)[number]) => ({
+      ...m,
+      lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
+    });
+    aiModelsStore.models = [
+      ...finalModels.map(toStoreModel),
+      ...aiModelsStore.models.filter((m) => !finalModelIds.has(m.id)),
+    ];
+
     for (const staleId of staleModelIds) {
       try {
         await aiModelService.deleteModel(staleId);
@@ -1382,10 +1392,7 @@ export class SyncDataService {
       }
     }
 
-    aiModelsStore.models = finalModels.map((m) => ({
-      ...m,
-      lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
-    }));
+    aiModelsStore.models = finalModels.map(toStoreModel);
   }
 
   /**

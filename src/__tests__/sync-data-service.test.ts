@@ -1328,8 +1328,35 @@ describe('数据同步服务 (SyncDataService)', () => {
       ) as unknown as Promise<void>);
 
       await SyncDataService.applyDownloadedData(remote, lastSyncTime);
-      expect(mockDeleteModel).toHaveBeenCalledTimes(2);
+      // 第一次删除 m1 失败 → 回滚删除已写入的 m2 → 重试再次删除 m1
+      const deletedIds = mockDeleteModel.mock.calls.map((call) => call[0]);
+      expect(deletedIds.filter((id) => id === 'm1')).toHaveLength(2);
       expect(mockDeleteModel).toHaveBeenLastCalledWith('m1');
+    });
+
+    it('删除过期模型失败时回滚能清理删除前已写入的新模型', async () => {
+      const lastSyncTime = new Date('2024-01-02').getTime();
+      mockAIModelsStore.models = [
+        { id: 'm1', name: 'Old', lastEdited: new Date('2024-01-01').toISOString() },
+      ];
+      mockDeleteModel.mockRejectedValueOnce(new Error('transient'));
+
+      await (expect(
+        SyncDataService.applyDownloadedData(
+          {
+            aiModels: [
+              { id: 'm2', name: 'Remote', lastEdited: new Date('2024-01-03').toISOString() },
+            ],
+          },
+          lastSyncTime,
+        ),
+      ).rejects.toThrow('transient') as unknown as Promise<void>);
+
+      expect(mockSaveModel).toHaveBeenCalledWith(expect.objectContaining({ id: 'm2' }));
+      // 外层回滚从 store 枚举模型：新写入的 m2 必须可见，才能被删除
+      expect(mockDeleteModel).toHaveBeenCalledWith('m2');
+      const ids = (mockAIModelsStore.models as Array<{ id: string }>).map((m) => m.id);
+      expect(ids).toEqual(['m1']);
     });
 
     it('删除远程已删除的本地书籍失败时应向上抛出，阻止后续上传', async () => {

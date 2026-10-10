@@ -1,3 +1,4 @@
+import './setup';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Memory } from 'src/models/memory';
 import {
