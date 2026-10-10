@@ -258,7 +258,7 @@
     "file": "local-embedding.md",
     "path": "help/zh-CN",
     "category": "使用指南",
-    "description": "本地嵌入引擎完整说明：gte-multilingual-base 模型（CLS pooling）、WebGPU/WASM 后端、批量嵌入面板、长文分段嵌入、模型版本与 stale 重算、同步 sync gate、故障排查",
+    "description": "本地嵌入引擎完整说明：bekko-embedding-v1-a25m 模型（384 维 mean pooling）、Web Worker 推理与 WebGPU/WASM 后端、向量索引面板、长文分段嵌入、模型版本与 stale 重算、同步 sync gate、故障排查",
     "categoryId": "guides",
     "sectionAliases": {
       "本地嵌入local-embedding": "local-embedding-section-1",

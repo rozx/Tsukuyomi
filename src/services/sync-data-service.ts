@@ -1382,6 +1382,7 @@ export class SyncDataService {
         await aiModelService.deleteModel(staleId);
       } catch (e) {
         console.warn('[SyncDataService] 删除旧模型失败:', staleId, e);
+        throw e;
       }
     }
   }
@@ -1527,6 +1528,7 @@ export class SyncDataService {
         await booksStore.deleteBook(staleId);
       } catch (e) {
         console.warn('[SyncDataService] 删除旧书籍失败:', staleId, e);
+        throw e;
       }
     }
   }
@@ -2149,11 +2151,19 @@ export class SyncDataService {
   /** 导入/旧格式合并共用，保留内容时间和设备访问时间。 */
   private static async writeImportedMemory(memory: Memory, bookId = memory.bookId): Promise<void> {
     try {
-      await MemoryService.createMemoryWithId(bookId, memory.id, memory.content, memory.summary, {
-        createdAt: memory.createdAt,
-        lastAccessedAt: memory.lastAccessedAt,
-        updatedAt: memoryModifiedAt(memory),
-      });
+      // 远端记录可能含空摘要（同步 upsert 允许），导入时不能因字段校验让整轮同步失败
+      await MemoryService.createMemoryWithId(
+        bookId,
+        memory.id,
+        memory.content,
+        memory.summary,
+        {
+          createdAt: memory.createdAt,
+          lastAccessedAt: memory.lastAccessedAt,
+          updatedAt: memoryModifiedAt(memory),
+        },
+        { allowEmptyText: true },
+      );
     } catch (error) {
       // 与 persistMergedMemories 一致：写入失败必须中止本轮应用，避免随后上传丢失该记忆
       console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);

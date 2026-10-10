@@ -27,6 +27,7 @@ const mockBooksStore = {
   rollbackBooks: mock((books: unknown[]) => mockBooksStore.bulkAddBooks(books)),
   getBookById: mock(() => null),
   updateBook: mock(() => Promise.resolve()),
+  deleteBook: mock((_id: string) => Promise.resolve()),
 };
 
 const mockCoverHistoryStore = {
@@ -210,6 +211,7 @@ describe('数据同步服务 (SyncDataService)', () => {
     mockBooksStore.books = [];
     mockBooksStore.clearBooks.mockClear();
     mockBooksStore.bulkAddBooks.mockClear();
+    mockBooksStore.deleteBook.mockClear();
 
     mockCoverHistoryStore.covers = [];
     mockCoverHistoryStore.clearHistory.mockClear();
@@ -1292,6 +1294,45 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(mockDeleteModel).toHaveBeenCalledWith('m1');
     });
 
+    it('删除远程已删除的本地模型失败时应向上抛出，阻止后续上传', async () => {
+      const lastSyncTime = new Date('2024-01-02').getTime();
+      mockAIModelsStore.models = [
+        { id: 'm1', name: 'Old', lastEdited: new Date('2024-01-01').toISOString() },
+      ];
+      mockDeleteModel.mockRejectedValueOnce(new Error('model delete failed'));
+
+      await (expect(
+        SyncDataService.applyDownloadedData(
+          {
+            aiModels: [
+              { id: 'm2', name: 'Remote', lastEdited: new Date('2024-01-03').toISOString() },
+            ],
+          },
+          lastSyncTime,
+        ),
+      ).rejects.toThrow('model delete failed') as unknown as Promise<void>);
+    });
+
+    it('删除远程已删除的本地书籍失败时应向上抛出，阻止后续上传', async () => {
+      const lastSyncTime = new Date('2024-01-02').getTime();
+      mockBooksStore.books = [
+        { id: 'n1', title: 'Old', lastEdited: new Date('2024-01-01').toISOString() },
+      ] as unknown[];
+      mockBooksStore.deleteBook.mockRejectedValueOnce(new Error('book delete failed'));
+
+      await (expect(
+        SyncDataService.applyDownloadedData(
+          {
+            novels: [
+              { id: 'n2', title: 'Remote', lastEdited: new Date('2024-01-03').toISOString() },
+            ],
+          },
+          lastSyncTime,
+        ),
+      ).rejects.toThrow('book delete failed') as unknown as Promise<void>);
+      expect(mockBooksStore.deleteBook).toHaveBeenCalledWith('n1');
+    });
+
     it('自动同步时不应返回可恢复的项目', async () => {
       const lastSyncTime = new Date('2024-01-01').getTime();
       const deletionTime = new Date('2024-01-02').getTime(); // 删除时间晚于同步时间
@@ -1640,6 +1681,24 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalledWith([]);
     });
 
+    it('旧格式合并写入空摘要 Memory 时使用同步导入模式', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([]);
+
+      await SyncDataService.applyDownloadedData({
+        memories: [{ id: 'empty-sum', bookId: 'b1', content: 'c', summary: '', createdAt: 1000 }],
+      });
+
+      expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
+        'b1',
+        'empty-sum',
+        'c',
+        '',
+        expect.anything(),
+        { allowEmptyText: true },
+      );
+    });
+
     it('旧格式合并写入 Memory 失败时应向上抛出，阻止后续上传', async () => {
       mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
       mockMemoryService.getAllMemories.mockResolvedValueOnce([]);
@@ -1707,6 +1766,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         'c',
         's',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 1500 }),
+        { allowEmptyText: true },
       );
       // 第二次：本地更新，保留同一 ID（upsert）
       expect(mockMemoryService.createMemoryWithId).toHaveBeenCalledWith(
@@ -1715,6 +1775,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         'c',
         's',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
+        { allowEmptyText: true },
       );
 
       // 旧逻辑会调用 createMemory()（生成新 id），这会导致重复；现在不应再调用
@@ -1757,6 +1818,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         '角色A总是使用敬语',
         '角色A的语言风格',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
+        { allowEmptyText: true },
       );
     });
 
@@ -1795,6 +1857,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         '角色A总是使用敬语',
         '新摘要',
         expect.objectContaining({ createdAt: 1200, lastAccessedAt: 3000 }),
+        { allowEmptyText: true },
       );
       // 旧的本地 Memory 应被删除（不在最终列表中）
       expect(mockMemoryService.deleteMemory).toHaveBeenCalledWith('b1', 'local-1');
@@ -1839,6 +1902,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         '新内容',
         '新摘要',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: remoteTimestamp }),
+        { allowEmptyText: true },
       );
     });
 
@@ -1902,6 +1966,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         '远程更新的记忆',
         '摘要',
         expect.objectContaining({ createdAt: 800, lastAccessedAt: 2000 }),
+        { allowEmptyText: true },
       );
 
       // 应从删除记录中移除
@@ -2000,6 +2065,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         expect.any(String),
         expect.any(String),
         expect.any(Object),
+        { allowEmptyText: true },
       );
 
       // mem-2 不在远程且 lastAccessedAt <= syncTime → 应被删除
@@ -2076,6 +2142,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         '本地记忆',
         '摘要',
         expect.objectContaining({ createdAt: 1000, lastAccessedAt: 2000 }),
+        { allowEmptyText: true },
       );
     });
 
@@ -3479,6 +3546,7 @@ describe('数据同步服务 (SyncDataService)', () => {
         'c',
         's',
         expect.objectContaining({ createdAt: 1, lastAccessedAt: 1 }),
+        { allowEmptyText: true },
       );
     });
 

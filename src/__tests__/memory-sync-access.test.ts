@@ -10,6 +10,32 @@ async function syncedMemories() {
   return normalizeMemoriesForSync({ book: await MemoryService.getAllMemories('book') }).book;
 }
 
+describe('同步导入接受空摘要记忆', () => {
+  beforeEach(() => {
+    spyOn(EmbeddingQueue, 'enqueue').mockImplementation(() => undefined);
+  });
+  afterEach(() => mock.restore());
+
+  it('普通创建仍拒绝空摘要', async () => {
+    await (expect(
+      MemoryService.createMemoryWithId('book-empty', 'strict', '内容', ''),
+    ).rejects.toThrow() as unknown as Promise<void>);
+  });
+
+  it('同步导入模式写入空摘要记忆而不抛错', async () => {
+    await MemoryService.createMemoryWithId(
+      'book-empty',
+      'legacy',
+      '旧版内容',
+      '',
+      { createdAt: 50, updatedAt: 50 },
+      { allowEmptyText: true },
+    );
+    const stored = await MemoryService.getAllMemories('book-empty');
+    expect(stored.map((m) => [m.id, m.summary, m.content])).toEqual([['legacy', '', '旧版内容']]);
+  });
+});
+
 describe('Memory 访问与同步内容分离', () => {
   beforeEach(() => {
     spyOn(EmbeddingQueue, 'enqueue').mockImplementation(() => undefined);

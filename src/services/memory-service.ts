@@ -216,6 +216,7 @@ export class MemoryService {
     memoryId: string,
     content: string,
     summary: string,
+    allowEmptyText = false,
   ): void {
     if (!bookId) {
       throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
@@ -223,6 +224,8 @@ export class MemoryService {
     if (!memoryId) {
       throw new LocalizedError('MEMORY_ID_REQUIRED', 'aiEntityFeedback.memoryIdRequired');
     }
+    // 同步 / 快照导入需原样接受远端记录（与 upsertMemoryForSync 一致），不校验正文与摘要
+    if (allowEmptyText) return;
     if (!content) {
       throw new LocalizedError('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired');
     }
@@ -558,8 +561,9 @@ export class MemoryService {
     content: string,
     summary: string,
     timestamps?: { createdAt?: number; lastAccessedAt?: number; updatedAt?: number },
+    options?: { allowEmptyText?: boolean },
   ): Promise<Memory> {
-    this.assertMemoryFields(bookId, memoryId, content, summary);
+    this.assertMemoryFields(bookId, memoryId, content, summary, options?.allowEmptyText);
 
     try {
       const { existing, memory, evictedId } = await withMemoryWrite(async (store) => {
