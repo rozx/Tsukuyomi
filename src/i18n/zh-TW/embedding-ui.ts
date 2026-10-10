@@ -56,7 +56,8 @@ export default {
     queryIdleHint: '輸入描述，再選擇查詢章節或記憶。',
     queryLoading: '正在檢索{target}…',
     queryScore: '相關度',
-    queryHint: 'Enter 預設執行章節查詢；記憶查詢僅比對目前模型版本的項目。',
+    queryHint:
+      'Enter 預設執行章節查詢；記憶查詢依目前模型版本的向量比對，尚無可用向量的記憶在關鍵詞強命中時也會傳回。',
     queryChapters: '查詢章節',
     queryMemories: '查詢記憶',
     queryResults: '{target}查詢結果',

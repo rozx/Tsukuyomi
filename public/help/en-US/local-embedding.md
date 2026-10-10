@@ -108,7 +108,7 @@ When stale (version-mismatched) vectors exist, an "Embedding space upgraded" ban
 - **"Test vector search"**: opens the query dialog (see below).
 - **"Pause" / "Resume"**: appear in the bottom status block only while the queue is running or paused, to suspend or continue it manually.
 
-**Test vector search dialog**: the intro reads "Describe a scene, character relationship, or keyword to search this book’s chapters and memories." Enter a query, then click "Query chapters" or "Query memories" (Enter runs a chapter query; memory queries match only items with the current model version).
+**Test vector search dialog**: the intro reads "Describe a scene, character relationship, or keyword to search this book’s chapters and memories." Enter a query, then click "Query chapters" or "Query memories" (Enter runs a chapter query; memory queries match current-model vectors, and memories without a usable vector can also appear on a strong keyword match).
 
 - Before a search, the dialog shows a "Find scenes and memories" prompt.
 - While a search runs, a loading state appears.
@@ -147,6 +147,7 @@ Cloud sync and revision restoration temporarily suspend the queue through a **de
 
 - Either `isSyncing` or `isRestoringSyncSnapshot` closes the gate.
 - Reopening resumes **only** work suspended by the gate, preserving a manual "Pause".
+- A batch still running inference when the gate closes is not written: memory and chapter work goes back to the queue and is recomputed from the synced content once the gate opens.
 - This avoids vector writes racing `overwriteFromSnapshot` or indexing partially restored data.
 
 In the UI: the panel has no dedicated sync message. During sync the queue is paused, so the bottom status block shows "Resume", but the button is disabled so vectors are not written mid-sync. When sync finishes, the queue continues automatically without a click; if you clicked "Pause" during sync, the queue stays paused afterwards.

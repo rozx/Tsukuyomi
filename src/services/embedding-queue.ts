@@ -510,10 +510,17 @@ export class EmbeddingQueue {
     const serviceRevision = this.serviceRevision;
     try {
       if (head.kind === 'memory') {
-        await this.processMemoryBatch(
+        const persisted = await this.processMemoryBatch(
           batchItems.map((item) => item.id),
           serviceRevision,
         );
+        if (!persisted) {
+          // 推理期间同步 / 恢复闸门生效：丢弃旧内容算出的向量，闸门释放后按新内容重算
+          this.requeueFront(batchItems);
+          this.currentTask = null;
+          this.emitProgress();
+          return;
+        }
       } else {
         if (!(await this.processChapter(batchItems[0]!))) return;
       }
@@ -521,10 +528,7 @@ export class EmbeddingQueue {
       console.warn('[EmbeddingQueue] 批处理失败,继续下一批:', error);
       this.dispatch('error', { error, batchItems });
       if (!EmbeddingService.isReady() || this.serviceRevision !== serviceRevision) {
-        for (const item of [...batchItems].reverse()) {
-          if (!this.pending.some((pending) => pending.kind === item.kind && pending.id === item.id))
-            this.pending.unshift(item);
-        }
+        this.requeueFront(batchItems);
         this.currentTask = null;
         this.emitProgress();
         return;
@@ -597,10 +601,21 @@ export class EmbeddingQueue {
     }
   }
 
+  /** 把未完成的批次按原顺序放回队首（跳过已在队列中的条目） */
+  private static requeueFront(items: QueueItem[]): void {
+    for (const item of [...items].reverse()) {
+      if (!this.pending.some((pending) => pending.kind === item.kind && pending.id === item.id))
+        this.pending.unshift(item);
+    }
+  }
+
   /**
-   * 处理一批 memory id
+   * 处理一批 memory id。返回 false 表示推理期间同步闸门生效，本批未写入、需重新入队。
    */
-  private static async processMemoryBatch(ids: string[], serviceRevision: number): Promise<void> {
+  private static async processMemoryBatch(
+    ids: string[],
+    serviceRevision: number,
+  ): Promise<boolean> {
     const memories: Array<{ id: string; segments: string[] } | null> = await Promise.all(
       ids.map(async (id) => {
         try {
@@ -620,7 +635,7 @@ export class EmbeddingQueue {
     );
     if (valid.length === 0) {
       this.completed.memory += ids.length;
-      return;
+      return true;
     }
 
     const segmentJobs = valid.flatMap((memory) =>
@@ -644,6 +659,9 @@ export class EmbeddingQueue {
       });
     }
 
+    // 同步 / 快照恢复可能已改写这些记忆；此时写入会把旧内容的向量覆盖到新记录上
+    if (this.syncGateActive) return false;
+
     await Promise.all(
       valid.map(async (entry) => {
         const embeddings = vectorsByMemory.get(entry.id);
@@ -665,6 +683,7 @@ export class EmbeddingQueue {
     );
 
     this.completed.memory += ids.length;
+    return true;
   }
 
   /**

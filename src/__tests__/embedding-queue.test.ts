@@ -859,6 +859,40 @@ describe('EmbeddingQueue - applySyncGate', () => {
     expect(EmbeddingQueue.isPaused()).toBe(true);
   });
 
+  test('推理中途 gate 生效时不写入记忆向量，批次重新入队并在 gate 释放后重算', async () => {
+    spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockImplementation(async (id: string) =>
+      makeMemory(id),
+    );
+    const updateSpy = spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockResolvedValue(
+      undefined,
+    );
+    let releaseInference: (() => void) | undefined;
+    const inferenceStarted = new Promise<void>((started) => {
+      spyOn(EmbeddingService, 'embedBatch').mockImplementationOnce(async (texts: string[]) => {
+        started();
+        await new Promise<void>((resolve) => (releaseInference = resolve));
+        return texts.map(() => new Float32Array([0.1]));
+      });
+    });
+
+    EmbeddingQueue.enqueue('m-inflight');
+    await inferenceStarted;
+
+    EmbeddingQueue.applySyncGate(true);
+    releaseInference!();
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(EmbeddingQueue.getProgress().pending).toBe(1);
+
+    spyOn(EmbeddingService, 'embedBatch').mockImplementation(async (texts: string[]) =>
+      texts.map(() => new Float32Array([0.2])),
+    );
+    EmbeddingQueue.applySyncGate(false);
+    await waitForIdle();
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+  });
+
   test('gate 挂起期间手动 resume 不能绕过 gate', () => {
     EmbeddingQueue.applySyncGate(true);
     expect(EmbeddingQueue.getProgress().syncGated).toBe(true);

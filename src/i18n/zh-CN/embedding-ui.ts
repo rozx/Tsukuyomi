@@ -56,7 +56,8 @@ export default {
     queryIdleHint: '输入描述，再选择查询章节或记忆。',
     queryLoading: '正在检索{target}…',
     queryScore: '相关度',
-    queryHint: '回车默认执行章节查询；记忆查询仅匹配当前模型版本的条目。',
+    queryHint:
+      '回车默认执行章节查询；记忆查询按当前模型版本的向量匹配，尚无可用向量的记忆在关键词强命中时也会返回。',
     queryChapters: '查询章节',
     queryMemories: '查询记忆',
     queryResults: '{target}查询结果',

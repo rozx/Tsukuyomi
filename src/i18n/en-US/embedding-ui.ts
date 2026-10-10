@@ -58,7 +58,7 @@ export default {
     queryLoading: 'Searching {target}…',
     queryScore: 'Relevance',
     queryHint:
-      'Enter runs a chapter query. Memory queries match only items with the current model version.',
+      'Enter runs a chapter query. Memory queries match current-model vectors; memories without a usable vector can also appear on a strong keyword match.',
     queryChapters: 'Query chapters',
     queryMemories: 'Query memories',
     queryResults: '{target} query results',
