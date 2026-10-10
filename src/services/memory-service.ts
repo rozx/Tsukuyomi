@@ -503,6 +503,13 @@ export class MemoryService {
     if (!memory.bookId) {
       throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
     }
+    // 远端可能是空字符串，但必须是字符串：损坏数据不能写进字符串字段
+    if (typeof memory.content !== 'string') {
+      throw new LocalizedError('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired');
+    }
+    if (typeof memory.summary !== 'string') {
+      throw new LocalizedError('MEMORY_SUMMARY_REQUIRED', 'aiEntityFeedback.memorySummaryRequired');
+    }
     const { storage, embeddingDecision } = await withMemoryWrite(async (store) => {
       const existing = (await store.get(memory.id)) as MemoryStorage | undefined;
 

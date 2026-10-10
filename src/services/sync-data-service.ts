@@ -1372,11 +1372,7 @@ export class SyncDataService {
       await aiModelService.saveModel(model);
     }
 
-    aiModelsStore.models = finalModels.map((m) => ({
-      ...m,
-      lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
-    }));
-
+    // 先删除过期模型再提交 store：删除失败时 store 仍保留该模型，重试同步会再次删除它
     for (const staleId of staleModelIds) {
       try {
         await aiModelService.deleteModel(staleId);
@@ -1385,6 +1381,11 @@ export class SyncDataService {
         throw e;
       }
     }
+
+    aiModelsStore.models = finalModels.map((m) => ({
+      ...m,
+      lastEdited: m.lastEdited ? new Date(m.lastEdited) : new Date(0),
+    }));
   }
 
   /**

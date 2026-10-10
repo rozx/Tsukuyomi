@@ -1313,6 +1313,25 @@ describe('数据同步服务 (SyncDataService)', () => {
       ).rejects.toThrow('model delete failed') as unknown as Promise<void>);
     });
 
+    it('删除过期模型失败后重试同步时仍会再次删除该模型', async () => {
+      const lastSyncTime = new Date('2024-01-02').getTime();
+      mockAIModelsStore.models = [
+        { id: 'm1', name: 'Old', lastEdited: new Date('2024-01-01').toISOString() },
+      ];
+      const remote = {
+        aiModels: [{ id: 'm2', name: 'Remote', lastEdited: new Date('2024-01-03').toISOString() }],
+      };
+      mockDeleteModel.mockRejectedValueOnce(new Error('transient'));
+
+      await (expect(SyncDataService.applyDownloadedData(remote, lastSyncTime)).rejects.toThrow(
+        'transient',
+      ) as unknown as Promise<void>);
+
+      await SyncDataService.applyDownloadedData(remote, lastSyncTime);
+      expect(mockDeleteModel).toHaveBeenCalledTimes(2);
+      expect(mockDeleteModel).toHaveBeenLastCalledWith('m1');
+    });
+
     it('删除远程已删除的本地书籍失败时应向上抛出，阻止后续上传', async () => {
       const lastSyncTime = new Date('2024-01-02').getTime();
       mockBooksStore.books = [

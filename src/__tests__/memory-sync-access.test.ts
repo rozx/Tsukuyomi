@@ -68,6 +68,39 @@ describe('同步导入仍校验正文与摘要类型', () => {
   });
 });
 
+describe('v6 记忆同步校验文本类型', () => {
+  beforeEach(() => {
+    spyOn(EmbeddingQueue, 'enqueue').mockImplementation(() => undefined);
+  });
+  afterEach(() => mock.restore());
+
+  it('同步 upsert 拒绝非字符串正文，不写入损坏记录', async () => {
+    await (expect(
+      MemoryService.upsertMemoryForSync({
+        id: 'bad-v6',
+        bookId: 'book-v6',
+        content: undefined as unknown as string,
+        summary: '摘要',
+        createdAt: 1,
+        lastAccessedAt: 1,
+      }),
+    ).rejects.toThrow() as unknown as Promise<void>);
+    expect(await MemoryService.getAllMemories('book-v6')).toEqual([]);
+  });
+
+  it('同步 upsert 接受空字符串摘要', async () => {
+    await MemoryService.upsertMemoryForSync({
+      id: 'empty-v6',
+      bookId: 'book-v6b',
+      content: '正文',
+      summary: '',
+      createdAt: 1,
+      lastAccessedAt: 1,
+    });
+    expect((await MemoryService.getAllMemories('book-v6b'))[0]?.summary).toBe('');
+  });
+});
+
 describe('向量写入校验记忆内容未变', () => {
   beforeEach(() => {
     spyOn(EmbeddingQueue, 'enqueue').mockImplementation(() => undefined);
