@@ -139,20 +139,29 @@ export async function updateMemoryEmbeddingInDB(
   memoryId: string,
   embeddings: number[][],
   embeddingModel: string,
-): Promise<void> {
+  expectedText?: { content: string; summary: string },
+): Promise<boolean> {
   if (!memoryId) throw new Error('Memory ID 不能为空');
   if (!embeddings.length || embeddings.some((item) => item.length === 0)) {
     throw new Error('embeddings 不能为空');
   }
   if (!embeddingModel) throw new Error('embeddingModel 不能为空');
 
-  await withMemoryWrite(async (store) => {
+  return withMemoryWrite(async (store) => {
     const existing = await store.get(memoryId);
-    if (!existing) return;
+    if (!existing) return false;
+    // 与读取→写入在同一事务内比对：推理期间正文 / 摘要被同步或用户改写时，旧向量不能落盘
+    if (
+      expectedText &&
+      (existing.content !== expectedText.content || existing.summary !== expectedText.summary)
+    ) {
+      return false;
+    }
     const { embedding: _legacyEmbedding, ...cleanExisting } = existing as MemoryStorage & {
       embedding?: number[];
     };
     await store.put({ ...cleanExisting, embeddings, embeddingModel });
+    return true;
   });
 }
 

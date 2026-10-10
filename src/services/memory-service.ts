@@ -224,7 +224,14 @@ export class MemoryService {
     if (!memoryId) {
       throw new LocalizedError('MEMORY_ID_REQUIRED', 'aiEntityFeedback.memoryIdRequired');
     }
-    // 同步 / 快照导入需原样接受远端记录（与 upsertMemoryForSync 一致），不校验正文与摘要
+    // 同步 / 快照导入允许空正文 / 摘要（与 upsertMemoryForSync 一致），但仍须是字符串，
+    // 避免损坏的远端数据把 undefined / 对象写进字符串字段
+    if (typeof content !== 'string') {
+      throw new LocalizedError('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired');
+    }
+    if (typeof summary !== 'string') {
+      throw new LocalizedError('MEMORY_SUMMARY_REQUIRED', 'aiEntityFeedback.memorySummaryRequired');
+    }
     if (allowEmptyText) return;
     if (!content) {
       throw new LocalizedError('MEMORY_CONTENT_REQUIRED', 'aiEntityFeedback.memoryContentRequired');

@@ -112,6 +112,13 @@ function buildMemorySegments(memory: Memory): string[] {
   return [summary, ...contentSegments.filter((segment) => segment !== summary)];
 }
 
+/** 一条待嵌入记忆：分段文本 + 计算向量时的正文 / 摘要（写入时用于比对内容是否已变） */
+interface MemoryBatchEntry {
+  id: string;
+  segments: string[];
+  text: { content: string; summary: string };
+}
+
 export class EmbeddingQueue {
   private static pending: QueueItem[] = [];
   private static processing = false;
@@ -617,23 +624,21 @@ export class EmbeddingQueue {
     ids: string[],
     serviceRevision: number,
   ): Promise<string[]> {
-    const memories: Array<{ id: string; segments: string[] } | null> = await Promise.all(
+    const memories: Array<MemoryBatchEntry | null> = await Promise.all(
       ids.map(async (id) => {
         try {
           const mem = await getMemoryByIdFromDB(id);
           if (!mem) return null;
           const segments = buildMemorySegments(mem);
           if (segments.length === 0) return null;
-          return { id, segments };
+          return { id, segments, text: { content: mem.content, summary: mem.summary } };
         } catch {
           return null;
         }
       }),
     );
 
-    const valid = memories.filter(
-      (memory): memory is { id: string; segments: string[] } => memory !== null,
-    );
+    const valid = memories.filter((memory): memory is MemoryBatchEntry => memory !== null);
     if (valid.length === 0) {
       this.completed.memory += ids.length;
       return [];
@@ -660,13 +665,13 @@ export class EmbeddingQueue {
       });
     }
 
-    // 逐条写入，每次写入前复核闸门：同步 / 快照恢复可能已改写这些记忆，
-    // 此时写入会把旧内容的向量覆盖到新记录上。已写入的条目在闸门生效前完成，保留即可。
+    // 逐条写入：闸门生效后不再写入；每条写入还在 IDB 事务内比对正文 / 摘要，
+    // 推理期间被同步、快照恢复或用户改写的记忆不会落下旧内容的向量，改为重新入队。
+    const unpersisted: string[] = [];
     for (let index = 0; index < valid.length; index++) {
       if (this.syncGateActive) {
-        const remaining = valid.slice(index).map((entry) => entry.id);
-        this.completed.memory += ids.length - remaining.length;
-        return remaining;
+        unpersisted.push(...valid.slice(index).map((entry) => entry.id));
+        break;
       }
       const entry = valid[index]!;
       const embeddings = vectorsByMemory.get(entry.id);
@@ -675,7 +680,16 @@ export class EmbeddingQueue {
         // 写 IDB（leaf）+ 同步进程内缓存 + 派发 'embedding-updated' 事件。
         // 全部走叶子模块（memory-embedding-lookup / memory-cache），避免 EmbeddingQueue
         // 反向 import MemoryService 形成循环依赖。
-        await updateMemoryEmbeddingInDB(entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
+        const written = await updateMemoryEmbeddingInDB(
+          entry.id,
+          embeddings,
+          MEMORY_EMBEDDING_VERSION,
+          entry.text,
+        );
+        if (!written) {
+          unpersisted.push(entry.id);
+          continue;
+        }
         const bookId = await lookupMemoryBookId(entry.id);
         if (bookId) {
           syncMemoryEmbeddingCaches(bookId, entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
@@ -686,8 +700,8 @@ export class EmbeddingQueue {
       }
     }
 
-    this.completed.memory += ids.length;
-    return [];
+    this.completed.memory += ids.length - unpersisted.length;
+    return unpersisted;
   }
 
   /**
