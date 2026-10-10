@@ -149,7 +149,7 @@ Cloud sync and revision restoration temporarily suspend the queue through a **de
 - Reopening resumes **only** work suspended by the gate, preserving a manual "Pause".
 - This avoids vector writes racing `overwriteFromSnapshot` or indexing partially restored data.
 
-In the UI: the panel has no dedicated sync message. During sync the queue is paused, so the bottom status block shows "Resume". When sync finishes, the queue continues automatically without a click.
+In the UI: the panel has no dedicated sync message. During sync the queue is paused, so the bottom status block shows "Resume", but the button is disabled so vectors are not written mid-sync. When sync finishes, the queue continues automatically without a click; if you clicked "Pause" during sync, the queue stays paused afterwards.
 
 ---
 

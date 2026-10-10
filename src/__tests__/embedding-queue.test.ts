@@ -859,6 +859,28 @@ describe('EmbeddingQueue - applySyncGate', () => {
     expect(EmbeddingQueue.isPaused()).toBe(true);
   });
 
+  test('gate 挂起期间手动 resume 不能绕过 gate', () => {
+    EmbeddingQueue.applySyncGate(true);
+    expect(EmbeddingQueue.getProgress().syncGated).toBe(true);
+
+    EmbeddingQueue.resume();
+    expect(EmbeddingQueue.isPaused()).toBe(true);
+    expect(EmbeddingQueue.getProgress().syncGated).toBe(true);
+
+    EmbeddingQueue.applySyncGate(false);
+    expect(EmbeddingQueue.isPaused()).toBe(false);
+    expect(EmbeddingQueue.getProgress().syncGated).toBe(false);
+  });
+
+  test('gate 挂起期间手动 pause 在 gate 释放后保留', () => {
+    EmbeddingQueue.applySyncGate(true);
+    EmbeddingQueue.pause();
+
+    EmbeddingQueue.applySyncGate(false);
+    expect(EmbeddingQueue.isPaused()).toBe(true);
+    expect(EmbeddingQueue.getProgress().syncGated).toBe(false);
+  });
+
   test('gate 重复释放幂等', () => {
     EmbeddingQueue.applySyncGate(true);
     expect(EmbeddingQueue.isPaused()).toBe(true);

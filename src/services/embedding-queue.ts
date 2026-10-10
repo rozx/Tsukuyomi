@@ -87,6 +87,8 @@ export interface EmbeddingQueueProgress {
   etaMs: number | null;
   running: boolean;
   paused: boolean;
+  /** 同步 / 恢复闸门正在挂起队列，此时手动恢复无效 */
+  syncGated: boolean;
   breakdown: {
     memory: EmbeddingQueueBreakdown;
     chapter: EmbeddingQueueBreakdown;
@@ -335,13 +337,20 @@ export class EmbeddingQueue {
   // 暂停 / 恢复
   // ==========================================================================
   static pause(): void {
+    if (this.syncGatePaused) {
+      // 闸门期间用户主动暂停：转为用户暂停，闸门释放时不再自动恢复
+      this.syncGatePaused = false;
+      this.emitProgress();
+      return;
+    }
     if (this.paused) return;
     this.paused = true;
     this.emitProgress();
   }
 
   static resume(): void {
-    if (!this.paused) return;
+    // 同步 / 恢复期间不能绕过闸门写 IndexedDB；闸门释放时会自动恢复
+    if (!this.paused || this.syncGatePaused) return;
     this.paused = false;
     this.emitProgress();
     this.scheduleRun();
@@ -420,6 +429,7 @@ export class EmbeddingQueue {
       etaMs: this.estimateEtaMs(),
       running: this.processing,
       paused: this.paused,
+      syncGated: this.syncGatePaused,
       breakdown,
       currentTask: this.currentTask,
     };
