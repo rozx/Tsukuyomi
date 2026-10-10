@@ -42,7 +42,7 @@ export default {
     openSettings: 'Enable in settings',
     upgraded: 'Embedding space upgraded',
     staleHint:
-      'Outdated embeddings were found for {items}. Search falls back while chapter search is unavailable. Rebuild to restore semantic retrieval.',
+      'Outdated embeddings were found for {items}. Until rebuilt, those memories are rarely injected or found, and chapter search is unavailable. Rebuild to restore semantic retrieval.',
     staleChapters: '{count} chapter | {count} chapters',
     staleMemories: '{count} memory | {count} memories',
     rebuildNow: 'Rebuild now',

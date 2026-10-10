@@ -41,7 +41,8 @@ export default {
       '启用后可在本地下载嵌入模型（约 190 MiB），支持语义记忆检索与章节向量搜索。关闭状态下所有相关操作按钮均已隐藏。',
     openSettings: '前往设置开启',
     upgraded: 'Embedding 空间已升级',
-    staleHint: '检测到旧版向量：{items}。检索会自动降级，章节搜索暂不可用；重建后恢复语义召回。',
+    staleHint:
+      '检测到旧版向量：{items}。重建前这些记忆基本不会被注入或检索到，章节搜索暂不可用；重建后恢复语义召回。',
     staleChapters: '{count} 个章节',
     staleMemories: '{count} 条记忆',
     rebuildNow: '立即重建',

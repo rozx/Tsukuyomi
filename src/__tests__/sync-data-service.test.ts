@@ -1640,6 +1640,38 @@ describe('数据同步服务 (SyncDataService)', () => {
       expect(mockCoverHistoryStore.replaceHistory).toHaveBeenCalledWith([]);
     });
 
+    it('旧格式合并写入 Memory 失败时应向上抛出，阻止后续上传', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([]);
+      mockMemoryService.createMemoryWithId.mockRejectedValueOnce(new Error('QuotaExceededError'));
+
+      await (expect(
+        SyncDataService.applyDownloadedData({
+          memories: [{ id: 'abcd1234', bookId: 'b1', content: 'c', summary: 's', createdAt: 1000 }],
+        }),
+      ).rejects.toThrow('QuotaExceededError') as unknown as Promise<void>);
+    });
+
+    it('旧格式合并删除过期 Memory 失败时应向上抛出', async () => {
+      mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];
+      mockSettingsStore.gistSync.lastSyncTime = 5000;
+      mockMemoryService.getAllMemories.mockResolvedValueOnce([
+        { id: 'stale-1', bookId: 'b1', content: 'old', summary: 's', createdAt: 1000 },
+      ]);
+      mockMemoryService.deleteMemory.mockRejectedValueOnce(new Error('delete failed'));
+
+      await (expect(
+        SyncDataService.applyDownloadedData(
+          {
+            memories: [
+              { id: 'keep-1', bookId: 'b1', content: 'kept', summary: 's', createdAt: 1000 },
+            ],
+          },
+          5000,
+        ),
+      ).rejects.toThrow('delete failed') as unknown as Promise<void>);
+    });
+
     it('同步 Memory 时不应因为生成新 ID 而重复创建（应保留远程 memory.id）', async () => {
       // 本地已有书籍（同步 Memory 合并逻辑依赖 booksStore.books）
       mockBooksStore.books = [{ id: 'b1', title: 'Local Book' }] as unknown[];

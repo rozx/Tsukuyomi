@@ -1855,6 +1855,7 @@ export class SyncDataService {
         await MemoryService.deleteMemory(bookId, staleId);
       } catch (error) {
         console.warn(`[SyncDataService] 删除旧 Memory ${staleId} 失败:`, error);
+        throw error;
       }
     }
   }
@@ -2154,7 +2155,9 @@ export class SyncDataService {
         updatedAt: memoryModifiedAt(memory),
       });
     } catch (error) {
+      // 与 persistMergedMemories 一致：写入失败必须中止本轮应用，避免随后上传丢失该记忆
       console.warn(`[SyncDataService] 写入 Memory ${memory.id} 失败:`, error);
+      throw error;
     }
   }
 
