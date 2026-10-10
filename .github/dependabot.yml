@@ -1,0 +1,9 @@
+# 项目由 Bun 管理（bun.lock），默认的 npm_and_yarn 生态无法更新 bun.lock，安全更新会失败。
+# open-pull-requests-limit: 0 关闭定期版本更新 PR，只保留安全更新。
+version: 2
+updates:
+  - package-ecosystem: 'bun'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+    open-pull-requests-limit: 0
