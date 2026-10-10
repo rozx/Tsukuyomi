@@ -893,6 +893,39 @@ describe('EmbeddingQueue - applySyncGate', () => {
     expect(updateSpy).toHaveBeenCalledTimes(1);
   });
 
+  test('持久化阶段 gate 生效时停止写入剩余记忆，并把未写入的条目重新入队', async () => {
+    spyOn(memoryEmbeddingLookup, 'getMemoryByIdFromDB').mockImplementation(async (id: string) =>
+      makeMemory(id),
+    );
+    spyOn(EmbeddingService, 'embedBatch').mockImplementation(async (texts: string[]) =>
+      texts.map(() => new Float32Array([0.1])),
+    );
+    const written: string[] = [];
+    const updateSpy = spyOn(memoryEmbeddingLookup, 'updateMemoryEmbeddingInDB').mockImplementation(
+      async (id: string) => {
+        written.push(id);
+        // 第一条写入期间同步开始
+        if (written.length === 1) EmbeddingQueue.applySyncGate(true);
+      },
+    );
+
+    EmbeddingQueue.applySyncGate(true);
+    EmbeddingQueue.enqueue('w1', 'book-1');
+    EmbeddingQueue.enqueue('w2', 'book-1');
+    EmbeddingQueue.applySyncGate(false);
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(written).toEqual(['w1']);
+    expect(EmbeddingQueue.getProgress().pending).toBe(1);
+
+    updateSpy.mockImplementation(async (id: string) => {
+      written.push(id);
+    });
+    EmbeddingQueue.applySyncGate(false);
+    await waitForIdle();
+    expect(written).toEqual(['w1', 'w2']);
+  });
+
   test('gate 挂起期间手动 resume 不能绕过 gate', () => {
     EmbeddingQueue.applySyncGate(true);
     expect(EmbeddingQueue.getProgress().syncGated).toBe(true);

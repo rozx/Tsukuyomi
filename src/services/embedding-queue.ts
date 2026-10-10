@@ -510,13 +510,14 @@ export class EmbeddingQueue {
     const serviceRevision = this.serviceRevision;
     try {
       if (head.kind === 'memory') {
-        const persisted = await this.processMemoryBatch(
+        const unpersistedIds = await this.processMemoryBatch(
           batchItems.map((item) => item.id),
           serviceRevision,
         );
-        if (!persisted) {
-          // 推理期间同步 / 恢复闸门生效：丢弃旧内容算出的向量，闸门释放后按新内容重算
-          this.requeueFront(batchItems);
+        if (unpersistedIds.length > 0) {
+          // 推理或写入期间同步 / 恢复闸门生效：丢弃未写入条目的旧向量，闸门释放后按新内容重算
+          const unpersisted = new Set(unpersistedIds);
+          this.requeueFront(batchItems.filter((item) => unpersisted.has(item.id)));
           this.currentTask = null;
           this.emitProgress();
           return;
@@ -610,12 +611,12 @@ export class EmbeddingQueue {
   }
 
   /**
-   * 处理一批 memory id。返回 false 表示推理期间同步闸门生效，本批未写入、需重新入队。
+   * 处理一批 memory id。返回因同步闸门生效而未写入、需重新入队的 id（空数组表示整批完成）。
    */
   private static async processMemoryBatch(
     ids: string[],
     serviceRevision: number,
-  ): Promise<boolean> {
+  ): Promise<string[]> {
     const memories: Array<{ id: string; segments: string[] } | null> = await Promise.all(
       ids.map(async (id) => {
         try {
@@ -635,7 +636,7 @@ export class EmbeddingQueue {
     );
     if (valid.length === 0) {
       this.completed.memory += ids.length;
-      return true;
+      return [];
     }
 
     const segmentJobs = valid.flatMap((memory) =>
@@ -659,31 +660,34 @@ export class EmbeddingQueue {
       });
     }
 
-    // 同步 / 快照恢复可能已改写这些记忆；此时写入会把旧内容的向量覆盖到新记录上
-    if (this.syncGateActive) return false;
-
-    await Promise.all(
-      valid.map(async (entry) => {
-        const embeddings = vectorsByMemory.get(entry.id);
-        if (!embeddings?.length) return;
-        try {
-          // 写 IDB（leaf）+ 同步进程内缓存 + 派发 'embedding-updated' 事件。
-          // 全部走叶子模块（memory-embedding-lookup / memory-cache），避免 EmbeddingQueue
-          // 反向 import MemoryService 形成循环依赖。
-          await updateMemoryEmbeddingInDB(entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
-          const bookId = await lookupMemoryBookId(entry.id);
-          if (bookId) {
-            syncMemoryEmbeddingCaches(bookId, entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
-            dispatchMemoryChanged({ bookId, memoryId: entry.id, action: 'embedding-updated' });
-          }
-        } catch (error) {
-          console.warn(`[EmbeddingQueue] 持久化 memory embedding 失败 (${entry.id}):`, error);
+    // 逐条写入，每次写入前复核闸门：同步 / 快照恢复可能已改写这些记忆，
+    // 此时写入会把旧内容的向量覆盖到新记录上。已写入的条目在闸门生效前完成，保留即可。
+    for (let index = 0; index < valid.length; index++) {
+      if (this.syncGateActive) {
+        const remaining = valid.slice(index).map((entry) => entry.id);
+        this.completed.memory += ids.length - remaining.length;
+        return remaining;
+      }
+      const entry = valid[index]!;
+      const embeddings = vectorsByMemory.get(entry.id);
+      if (!embeddings?.length) continue;
+      try {
+        // 写 IDB（leaf）+ 同步进程内缓存 + 派发 'embedding-updated' 事件。
+        // 全部走叶子模块（memory-embedding-lookup / memory-cache），避免 EmbeddingQueue
+        // 反向 import MemoryService 形成循环依赖。
+        await updateMemoryEmbeddingInDB(entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
+        const bookId = await lookupMemoryBookId(entry.id);
+        if (bookId) {
+          syncMemoryEmbeddingCaches(bookId, entry.id, embeddings, MEMORY_EMBEDDING_VERSION);
+          dispatchMemoryChanged({ bookId, memoryId: entry.id, action: 'embedding-updated' });
         }
-      }),
-    );
+      } catch (error) {
+        console.warn(`[EmbeddingQueue] 持久化 memory embedding 失败 (${entry.id}):`, error);
+      }
+    }
 
     this.completed.memory += ids.length;
-    return true;
+    return [];
   }
 
   /**

@@ -213,7 +213,7 @@ For remote corruption or device migration, replace remote visible data with loca
 
 ### Multilingual protocol and entity deletion {#settings-guide-language-sync}
 
-- Book metadata and content are stored separately. Chapter IDs assign content to up to 16 fixed groups per book; empty groups use no files. Adding a chapter normally uploads its group, book metadata, and manifest. Content-only edits also skip unchanged metadata. Large groups can still be chunked, but inserting or reordering chapters does not reshuffle other groups.
+- Book metadata and content are stored separately. Chapter IDs assign content to up to 16 fixed groups per book; empty groups use no files. Adding or editing a chapter normally uploads its group, book metadata, and manifest, without re-uploading other groups. Editing content updates the book's modification time, so metadata is usually uploaded too. Large groups can still be chunked, but inserting or reordering chapters does not reshuffle other groups.
 - The first v6 upgrade migrates all existing books, so this upload can still be large. Interrupted migrations retain the old book content for retry. Historical restore assembles every required group and stops if any group is missing or corrupt.
 - 300 is the GitHub API file-list response limit, not a library capacity limit. Larger libraries can sync through the manifest and files pinned to the same revision, with hash verification and failure handling preserved. A multi-batch legacy upgrade first saves a temporary file inventory so the original books remain readable after interruption. The inventory is removed when the final manifest is published. If neither index is available, the operation stops to protect the data.
 
