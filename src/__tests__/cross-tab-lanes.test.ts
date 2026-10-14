@@ -259,6 +259,20 @@ describe('站点 lane 跨标签页协调', () => {
     expect(await settle(a.run(LANE, () => Promise.resolve('ok')))).toBe('ok');
   });
 
+  it.each([
+    ['负数', -1_000_000],
+    ['小数', 1.5],
+    ['负小数', -0.5],
+    ['字符串', '2'],
+  ])('持久化的拒绝计数为%s时按 0 处理：再连续拒绝 3 次即熔断', async (_name, refusals) => {
+    localStorage.setItem(KEY, JSON.stringify({ refusals, trippedUntil: 0, lastStartAt: 0 }));
+    const a = browser()();
+    for (let i = 0; i < 2; i++) {
+      expect(await settle(a.run(LANE, refuse))).toBeInstanceOf(HttpStatusError);
+    }
+    expect(await settle(a.run(LANE, refuse))).toBeInstanceOf(SiteRateLimitedError);
+  });
+
   it('持久化的熔断截止时间超过一个冷却期时按一个冷却期处理', async () => {
     localStorage.setItem(
       KEY,

@@ -67,6 +67,11 @@ function finite(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+/** 拒绝计数只接受非负整数，否则按 0（负数会让熔断永远触发不了） */
+function count(value: unknown): number {
+  return Number.isSafeInteger(value) && (value as number) >= 0 ? (value as number) : 0;
+}
+
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -102,7 +107,7 @@ export function createCrossTabLanes(
     try {
       const parsed = JSON.parse(raw) as Partial<StoredLane> | null;
       return {
-        refusals: finite(parsed?.refusals),
+        refusals: count(parsed?.refusals),
         trippedUntil: finite(parsed?.trippedUntil),
         lastStartAt: finite(parsed?.lastStartAt),
       };
