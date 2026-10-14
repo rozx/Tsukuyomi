@@ -107,6 +107,11 @@ class BookSyncSession {
     return structuredClone(this.state);
   }
 
+  /** 目录解析到的书籍信息（书名、作者、简介、标签、封面）；尚未检查目录时为 undefined */
+  get catalogMeta(): SyncCatalog['meta'] | undefined {
+    return this.catalog ? structuredClone(this.catalog.meta) : undefined;
+  }
+
   private async exclusive<T>(work: () => Promise<T>): Promise<T> {
     if (this.busy)
       throw new BookSyncError(

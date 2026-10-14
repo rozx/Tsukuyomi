@@ -17,6 +17,7 @@ import type {
   BookSyncChangeset,
   BookUpdateRecipe,
   CatalogEntry,
+  SyncCatalog,
   SyncVolumeTarget,
 } from 'src/models/book-sync';
 import type { Novel, Volume } from 'src/models/novel';
@@ -86,6 +87,8 @@ export interface BookSyncContext {
   recipe: ComputedRef<BookSyncRecipeView | null>;
   /** 同步目标书籍（新建书籍流程中为 undefined），用于按其目标语言显示卷章标题 */
   book: ComputedRef<Novel | undefined>;
+  /** 新建书籍时目录解析到的书籍信息；更新已有书籍或尚未检查完时为 null */
+  newBook: ComputedRef<SyncCatalog['meta'] | null>;
   volumes: ComputedRef<Volume[]>;
   selected: Ref<Set<string>>;
   volumeOverrides: Ref<Map<string, SyncVolumeTarget>>;
@@ -175,6 +178,7 @@ function createBookSyncContext(
     return '';
   });
   const changeset = ref<BookSyncChangeset | null>(null);
+  const catalogMeta = shallowRef<SyncCatalog['meta'] | null>(null);
   const selected = ref(new Set<string>());
   const volumeOverrides = ref(new Map<string, SyncVolumeTarget>());
   const deep = ref({ running: false, completed: 0, total: 0, waitSeconds: 0 });
@@ -213,6 +217,9 @@ function createBookSyncContext(
     }
   });
 
+  const newBook = computed(() =>
+    target.value && 'newFrom' in target.value ? catalogMeta.value : null,
+  );
   const volumes = computed(() => book.value?.volumes ?? []);
   const drift = computed(() => (changeset.value ? driftWarning(changeset.value) : false));
   const summary = computed(() =>
@@ -222,6 +229,7 @@ function createBookSyncContext(
 
   function setChangeset(next: BookSyncChangeset, keep: string[] = []): void {
     changeset.value = next;
+    catalogMeta.value = session.value?.catalogMeta ?? null;
     const reconciled = reconcileSelection(next, new Set([...selected.value, ...keep]), seenNew);
     selected.value = reconciled.selected;
     seenNew = reconciled.seenNew;
@@ -236,6 +244,7 @@ function createBookSyncContext(
 
   function reset(): void {
     changeset.value = null;
+    catalogMeta.value = null;
     selected.value = new Set();
     volumeOverrides.value = new Map();
     seenNew = new Set();
@@ -519,6 +528,7 @@ function createBookSyncContext(
     changeset,
     recipe,
     book,
+    newBook,
     volumes,
     selected,
     volumeOverrides,

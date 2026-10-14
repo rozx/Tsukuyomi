@@ -2,16 +2,12 @@
 /** 手机版面：与桌面同一顺序的单列，应用栏固定在底部。 */
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
 import RecipeHeader from './fragments/RecipeHeader.vue';
-import SyncVerdict from './fragments/SyncVerdict.vue';
-import NewChapterGroups from './fragments/NewChapterGroups.vue';
-import UpdatedChapterList from './fragments/UpdatedChapterList.vue';
-import SkippedList from './fragments/SkippedList.vue';
-import FailedList from './fragments/FailedList.vue';
+import SyncReadyBody from './fragments/SyncReadyBody.vue';
 import ApplyBar from './fragments/ApplyBar.vue';
 import HandoffNotice from './fragments/HandoffNotice.vue';
 import CheckingState from './fragments/CheckingState.vue';
 
-const { phase, target } = injectBookSync();
+const { phase } = injectBookSync();
 </script>
 
 <template>
@@ -20,11 +16,7 @@ const { phase, target } = injectBookSync();
     <CheckingState v-if="phase === 'checking'" />
     <HandoffNotice v-else-if="phase !== 'ready'" />
     <template v-else>
-      <SyncVerdict />
-      <FailedList />
-      <NewChapterGroups />
-      <UpdatedChapterList v-if="target && 'bookId' in target" />
-      <SkippedList />
+      <SyncReadyBody />
       <ApplyBar class="bsw-apply" />
     </template>
   </div>

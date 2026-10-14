@@ -4,7 +4,12 @@ import './setup';
 import { createApp, defineComponent, h, nextTick, ref, shallowRef } from 'vue';
 import type { App, Component, Ref } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
-import type { BookSyncApplyResult, BookSyncChangeset, SyncNewChapter } from 'src/models/book-sync';
+import type {
+  BookSyncApplyResult,
+  BookSyncChangeset,
+  SyncCatalog,
+  SyncNewChapter,
+} from 'src/models/book-sync';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { BookSyncError } from 'src/services/book-sync/errors';
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
@@ -58,6 +63,7 @@ function changeset(partial: Partial<BookSyncChangeset> = {}): BookSyncChangeset 
 
 type FakeSession = {
   changeset: BookSyncChangeset;
+  catalogMeta?: SyncCatalog['meta'];
   quickCheck: ReturnType<typeof vi.fn>;
   deepCheck: ReturnType<typeof vi.fn>;
   apply: ReturnType<typeof vi.fn>;
@@ -189,6 +195,37 @@ describe('useBookSync 会话生命周期', () => {
     expect(ctx.deep.value.running).toBe(false);
     expect(ctx.deep.value.waitSeconds).toBe(0);
     vi.useRealTimers();
+  });
+
+  it('新建书籍时提供目录解析到的书籍信息，更新已有书籍时为 null', async () => {
+    const meta = { title: '远端书名', author: '作者', cover: { url: 'https://x/c.jpg' } };
+    const session = { ...fakeSession(), catalogMeta: meta };
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(session as never);
+    const target = ref<BookSyncTarget | null>({ newFrom: 'https://kakuyomu.jp/works/1' });
+
+    await mount(target, shallowRef(VariantA));
+    expect(ctx.newBook.value).toEqual(meta);
+
+    target.value = { bookId: 'b1' };
+    await flush();
+    expect(ctx.newBook.value).toBeNull();
+  });
+
+  it('重新检查期间不保留上一次的书籍信息', async () => {
+    const pending = new Promise<BookSyncChangeset>(() => {});
+    const first = { ...fakeSession(), catalogMeta: { title: '旧书' } };
+    const second = { ...fakeSession(), catalogMeta: { title: '新书' } };
+    second.quickCheck = vi.fn(() => pending);
+    vi.spyOn(BookSyncService, 'openSession')
+      .mockResolvedValueOnce(first as never)
+      .mockResolvedValueOnce(second as never);
+    const target = ref<BookSyncTarget | null>({ newFrom: 'https://kakuyomu.jp/works/1' });
+    await mount(target, shallowRef(VariantA));
+    expect(ctx.newBook.value?.title).toBe('旧书');
+
+    target.value = { newFrom: 'https://kakuyomu.jp/works/2' };
+    await flush();
+    expect(ctx.newBook.value).toBeNull();
   });
 
   it('切换设备变体后勾选与目标卷覆盖保留，也不会重新检查', async () => {

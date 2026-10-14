@@ -35,6 +35,23 @@ describe('书籍同步检查会话', () => {
     expect(result.unchecked).toEqual(['https://example.com/1']);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+  it('快速检查后暴露目录解析到的书籍信息（副本），检查前为 undefined', async () => {
+    await saveSyncBook(syncBook());
+    spyOn(transport, 'fetchScraperPage').mockImplementation((url) =>
+      Promise.resolve(syncSnapshot(syncCatalogHtml(2), url)),
+    );
+    const session = await BookSyncService.openSession({ target: { bookId: 'book' } });
+    expect(session.catalogMeta).toBeUndefined();
+
+    await session.quickCheck();
+
+    expect(session.catalogMeta).toMatchObject({
+      title: '远端书名',
+      cover: { url: 'https://example.com/cover.jpg' },
+    });
+    session.catalogMeta!.title = '被改动';
+    expect(session.catalogMeta!.title).toBe('远端书名');
+  });
   it('快速检查只抓目录，日期较新的章节留给逐章比对确认', async () => {
     const book = syncBook(2);
     delete book.updateRecipe;

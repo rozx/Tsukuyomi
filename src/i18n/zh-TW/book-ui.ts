@@ -88,6 +88,11 @@ export default {
       applyNothing: '還沒有勾選章節',
     },
     sync: {
+      newBookInfo: '新書資訊',
+      newBookCover: '《{title}》封面',
+      newBookAuthor: '作者：{author}',
+      expandDescription: '展開簡介',
+      collapseDescription: '收起簡介',
       deepCheckFailed: '深度檢查失敗',
       skipFailed: '略過失敗',
       unskipFailed: '取消略過失敗',

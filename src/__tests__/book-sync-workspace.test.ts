@@ -448,3 +448,60 @@ describe('失败原因显示', () => {
     expect(text).not.toContain('CONTENT_FETCH_FAILED');
   });
 });
+
+describe('新建书籍信息', () => {
+  const META = {
+    title: '远端书名',
+    author: '作者甲',
+    description: '一句宣传语\n\n第一段简介',
+    tags: ['ファンタジー', '異世界'],
+    cover: { url: 'https://example.com/cover.jpg' },
+  };
+
+  it('新建书籍时显示封面、书名、作者、标签与简介', async () => {
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue({
+      ...fakeSession(),
+      catalogMeta: META,
+    } as never);
+    await mount();
+    const card = host.querySelector('[data-testid="bsw-book-info"]');
+    expect(card).not.toBeNull();
+    expect(card!.textContent).toContain('远端书名');
+    expect(card!.textContent).toContain('作者甲');
+    expect(card!.textContent).toContain('ファンタジー');
+    expect(card!.textContent).toContain('異世界');
+    expect(card!.textContent).toContain('第一段简介');
+    expect(card!.querySelector('img')?.getAttribute('src')).toBe(META.cover.url);
+  });
+
+  it('没有封面与可选字段时只显示书名和占位', async () => {
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue({
+      ...fakeSession(),
+      catalogMeta: { title: '只有书名' },
+    } as never);
+    await mount();
+    const card = host.querySelector('[data-testid="bsw-book-info"]')!;
+    expect(card.textContent).toContain('只有书名');
+    expect(card.querySelector('img')).toBeNull();
+    expect(card.querySelector('[data-testid="bsw-book-cover-placeholder"]')).not.toBeNull();
+  });
+
+  it.each(['desktop', 'mobile'] as const)('%s 变体都显示书籍信息', async (device) => {
+    variant.value = device;
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue({
+      ...fakeSession(),
+      catalogMeta: META,
+    } as never);
+    await mount();
+    expect(host.querySelector('[data-testid="bsw-book-info"]')).not.toBeNull();
+  });
+
+  it('更新已有书籍时不显示', async () => {
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue({
+      ...fakeSession(),
+      catalogMeta: META,
+    } as never);
+    await mount({ bookId: 'b1' });
+    expect(host.querySelector('[data-testid="bsw-book-info"]')).toBeNull();
+  });
+});

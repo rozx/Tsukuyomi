@@ -96,6 +96,11 @@ export default {
       applyNothing: 'No chapters selected yet',
     },
     sync: {
+      newBookInfo: 'New book details',
+      newBookCover: 'Cover of {title}',
+      newBookAuthor: 'by {author}',
+      expandDescription: 'Show full description',
+      collapseDescription: 'Show less',
       deepCheckFailed: 'Deep check failed',
       skipFailed: 'Could not skip',
       unskipFailed: 'Could not unskip',
