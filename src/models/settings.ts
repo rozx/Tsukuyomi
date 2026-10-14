@@ -200,7 +200,7 @@ export interface ImportResult {
   error?: string;
   /** 可选字段缺失表示文件中没有该部分（导入时保持本机数据不变），空数组表示清空 */
   data?: {
-    models: AIModel[];
+    models?: AIModel[];
     sync?: SyncConfig[];
     novels?: Novel[];
     coverHistory?: CoverHistoryItem[];

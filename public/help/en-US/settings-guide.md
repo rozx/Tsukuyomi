@@ -345,7 +345,7 @@ Current behavior:
 
 - Current data is backed up locally first. If writing fails, the previous data is restored and the reason is shown.
 - The same rule applies to every part: if the file has the field, the local data is replaced with the file's contents (an empty array clears it); if the field is missing, the local data stays unchanged. A non-empty field with no valid entries (for example from an old or damaged backup) is treated as missing; when only some entries are invalid, the valid ones are imported.
-- Models: the file must include the models field, so models are always replaced.
+- Models: the file must include the models field (it may be an empty array); models are replaced by the rule above, so a models field with no valid entries leaves local models unchanged.
 - Books and cover history: replaced or kept unchanged by the rule above.
 - Memories: when the field is present, all local memories are cleared and rebuilt from the file (keeping IDs and timestamps).
 - Settings: processed by the settings importer.

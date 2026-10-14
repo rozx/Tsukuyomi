@@ -2,6 +2,7 @@ import './setup';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { getDB } from '../utils/indexed-db';
+import { useAIModelsStore } from '../stores/ai-models';
 import { useBooksStore } from '../stores/books';
 import { useCoverHistoryStore } from '../stores/cover-history';
 import { useSettingsStore } from '../stores/settings';
@@ -196,6 +197,20 @@ describe('非空但没有任何有效条目的字段按缺失处理', () => {
     });
     expect(result.success).toBe(true);
     expect(Object.keys(result.data!).sort()).toEqual(['models']);
+  });
+
+  it('aiModels 全部无效时按缺失处理，导入后本机模型保持不变', async () => {
+    setActivePinia(createPinia());
+    await useSettingsStore().loadSettings();
+    const models = useAIModelsStore();
+    await models.bulkImportModels([{ ...model, lastEdited: new Date(0) } as never]);
+
+    const result = parse({ aiModels: [{ id: 'bad' }], novels: [novel] });
+    expect(result.success).toBe(true);
+    expect('models' in result.data!).toBe(false);
+    await SyncDataService.importSettingsSnapshot(result.data!, 'presence-invalid-models');
+
+    expect(models.models.map((m) => m.id)).toEqual(['m']);
   });
 
   it('部分条目无效时只导入有效条目', () => {

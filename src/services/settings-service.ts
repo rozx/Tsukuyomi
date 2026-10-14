@@ -95,11 +95,11 @@ function buildImportMessage(counts: ImportCounts, locale: AppLocale): string {
 
 /**
  * validateAndParseSettings 各分区的解析结果集合。
- * 可选分区保留「字段是否存在」：文件缺少该字段为 undefined（导入时保持本机数据不变），
+ * 数组分区保留「字段是否存在」（aiModels 由结构校验保证存在，全部无效时同样视为缺失）：文件缺少该字段为 undefined（导入时保持本机数据不变），
  * 字段存在但为空数组为 []（导入时整体替换为空，即清空本机数据）。
  */
 interface ParsedImportSections {
-  models: ReturnType<typeof parseAiModels>;
+  models: ReturnType<typeof parseAiModels> | undefined;
   novels: ReturnType<typeof parseNovels> | undefined;
   coverHistory: ReturnType<typeof parseCoverHistory> | undefined;
   memories: ReturnType<typeof parseMemories> | undefined;
@@ -125,7 +125,7 @@ function parseIfPresent<T>(
  */
 function parseImportedSections(settings: Settings): ParsedImportSections {
   return {
-    models: parseAiModels(settings.aiModels),
+    models: parseIfPresent(settings.aiModels, parseAiModels),
     novels: parseIfPresent(settings.novels, parseNovels),
     coverHistory: parseIfPresent(settings.coverHistory, parseCoverHistory),
     memories: parseIfPresent(settings.memories, parseMemories),
@@ -140,7 +140,7 @@ function parseImportedSections(settings: Settings): ParsedImportSections {
  */
 function hasImportedContent(sections: ParsedImportSections): boolean {
   return (
-    sections.models.length > 0 ||
+    (sections.models?.length ?? 0) > 0 ||
     (sections.novels?.length ?? 0) > 0 ||
     (sections.coverHistory?.length ?? 0) > 0 ||
     (sections.memories?.length ?? 0) > 0 ||
@@ -233,7 +233,7 @@ export class SettingsService {
       success: true,
       message: buildImportMessage(
         {
-          models: sections.models.length,
+          models: sections.models?.length ?? 0,
           novels: sections.novels?.length ?? 0,
           coverHistory: sections.coverHistory?.length ?? 0,
           memories: sections.memories?.length ?? 0,
@@ -243,7 +243,7 @@ export class SettingsService {
         locale,
       ),
       data: {
-        models: sections.models,
+        ...(sections.models ? { models: sections.models } : {}),
         ...(sections.novels ? { novels: sections.novels } : {}),
         ...(sections.coverHistory ? { coverHistory: sections.coverHistory } : {}),
         ...(sections.memories ? { memories: sections.memories } : {}),
