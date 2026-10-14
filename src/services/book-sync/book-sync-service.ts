@@ -14,6 +14,7 @@ import type {
   BookUpdateRecipe,
   CatalogEntry,
   SyncCatalog,
+  SyncProgressListener,
   SyncFailure,
 } from 'src/models/book-sync';
 import { ImportLibraryReader } from 'src/services/import/import-library-reader';
@@ -89,7 +90,10 @@ class BookSyncSession {
   private before: SyncBefore | undefined;
   private newBookId = crypto.randomUUID();
   private readonly cache = new Map<string, string[]>();
-  private readonly pending = new Map<string, Promise<string[]>>();
+  private readonly pending = new Map<
+    string,
+    Promise<{ paragraphs: string[]; viaFirecrawl: boolean }>
+  >();
   /** 新建书籍尚未落库，跳过只记在会话内，应用时随配方写入 */
   private readonly localSkipped = new Set<string>();
   private busy = false;
@@ -249,12 +253,16 @@ class BookSyncSession {
     return `${JSON.stringify([r.engine, r.cleanup, r.stripHeading])}|${entry.url}|${version}`;
   }
 
-  private async content(entry: CatalogEntry, signal?: AbortSignal): Promise<string[]> {
+  /** 远端正文；viaFirecrawl 表示本次调用实际经 Firecrawl 抓取（命中缓存时为 false） */
+  private async content(
+    entry: CatalogEntry,
+    signal?: AbortSignal,
+  ): Promise<{ paragraphs: string[]; viaFirecrawl: boolean }> {
     signal?.throwIfAborted();
     const cached = this.cache.get(entry.url) ?? getCachedRemoteChapter(this.remoteCacheKey(entry));
     if (cached) {
       this.cache.set(entry.url, cached);
-      return cached;
+      return { paragraphs: cached, viaFirecrawl: false };
     }
     let pending = this.pending.get(entry.url);
     if (!pending) {
@@ -272,7 +280,7 @@ class BookSyncSession {
         }
         this.cache.set(entry.url, result.paragraphs);
         setCachedRemoteChapter(this.remoteCacheKey(entry), result.paragraphs);
-        return result.paragraphs;
+        return { paragraphs: result.paragraphs, viaFirecrawl: result.viaFirecrawl };
       })();
       this.pending.set(entry.url, pending);
       void pending.finally(() => this.pending.delete(entry.url)).catch(() => undefined);
@@ -281,7 +289,7 @@ class BookSyncSession {
   }
 
   async preview(entry: CatalogEntry | string, signal?: AbortSignal): Promise<string[]> {
-    return [...(await this.content(this.entry(entry), signal))];
+    return [...(await this.content(this.entry(entry), signal)).paragraphs];
   }
 
   private localContent(chapterId: string): Paragraph[] {
@@ -291,13 +299,14 @@ class BookSyncSession {
     return loaded?.kind === 'loaded' ? loaded.content : [];
   }
 
-  private async compare(entry: CatalogEntry, signal?: AbortSignal): Promise<void> {
+  /** 比对一章；返回本次是否经 Firecrawl 抓取 */
+  private async compare(entry: CatalogEntry, signal?: AbortSignal): Promise<boolean> {
     const chapter = this.chapters().find((c) => c.webUrl === entry.url)!;
-    const remote = await this.content(entry, signal);
+    const { paragraphs: remote, viaFirecrawl } = await this.content(entry, signal);
     signal?.throwIfAborted();
     const update = await compareChapter(chapter, this.localContent(chapter.id), remote, entry);
     signal?.throwIfAborted();
-    if (this.state.status === 'invalid') return;
+    if (this.state.status === 'invalid') return viaFirecrawl;
     this.state.updated = this.state.updated.filter((e) => e.url !== entry.url);
     if (update) this.state.updated.push(update);
     this.state.unchecked = this.state.unchecked.filter((url) => url !== entry.url);
@@ -305,15 +314,17 @@ class BookSyncSession {
     this.state.dateNewer = this.state.dateNewer.filter((url) => url !== entry.url);
     if (!this.state.checked.includes(entry.url)) this.state.checked.push(entry.url);
     this.state.failed = this.state.failed.filter((e) => e.url !== entry.url);
+    return viaFirecrawl;
   }
 
   private async checkEntries(
     entries: CatalogEntry[],
     signal?: AbortSignal,
-    onProgress?: (completed: number, total: number) => void,
+    onProgress?: SyncProgressListener,
   ): Promise<void> {
     let cursor = 0;
     let completed = 0;
+    let viaFirecrawl = 0;
     const controller = new AbortController();
     const abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true });
@@ -324,8 +335,8 @@ class BookSyncSession {
           while (!controller.signal.aborted && cursor < entries.length) {
             const entry = entries[cursor++]!;
             try {
-              await this.compare(entry, controller.signal);
-              onProgress?.(++completed, entries.length);
+              if (await this.compare(entry, controller.signal)) viaFirecrawl++;
+              onProgress?.(++completed, entries.length, viaFirecrawl);
             } catch (error) {
               if (controller.signal.aborted) break;
               const code = error instanceof BookSyncError ? error.code : 'CONTENT_FETCH_FAILED';
@@ -404,6 +415,7 @@ class BookSyncSession {
 
   private async collectWrites(
     selection: BookSyncSelection,
+    onProgress?: SyncProgressListener,
   ): Promise<{ writes: SyncWrite[]; failed: SyncFailure[] }> {
     const inferred = inferNewChapters(this.snapshot?.book, this.catalog!.entries, []);
     const selected = new Set(selection.urls);
@@ -420,6 +432,8 @@ class BookSyncSession {
     const writes = new Map<string, SyncWrite>();
     const failed: SyncFailure[] = [];
     let cursor = 0;
+    let completed = 0;
+    let viaFirecrawl = 0;
     let fatal: BookSyncError | undefined;
     let haltFailure: SyncFailure | undefined;
     await Promise.all(
@@ -439,7 +453,9 @@ class BookSyncSession {
             break;
           }
           try {
-            const remote = await this.content(entry);
+            const fetched = await this.content(entry);
+            if (fetched.viaFirecrawl) viaFirecrawl++;
+            const remote = fetched.paragraphs;
             // 对 skipped 条目使用全目录推断；普通新条目保持界面拿到的 groupKey。
             const proposed = this.state.new.find((e) => e.url === entry.url) ?? added;
             writes.set(entry.url, {
@@ -465,6 +481,7 @@ class BookSyncSession {
             else failed.push(outcome.failure);
             if (haltsFetchBatch(outcome.failure.code)) haltFailure ??= outcome.failure;
           }
+          onProgress?.(++completed, entries.length, viaFirecrawl);
         }
       }),
     );
@@ -524,7 +541,10 @@ class BookSyncSession {
     }
   }
 
-  async apply(selection: BookSyncSelection): Promise<BookSyncApplyResult> {
+  async apply(
+    selection: BookSyncSelection,
+    options: { onProgress?: SyncProgressListener } = {},
+  ): Promise<BookSyncApplyResult> {
     const selected = structuredClone(selection);
     return this.exclusive(async () => {
       if (!this.catalog || this.state.status === 'invalid' || this.state.status === 'unchecked')
@@ -545,7 +565,7 @@ class BookSyncSession {
         );
       const bookId = 'bookId' in this.target ? this.target.bookId : this.newBookId;
       await assertAvailable(bookId);
-      const { writes, failed } = await this.collectWrites(selected);
+      const { writes, failed } = await this.collectWrites(selected, options.onProgress);
       if (!writes.length) {
         this.recordFailures(failed);
         return {
@@ -678,7 +698,7 @@ class BookSyncSession {
   }
 
   async deepCheck(
-    options: { signal?: AbortSignal; onProgress?: (completed: number, total: number) => void } = {},
+    options: { signal?: AbortSignal; onProgress?: SyncProgressListener } = {},
   ): Promise<BookSyncChangeset> {
     return this.exclusive(async () => {
       try {

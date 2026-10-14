@@ -292,7 +292,10 @@ describe('工作区片段', () => {
     await mount();
     button('重试').click();
     await flush();
-    expect(session.apply).toHaveBeenCalledWith(expect.objectContaining({ urls: [`${NCODE}6/`] }));
+    expect(session.apply).toHaveBeenCalledWith(
+      expect.objectContaining({ urls: [`${NCODE}6/`] }),
+      expect.objectContaining({ onProgress: expect.any(Function) }),
+    );
   });
 
   it('有更新章节不自动勾选，可以查看段落差异', async () => {
@@ -387,6 +390,51 @@ describe('深度检查与失效状态', () => {
     button('取消深度检查').click();
     await flush();
     expect(signal?.aborted).toBe(true);
+  });
+
+  it('应用期间确认弹窗显示抓取进度与 Firecrawl 章数，写入阶段另有提示', async () => {
+    const session = fakeSession();
+    let report!: (completed: number, total: number, via: number) => void;
+    session.apply = vi.fn(
+      (_selection: unknown, options: { onProgress: typeof report }) =>
+        new Promise(() => {
+          report = options.onProgress;
+        }),
+    ) as never;
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(session as never);
+    await mount();
+    button('应用').click();
+    await flush();
+    button('确认应用').click();
+    await flush();
+
+    report(1, 2, 1);
+    await flush();
+    const dialog = document.body.querySelector('[data-testid="bsw-confirm"]')!;
+    expect(dialog.textContent).toContain('正在抓取正文 1 / 2');
+    expect(dialog.textContent).toContain('其中 1 章经 Firecrawl 抓取');
+
+    report(2, 2, 1);
+    await flush();
+    expect(dialog.textContent).toContain('正文已抓取，正在写入书籍');
+  });
+
+  it('逐章比对进度显示 Firecrawl 章数', async () => {
+    const session = fakeSession();
+    let progress!: (done: number, total: number, via: number) => void;
+    session.deepCheck.mockImplementation(
+      (options: { signal: AbortSignal; onProgress: typeof progress }) => {
+        progress = options.onProgress;
+        return new Promise(() => {});
+      },
+    );
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(session as never);
+    await mount({ bookId: 'b1' });
+    button('逐章比对正文').click();
+    await flush();
+    progress(2, 4, 2);
+    await flush();
+    expect(host.textContent).toContain('其中 2 章经 Firecrawl 抓取');
   });
 
   it('配方失效时显示原因和入口，不显示章节列表和应用按钮', async () => {

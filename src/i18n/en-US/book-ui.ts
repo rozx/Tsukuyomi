@@ -96,6 +96,12 @@ export default {
       applyNothing: 'No chapters selected yet',
     },
     sync: {
+      createdTitle: 'Book created',
+      createdPartialTitle: 'Book created, some chapters failed',
+      withFirecrawl: '{detail} ({count} fetched via Firecrawl)',
+      applyFetching: 'Fetching chapters {completed} / {total}',
+      applyWriting: 'Chapters fetched, saving the book…',
+      viaFirecrawl: '{count} fetched via Firecrawl',
       newBookInfo: 'New book details',
       newBookCover: 'Cover of {title}',
       newBookAuthor: 'by {author}',

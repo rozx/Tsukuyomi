@@ -52,6 +52,22 @@ describe('书籍同步检查会话', () => {
     session.catalogMeta!.title = '被改动';
     expect(session.catalogMeta!.title).toBe('远端书名');
   });
+  it('逐章比对的进度带上经 Firecrawl 抓取的章数', async () => {
+    await saveSyncBook(syncBook(2));
+    spyOn(transport, 'fetchScraperPage').mockImplementation((url) =>
+      Promise.resolve({
+        ...syncSnapshot(url === syncRoot ? syncCatalogHtml(2) : '<article>旧正文</article>', url),
+        ...(url === 'https://example.com/2' ? { transportUrl: `firecrawl:${url}` } : {}),
+      }),
+    );
+    const session = await BookSyncService.openSession({ target: { bookId: 'book' } });
+    await session.quickCheck();
+    const firecrawl: number[] = [];
+
+    await session.deepCheck({ onProgress: (_done, _total, via) => firecrawl.push(via) });
+
+    expect(firecrawl.at(-1)).toBe(1);
+  });
   it('快速检查只抓目录，日期较新的章节留给逐章比对确认', async () => {
     const book = syncBook(2);
     delete book.updateRecipe;

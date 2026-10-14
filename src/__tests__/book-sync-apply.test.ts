@@ -346,3 +346,55 @@ it('事务提交后刷新失败仍返回应用成功并保留撤销能力', asyn
   await value.undo();
   expect((await (await getDB()).get('books', 'book'))?.volumes?.[0]?.chapters).toHaveLength(1);
 });
+
+describe('应用进度', () => {
+  it('逐章报告进度（含失败章节），并统计经 Firecrawl 抓取的章数', async () => {
+    await saveSyncBook();
+    spyOn(transport, 'fetchScraperPage').mockImplementation((url) => {
+      if (url === syncRoot) return Promise.resolve(syncSnapshot(syncCatalogHtml(4), url));
+      if (url === 'https://example.com/3') return Promise.reject(new Error('网页超时'));
+      const snapshot = syncSnapshot('<article>新正文</article>', url);
+      return Promise.resolve(
+        url === 'https://example.com/2'
+          ? { ...snapshot, transportUrl: `firecrawl:${url}` }
+          : snapshot,
+      );
+    });
+    const value = await BookSyncService.openSession({ target: { bookId: 'book' } });
+    await value.quickCheck();
+    const events: Array<[number, number, number]> = [];
+
+    await value.apply(
+      { urls: value.changeset.new.map((e) => e.url) },
+      {
+        onProgress: (completed, total, viaFirecrawl) =>
+          events.push([completed, total, viaFirecrawl]),
+      },
+    );
+
+    expect(events.map(([completed]) => completed)).toEqual([1, 2, 3]);
+    expect(events.every(([, total]) => total === 3)).toBe(true);
+    expect(events.at(-1)![2]).toBe(1);
+  });
+
+  it('已缓存的章节不再抓取，不计入 Firecrawl', async () => {
+    await saveSyncBook();
+    spyOn(transport, 'fetchScraperPage').mockImplementation((url) =>
+      Promise.resolve({
+        ...syncSnapshot(url === syncRoot ? syncCatalogHtml(2) : '<article>新正文</article>', url),
+        ...(url === syncRoot ? {} : { transportUrl: `firecrawl:${url}` }),
+      }),
+    );
+    const value = await BookSyncService.openSession({ target: { bookId: 'book' } });
+    await value.quickCheck();
+    await value.preview('https://example.com/2');
+    const events: number[] = [];
+
+    await value.apply(
+      { urls: ['https://example.com/2'] },
+      { onProgress: (_c, _t, viaFirecrawl) => events.push(viaFirecrawl) },
+    );
+
+    expect(events).toEqual([0]);
+  });
+});

@@ -65,6 +65,9 @@ const percent = computed(() =>
             <template v-if="deep.waitSeconds > 0">
               {{ t('bookUi.sync.waitFirecrawl', { seconds: deep.waitSeconds }) }}
             </template>
+            <template v-if="deep.viaFirecrawl > 0">
+              · {{ t('bookUi.sync.viaFirecrawl', { count: deep.viaFirecrawl }) }}
+            </template>
           </span>
           <Button
             :label="t('bookUi.sync.cancel')"

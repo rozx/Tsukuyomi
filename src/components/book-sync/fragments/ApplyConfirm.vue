@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import Dialog from 'primevue/dialog';
 import { injectBookSync } from 'src/composables/book-sync/useBookSync';
+import ApplyProgress from './ApplyProgress.vue';
 
 const { confirm, target, confirmApply, cancelConfirm } = injectBookSync();
 const { t } = useI18n();
@@ -69,6 +70,7 @@ function onVisible(value: boolean): void {
         </li>
       </ul>
       <p class="ac-note">{{ t('bookUi.sync.confirmNote') }}</p>
+      <ApplyProgress v-if="state.stage === 'applying'" />
     </div>
     <template #footer>
       <Button

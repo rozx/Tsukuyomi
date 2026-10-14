@@ -197,6 +197,93 @@ describe('useBookSync 会话生命周期', () => {
     vi.useRealTimers();
   });
 
+  it('应用期间暴露抓取进度、Firecrawl 章数与限速等待秒数，结束后清空', async () => {
+    const session = fakeSession();
+    let report!: (completed: number, total: number, via: number) => void;
+    let finish!: () => void;
+    session.apply.mockImplementation(
+      (_selection: unknown, options: { onProgress: typeof report }) =>
+        new Promise((resolve) => {
+          report = options.onProgress;
+          finish = () =>
+            resolve({
+              bookId: 'b1',
+              revision: 2,
+              status: 'success',
+              appliedUrls: ['u1'],
+              failed: [],
+            });
+        }),
+    );
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(session as never);
+    let remaining = 0;
+    vi.spyOn(FirecrawlClient, 'pauseRemainingMs').mockImplementation(() => remaining);
+    await mount(ref({ bookId: 'b1' }), shallowRef(VariantA));
+    expect(ctx.applyProgress.value).toBeNull();
+    vi.useFakeTimers();
+
+    ctx.requestApply();
+    const running = ctx.confirmApply();
+    expect(ctx.applyProgress.value).toEqual({
+      completed: 0,
+      total: 2,
+      viaFirecrawl: 0,
+      waitSeconds: 0,
+    });
+    report(1, 2, 1);
+    remaining = 19_100;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(ctx.applyProgress.value).toEqual({
+      completed: 1,
+      total: 2,
+      viaFirecrawl: 1,
+      waitSeconds: 20,
+    });
+
+    finish();
+    await running;
+    expect(ctx.applyProgress.value).toBeNull();
+    vi.useRealTimers();
+  });
+
+  it.each([
+    [{ bookId: 'b1' }, 0, '同步完成', '已写入 2 章'],
+    [{ bookId: 'b1' }, 1, '同步完成', '已写入 2 章（其中 1 章经 Firecrawl 抓取）'],
+    [
+      { newFrom: 'https://kakuyomu.jp/works/1' },
+      2,
+      '书籍已创建',
+      '已写入 2 章（其中 2 章经 Firecrawl 抓取）',
+    ],
+  ] as const)(
+    '完成提示区分新建与同步，并注明 Firecrawl 章数（%o, %i）',
+    async (value, via, summary, detail) => {
+      const session = fakeSession();
+      session.apply.mockImplementation(
+        (
+          _selection: unknown,
+          options: { onProgress: (c: number, t: number, v: number) => void },
+        ) => {
+          options.onProgress(2, 2, via);
+          return Promise.resolve({
+            bookId: 'b1',
+            revision: 2,
+            status: 'success',
+            appliedUrls: ['u1', 'u2'],
+            failed: [],
+          });
+        },
+      );
+      vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(session as never);
+      await mount(ref<BookSyncTarget | null>(value), shallowRef(VariantA));
+
+      ctx.requestApply();
+      await ctx.confirmApply();
+
+      expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ summary, detail }));
+    },
+  );
+
   it('新建书籍时提供目录解析到的书籍信息，更新已有书籍时为 null', async () => {
     const meta = { title: '远端书名', author: '作者', cover: { url: 'https://x/c.jpg' } };
     const session = { ...fakeSession(), catalogMeta: meta };

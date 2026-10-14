@@ -78,6 +78,12 @@ export interface BookSyncChangeset {
   status: 'unchecked' | 'ready' | 'cancelled' | 'invalid';
 }
 
+/**
+ * 逐章抓取进度：completed 为已处理章数（应用时含失败章节），total 为总章数，
+ * viaFirecrawl 为其中实际经 Firecrawl 抓取的章数（命中缓存的不算）。
+ */
+export type SyncProgressListener = (completed: number, total: number, viaFirecrawl: number) => void;
+
 export interface BookSyncSelection {
   urls: string[];
   volumeOverrides?: Map<string, SyncVolumeTarget>;

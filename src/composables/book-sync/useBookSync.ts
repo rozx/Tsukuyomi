@@ -73,6 +73,21 @@ export interface BookSyncRecipeView {
   virtual: boolean;
 }
 
+/**
+ * 逐章抓取进度：completed / total 为已处理与总章数，viaFirecrawl 为其中经 Firecrawl 抓取的章数，
+ * waitSeconds 为 Firecrawl 因 429 暂停队列的剩余秒数（让用户知道进度没有卡住）。
+ */
+export interface FetchProgress {
+  completed: number;
+  total: number;
+  viaFirecrawl: number;
+  waitSeconds: number;
+}
+
+export interface DeepCheckProgress extends FetchProgress {
+  running: boolean;
+}
+
 export interface BookSyncOptions {
   /** 应用成功（含部分成功）后的外壳动作：新建跳转到新书等 */
   onApplied?: (result: BookSyncApplyResult) => void | Promise<void>;
@@ -94,7 +109,9 @@ export interface BookSyncContext {
   volumeOverrides: Ref<Map<string, SyncVolumeTarget>>;
   drift: ComputedRef<boolean>;
   summary: ComputedRef<BookSyncConfirmSummary>;
-  deep: Ref<{ running: boolean; completed: number; total: number; waitSeconds: number }>;
+  deep: Ref<DeepCheckProgress>;
+  /** 应用（抓取正文并写入）进行中的进度；未在应用时为 null */
+  applyProgress: Ref<FetchProgress | null>;
   confirm: Ref<BookSyncConfirm>;
   working: ComputedRef<boolean>;
   canUndo: Ref<boolean>;
@@ -181,7 +198,8 @@ function createBookSyncContext(
   const catalogMeta = shallowRef<SyncCatalog['meta'] | null>(null);
   const selected = ref(new Set<string>());
   const volumeOverrides = ref(new Map<string, SyncVolumeTarget>());
-  const deep = ref({ running: false, completed: 0, total: 0, waitSeconds: 0 });
+  const deep = ref<DeepCheckProgress>(idleDeep());
+  const applyProgress = ref<FetchProgress | null>(null);
   const confirm = ref<BookSyncConfirm>({ stage: 'closed' });
   const busy = ref(false);
   const canUndo = ref(false);
@@ -251,7 +269,8 @@ function createBookSyncContext(
     confirm.value = { stage: 'closed' };
     canUndo.value = false;
     messageSource.value = { kind: 'none' };
-    deep.value = { running: false, completed: 0, total: 0, waitSeconds: 0 };
+    deep.value = idleDeep();
+    applyProgress.value = null;
   }
 
   function fail(error: unknown): void {
@@ -305,26 +324,23 @@ function createBookSyncContext(
     const current = session.value;
     if (!current || working.value) return;
     deepController = new AbortController();
-    deep.value = { running: true, completed: 0, total: 0, waitSeconds: 0 };
+    deep.value = { ...idleDeep(), running: true };
     // Firecrawl 因 429 暂停队列时显示剩余等待秒数，避免进度看似卡住
-    const waitTimer = setInterval(() => {
-      deep.value = {
-        ...deep.value,
-        waitSeconds: Math.ceil(FirecrawlClient.pauseRemainingMs() / 1000),
-      };
-    }, 1000);
+    const stopWait = trackFirecrawlWait((waitSeconds) => {
+      deep.value = { ...deep.value, waitSeconds };
+    });
     try {
       const result = await current.deepCheck({
         signal: deepController.signal,
-        onProgress: (completed, total) => {
-          deep.value = { ...deep.value, running: true, completed, total };
+        onProgress: (completed, total, viaFirecrawl) => {
+          deep.value = { ...deep.value, running: true, completed, total, viaFirecrawl };
         },
       });
       if (session.value === current) setChangeset(result);
     } catch (error) {
       if (session.value === current) notifyError(t('bookUi.sync.deepCheckFailed'), error);
     } finally {
-      clearInterval(waitTimer);
+      stopWait();
       deep.value = { ...deep.value, running: false, waitSeconds: 0 };
     }
   }
@@ -396,18 +412,32 @@ function createBookSyncContext(
     const current = session.value;
     if (!current) return;
     busy.value = true;
+    applyProgress.value = { completed: 0, total: urls.length, viaFirecrawl: 0, waitSeconds: 0 };
+    const stopWait = trackFirecrawlWait((waitSeconds) => {
+      if (applyProgress.value) applyProgress.value = { ...applyProgress.value, waitSeconds };
+    });
     try {
       // 会话会 structuredClone 选择：传原始 Map（reactive Map 取出的值是代理，无法克隆）
-      const result = await current.apply({
-        urls,
-        volumeOverrides: new Map(toRaw(volumeOverrides.value)),
-      });
+      const result = await current.apply(
+        { urls, volumeOverrides: new Map(toRaw(volumeOverrides.value)) },
+        {
+          onProgress: (completed, total, viaFirecrawl) => {
+            applyProgress.value = {
+              completed,
+              total,
+              viaFirecrawl,
+              waitSeconds: applyProgress.value?.waitSeconds ?? 0,
+            };
+          },
+        },
+      );
+      const viaFirecrawl = applyProgress.value?.viaFirecrawl ?? 0;
       confirm.value = { stage: 'closed' };
       setChangeset(current.changeset);
       canUndo.value = result.status !== 'failed';
       // 新卷已随本次应用创建；会话已按最新书籍重新推断目标，保留覆盖会让下一次应用再建同名卷
       if (result.status !== 'failed') volumeOverrides.value = new Map();
-      notifyApplied(current, result);
+      notifyApplied(current, result, viaFirecrawl);
       if (result.status !== 'failed') await options.onApplied?.(result);
     } catch (error) {
       const code = errorCode(error);
@@ -429,6 +459,8 @@ function createBookSyncContext(
         });
       } else notifyError(t('bookUi.sync.applyFailed'), error);
     } finally {
+      stopWait();
+      applyProgress.value = null;
       busy.value = false;
     }
   }
@@ -470,7 +502,11 @@ function createBookSyncContext(
     if (current) await undoWith(current);
   }
 
-  function notifyApplied(current: Session, result: BookSyncApplyResult): void {
+  function notifyApplied(
+    current: Session,
+    result: BookSyncApplyResult,
+    viaFirecrawl: number,
+  ): void {
     const count = result.appliedUrls.length;
     if (result.status === 'failed') {
       toast.add({
@@ -481,15 +517,28 @@ function createBookSyncContext(
       });
       return;
     }
+    const creating = !!target.value && 'newFrom' in target.value;
+    const partial = result.status === 'partial';
+    const base = partial
+      ? t('bookUi.sync.partialDetail', { count, failed: result.failed.length })
+      : t('bookUi.sync.doneDetail', { count });
     toast.add({
-      severity: result.status === 'partial' ? 'warn' : 'success',
+      severity: partial ? 'warn' : 'success',
       summary: t(
-        result.status === 'partial' ? 'bookUi.sync.partialTitle' : 'bookUi.sync.doneTitle',
+        creating
+          ? partial
+            ? 'bookUi.sync.createdPartialTitle'
+            : 'bookUi.sync.createdTitle'
+          : partial
+            ? 'bookUi.sync.partialTitle'
+            : 'bookUi.sync.doneTitle',
       ),
-      detail:
-        result.status === 'partial'
-          ? t('bookUi.sync.partialDetail', { count, failed: result.failed.length })
-          : t('bookUi.sync.doneDetail', { count }),
+      detail: viaFirecrawl
+        ? t('bookUi.sync.withFirecrawl', {
+            detail: base,
+            count: viaFirecrawl,
+          })
+        : base,
       life: 5000,
       // 闭包持有会话：离开页面（例如新建后跳转到新书）后仍可从通知撤销
       onRevert: () => undoWith(current),
@@ -535,6 +584,7 @@ function createBookSyncContext(
     drift,
     summary,
     deep,
+    applyProgress,
     confirm,
     working,
     canUndo,
@@ -569,4 +619,16 @@ function emptyChangeset(): BookSyncChangeset {
     dateNewer: [],
     status: 'unchecked',
   };
+}
+
+function idleDeep(): DeepCheckProgress {
+  return { running: false, completed: 0, total: 0, viaFirecrawl: 0, waitSeconds: 0 };
+}
+
+/** 每秒报告 Firecrawl 因 429 暂停的剩余秒数；返回停止函数 */
+function trackFirecrawlWait(onTick: (waitSeconds: number) => void): () => void {
+  const timer = setInterval(() => {
+    onTick(Math.ceil(FirecrawlClient.pauseRemainingMs() / 1000));
+  }, 1000);
+  return () => clearInterval(timer);
 }

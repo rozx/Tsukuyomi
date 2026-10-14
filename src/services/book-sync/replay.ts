@@ -268,7 +268,7 @@ export class BookSyncReplay {
     entry: CatalogEntry,
     _imported: boolean,
     signal?: AbortSignal,
-  ): Promise<{ ok: true; paragraphs: string[] } | Failure> {
+  ): Promise<{ ok: true; paragraphs: string[]; viaFirecrawl: boolean } | Failure> {
     try {
       const snapshot = await this.fetch(entry.url, signal);
       signal?.throwIfAborted();
@@ -286,7 +286,11 @@ export class BookSyncReplay {
             'aiImportErrors.bookSyncContentEmptyTheSourceChapterBodyIs',
           ),
         );
-      return { ok: true, paragraphs };
+      return {
+        ok: true,
+        paragraphs,
+        viaFirecrawl: snapshot.transportUrl.startsWith('firecrawl:'),
+      };
     } catch (error) {
       return failure(error, 'CONTENT_FETCH_FAILED');
     }

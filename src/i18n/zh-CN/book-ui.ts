@@ -88,6 +88,12 @@ export default {
       applyNothing: '还没有勾选章节',
     },
     sync: {
+      createdTitle: '书籍已创建',
+      createdPartialTitle: '书籍已创建，部分章节失败',
+      withFirecrawl: '{detail}（其中 {count} 章经 Firecrawl 抓取）',
+      applyFetching: '正在抓取正文 {completed} / {total}',
+      applyWriting: '正文已抓取，正在写入书籍…',
+      viaFirecrawl: '其中 {count} 章经 Firecrawl 抓取',
       newBookInfo: '新书信息',
       newBookCover: '《{title}》封面',
       newBookAuthor: '作者：{author}',

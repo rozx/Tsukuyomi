@@ -30,6 +30,7 @@ declare module 'vue' {
     AppHeader: typeof import('./components/layout/AppHeader.vue')['default']
     ApplyBar: typeof import('./components/book-sync/fragments/ApplyBar.vue')['default']
     ApplyConfirm: typeof import('./components/book-sync/fragments/ApplyConfirm.vue')['default']
+    ApplyProgress: typeof import('./components/book-sync/fragments/ApplyProgress.vue')['default']
     AppMessage: typeof import('./components/common/AppMessage.vue')['default']
     AppProgressPanelDesktop: typeof import('./components/layout/AppProgressPanelDesktop.vue')['default']
     AppRightPanel: typeof import('./components/layout/AppRightPanel.vue')['default']
