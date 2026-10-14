@@ -9,6 +9,7 @@ import { SettingsService } from '../services/settings-service';
 import { SyncDataService } from '../services/sync-data-service';
 import type { Settings } from '../models/settings';
 import { SyncType } from '../models/sync';
+import { pruneDeletionStateForImport } from '../services/settings/import-deletion-state';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -254,5 +255,28 @@ describe('文件缺少 sync 字段时只清理被导入条目的删除记录', (
       'memories:gone-book',
       'novel:gone-book',
     ]);
+  });
+});
+
+describe('pruneDeletionStateForImport 按墓碑类型匹配对应分区', () => {
+  const config = {
+    ...syncConfig,
+    knownRemoteTombstones: {
+      'novel:n': '2026-01-01T00:00:00.000Z',
+      'chapters:n:a': '2026-01-01T00:00:00.000Z',
+      'memories:n': '2026-01-01T00:00:00.000Z',
+    },
+  };
+
+  it('只导入书籍时保留该书的 memories 墓碑', () => {
+    const patch = pruneDeletionStateForImport(config, { novels: [{ id: 'n' }] } as never);
+    expect(Object.keys(patch.knownRemoteTombstones!)).toEqual(['memories:n']);
+  });
+
+  it('只导入 Memory 时保留该书的 novel / chapters 墓碑', () => {
+    const patch = pruneDeletionStateForImport(config, {
+      memories: [{ id: 'mem', bookId: 'n' }],
+    } as never);
+    expect(Object.keys(patch.knownRemoteTombstones!).sort()).toEqual(['chapters:n:a', 'novel:n']);
   });
 });

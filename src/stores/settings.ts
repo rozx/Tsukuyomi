@@ -1127,7 +1127,7 @@ export const useSettingsStore = defineStore('settings', {
      *   - `deletedNovelIds`        → 写入 manifest.tombstones["novel:<id>"]
      *   - `deletedModelIds`        → 上传合并时过滤远端模型
      *   - `deletedMemoryIds`       → 写入 memories envelope.tombstones（v3+ 主动传播）
-     *   - `knownRemoteTombstones`  → 与上面合并进 manifest.tombstones（按所属书籍清理）
+     *   - `knownRemoteTombstones`  → 与上面合并进 manifest.tombstones（novel / chapters 按导入书籍、memories 按导入 Memory 所属书籍清理）
      *
      * 保留字段（仅本地过滤、不主动跨设备传播）：deletedCoverIds / deletedCoverUrls
      */
