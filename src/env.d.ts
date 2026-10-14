@@ -3,6 +3,10 @@ declare namespace NodeJS {
     NODE_ENV: string;
     VUE_ROUTER_MODE: 'hash' | 'history' | 'abstract' | undefined;
     VUE_ROUTER_BASE: string | undefined;
+    /** 构建时注入的短 SHA（见 vite-plugins/build-info.ts） */
+    APP_BUILD_COMMIT: string | undefined;
+    /** 构建时注入的提交数，浅克隆等无法确定时为空字符串 */
+    APP_BUILD_COMMIT_COUNT: string | undefined;
   }
 }
 

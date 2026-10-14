@@ -9,7 +9,6 @@
 ```bash
 # 安装依赖
 bun install
-bun run setup:git-hooks  # 首次 clone 后必跑：注册 .githooks/pre-commit（自动 bump build 号）
 
 # 开发
 bun run dev              # 前端(9000) + 后端(8080) 同时启动
@@ -34,7 +33,7 @@ bun test --watch                   # 监听模式
 
 **修改代码后必须运行**: `bun run lint && bun run type-check && bun run quality-check`
 
-**首次 clone 必跑**: `bun run setup:git-hooks` — 把 `core.hooksPath` 指向 [`.githooks/`](.githooks/) 启用 pre-commit。hook 文件或目录缺失时 git **静默跳过**，build 号不会自增，记得跑。
+**版本号**: 仓库只存 `x.y.z`（`bun run bump` 修改）；界面上的 `x.y.z.提交数 (短 SHA)` 由 [`vite-plugins/build-info.ts`](vite-plugins/build-info.ts) 在构建时生成（`BUILD_COMMIT` → git → `dev`）。没有 pre-commit 自动 bump，不要手动写第 4 段 build 号。
 
 ---
 

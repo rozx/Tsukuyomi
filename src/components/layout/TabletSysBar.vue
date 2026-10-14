@@ -10,7 +10,7 @@ import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import { APP_NAME } from 'src/constants/app';
-import { APP_VERSION } from 'src/constants/version';
+import { APP_DISPLAY_VERSION } from 'src/constants/build-info';
 
 const {
   unreadCount,
@@ -70,7 +70,7 @@ const syncChip = computed(() => {
   <div class="tsm-sysbar-tablet">
     <div class="tst-brand">
       <span class="tst-brand-name">{{ APP_NAME.en }} {{ APP_NAME.zh }} · MOONLIT TRANSLATOR</span>
-      <span class="tst-brand-version">v{{ APP_VERSION }}</span>
+      <span class="tst-brand-version">v{{ APP_DISPLAY_VERSION }}</span>
     </div>
 
     <div class="tst-actions">

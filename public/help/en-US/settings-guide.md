@@ -361,7 +361,7 @@ Current behavior:
 Shows:
 
 - Logo and application subtitle
-- Version including build number
+- Version as `version.commit-count (commit SHA)`, e.g. `0.18.1.1532 (0fa51f9)`; when the commit count is unknown, only `version (commit SHA)`
 - Author link (Rozx)
 - GitHub repository
 

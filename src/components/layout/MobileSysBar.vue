@@ -14,7 +14,7 @@ import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import BatchEmbeddingsButton from 'src/components/novel/BatchEmbeddingsButton.vue';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
-import { APP_VERSION } from 'src/constants/version';
+import { APP_DISPLAY_VERSION } from 'src/constants/build-info';
 
 const router = useRouter();
 const route = useRoute();
@@ -49,7 +49,7 @@ const openHelp = () => {
       <img :src="logoPath" :alt="APP_NAME.full" />
       <div class="sys-brand-text">
         <span class="sys-brand-name">{{ APP_NAME.en }} {{ APP_NAME.zh }}</span>
-        <span class="sys-brand-version">v{{ APP_VERSION }}</span>
+        <span class="sys-brand-version">v{{ APP_DISPLAY_VERSION }}</span>
       </div>
     </div>
 

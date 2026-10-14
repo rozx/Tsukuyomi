@@ -202,9 +202,6 @@ cd Tsukuyomi
 # 安裝相依套件
 bun install
 
-# 首次 clone 後註冊提交鉤子（提交時自動遞增建置號）
-bun run setup:git-hooks
-
 # 啟動開發環境
 bun run dev
 ```
@@ -244,7 +241,6 @@ bun run dev
 | 指令                      | 用途                                                                               |
 | :------------------------ | :--------------------------------------------------------------------------------- |
 | `bun install`             | 安裝相依套件                                                                       |
-| `bun run setup:git-hooks` | 首次 clone 後註冊 pre-commit 建置號鉤子                                            |
 | `bun run dev`             | 啟動 Web 開發伺服器（預設 9000）                                                   |
 | `bun run dev:electron`    | 啟動 Electron 開發模式                                                             |
 | `bun run build:spa`       | 建置正式環境 Web SPA                                                               |

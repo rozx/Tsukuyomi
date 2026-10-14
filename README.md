@@ -202,9 +202,6 @@ cd Tsukuyomi
 # 安装依赖
 bun install
 
-# 首次 clone 后注册提交钩子（提交时自动递增构建号）
-bun run setup:git-hooks
-
 # 开启开发环境
 bun run dev
 ```
@@ -244,7 +241,6 @@ bun run dev
 | 命令                      | 用途                                                                               |
 | :------------------------ | :--------------------------------------------------------------------------------- |
 | `bun install`             | 安装依赖                                                                           |
-| `bun run setup:git-hooks` | 首次 clone 后注册 pre-commit 构建号钩子                                            |
 | `bun run dev`             | 启动 Web 开发服务器（默认 9000）                                                   |
 | `bun run dev:electron`    | 启动 Electron 开发模式                                                             |
 | `bun run build:spa`       | 构建生产环境 Web SPA                                                               |

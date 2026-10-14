@@ -32,7 +32,7 @@ When quoting UI labels, use the exact text from that language's resources in `sr
    - Run `bun bump <version>` to update. For example: `bun bump 0.16.2`.
    - This updates both `package.json` and `src/constants/version.ts`.
    - Verify the update was successful by re-reading both files.
-   - Note: the pre-commit hook appends a build number on commit (e.g. `version.ts` becomes `0.16.2.1`). That is expected — don't "fix" it.
+   - `version.ts` holds only `x.y.z`. The displayed commit count / short SHA is generated at build time (`vite-plugins/build-info.ts`), so never add a 4th segment by hand.
 
 4. **If the version already matches**, report success and move on.
 
@@ -238,7 +238,7 @@ Do not commit or open a PR unless the user asks. When they do:
 
 3. **Open the PR** against `main`:
    - **Title**: `Release vX.X.X: <short summary>` (e.g. `Release v0.16.1: release notes and desktop update help docs`). Not conventional-commit style.
-   - **Body** (English): `## Summary` (version bump incl. hook build number, release notes coverage, each help doc change), `## Notes for reviewers` (no code changes, anything non-obvious), `## Test plan` (checked boxes for type-check / lint / prettier; unchecked box for rendering the Help page).
+   - **Body** (English): `## Summary` (version bump, release notes coverage, each help doc change), `## Notes for reviewers` (no code changes, anything non-obvious), `## Test plan` (checked boxes for type-check / lint / prettier; unchecked box for rendering the Help page).
    - **Label**: `release` (triggers the Electron release build).
    ```bash
    gh pr create --repo rozx/Tsukuyomi --base main --head release/vX.X.X \
