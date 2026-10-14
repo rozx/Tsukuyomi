@@ -1,5 +1,5 @@
 import { isCancelledError } from 'src/utils/is-cancelled-error';
-import type { CrossTabLanes } from './cross-tab-lanes';
+import type { CrossTabLanes } from 'src/services/network/cross-tab-lanes';
 import { RequestLimiter } from './request-limiter';
 
 /**
@@ -61,9 +61,17 @@ export class RequestQueue {
     try {
       const crossTab = state.policy.crossTab;
       const attempt = () => this.attempt(lane, state, request);
-      return await (crossTab
-        ? crossTab.exclusive(lane, state.policy.minIntervalMs ?? 0, attempt, signal)
-        : attempt());
+      if (!crossTab) return await attempt();
+      return await crossTab.exclusive(
+        lane,
+        {
+          minIntervalMs: state.policy.minIntervalMs ?? 0,
+          signal,
+          // 其它标签页已熔断时立即失败，不在锁内空等间隔
+          precheck: () => this.throwIfTripped(lane, state),
+        },
+        attempt,
+      );
     } finally {
       release();
     }
@@ -86,11 +94,15 @@ export class RequestQueue {
 
   /** 清空运行状态（排队、暂停、熔断，含跨标签页共享的熔断），保留已定义的策略；指定 lane 时只清该 lane */
   reset(lane?: string): void {
-    for (const [name, state] of this.lanes) {
-      if (lane === undefined || name === lane) state.policy.crossTab?.clear(name);
+    if (lane === undefined) {
+      // 共享状态可能由其它标签页写入、本页从未请求过：按策略清除全部
+      for (const policy of [this.defaultPolicy, ...this.policies.values()])
+        policy.crossTab?.clear();
+      this.lanes = new Map();
+    } else {
+      (this.lanes.get(lane)?.policy ?? this.policyFor(lane)).crossTab?.clear(lane);
+      this.lanes.delete(lane);
     }
-    if (lane === undefined) this.lanes = new Map();
-    else this.lanes.delete(lane);
   }
 
   /**
@@ -153,6 +165,9 @@ export class RequestQueue {
     if (!shared) return;
     lane.refusals = shared.refusals;
     lane.trippedUntil = shared.trippedUntil;
+    // 熔断时钟偏快后又校正、或存储被改坏时，截止时间可能远在未来：最多按一个冷却期算
+    const latest = Date.now() + (lane.policy.breaker?.cooldownMs ?? 0);
+    if (lane.trippedUntil > latest) this.saveBreaker(name, lane, lane.refusals, latest);
   }
 
   private saveBreaker(name: string, lane: Lane, refusals: number, trippedUntil: number): void {

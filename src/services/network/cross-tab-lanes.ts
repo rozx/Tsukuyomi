@@ -5,7 +5,7 @@
  * 不支持 Web Locks 或 localStorage 的环境（如 jsdom）不创建，调用方退回单页行为。
  */
 
-import { abortError } from './request-limiter';
+import { abortError } from 'src/services/network/request-limiter';
 
 /** navigator.locks 中用到的部分 */
 export interface LockRequester {
@@ -18,7 +18,15 @@ export interface LockRequester {
 
 export interface CrossTabLaneDeps {
   locks: LockRequester | undefined;
-  storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> | undefined;
+  storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'> | undefined;
+}
+
+export interface ExclusiveOptions {
+  /** 与上一次请求开始（任一标签页）的最小间隔 */
+  minIntervalMs: number;
+  signal?: AbortSignal | undefined;
+  /** 拿到锁后、等待间隔前调用；抛错即放弃（如共享熔断中），不等间隔也不记为一次请求开始 */
+  precheck?: () => void;
 }
 
 /** 跨标签页共享的熔断状态 */
@@ -29,16 +37,12 @@ export interface SharedBreakerState {
 
 export interface CrossTabLanes {
   /** 跨标签页独占 lane 执行 task，且与上一次请求开始至少间隔 minIntervalMs */
-  exclusive<T>(
-    lane: string,
-    minIntervalMs: number,
-    task: () => Promise<T>,
-    signal?: AbortSignal,
-  ): Promise<T>;
+  exclusive<T>(lane: string, options: ExclusiveOptions, task: () => Promise<T>): Promise<T>;
   /** 读取共享熔断状态；存储不可用时返回 undefined，调用方沿用本页状态 */
   readBreaker(lane: string): SharedBreakerState | undefined;
   writeBreaker(lane: string, state: SharedBreakerState): void;
-  clear(lane: string): void;
+  /** 清除共享状态；不传 lane 时清除所有 lane（不动其它 localStorage 数据） */
+  clear(lane?: string): void;
 }
 
 interface StoredLane extends SharedBreakerState {
@@ -116,8 +120,9 @@ export function createCrossTabLanes(
   };
 
   return {
-    exclusive(lane, minIntervalMs, task, signal) {
+    exclusive(lane, { minIntervalMs, signal, precheck }, task) {
       return locks.request(`${KEY_PREFIX}${lane}`, { ...(signal && { signal }) }, async () => {
+        precheck?.();
         const lastStartAt = read(lane)?.lastStartAt ?? 0;
         // 时钟回拨时 lastStartAt 可能在未来：最多等一个间隔
         const wait = Math.min(minIntervalMs, lastStartAt + minIntervalMs - Date.now());
@@ -135,7 +140,13 @@ export function createCrossTabLanes(
     },
     clear(lane) {
       try {
-        storage.removeItem(KEY_PREFIX + lane);
+        const keys =
+          lane === undefined
+            ? Array.from({ length: storage.length }, (_, i) => storage.key(i)).filter(
+                (key): key is string => key?.startsWith(KEY_PREFIX) ?? false,
+              )
+            : [KEY_PREFIX + lane];
+        for (const key of keys) storage.removeItem(key);
       } catch {
         writable = false;
       }
