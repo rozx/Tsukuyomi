@@ -23,7 +23,11 @@ export interface ImportReplacementRange {
   signature: string;
   oldKeys: { chapterId: string; paragraphId: string }[];
   newKeys: string[];
+  /** 被替换的旧原文与替换后的新原文，供界面对比（旧版本保存的方案没有） */
+  oldTexts?: string[];
+  newTexts?: string[];
   clearedVersions: number;
+  /** 用户已确认，或不会清空任何译文而自动接受 */
   confirmed: boolean;
 }
 export interface ImportParagraphMatchResult {

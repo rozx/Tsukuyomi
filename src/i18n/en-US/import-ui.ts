@@ -181,6 +181,11 @@ export default {
       matchPlaceholder: 'Choose a matching chapter',
       settingsPlaceholder: 'Keep settings from which chapter',
       confirmTarget: 'Confirm updating this novel',
+      showTexts: 'Show text',
+      hideTexts: 'Hide text',
+      oldTexts: 'Old text ({count} paragraphs)',
+      newTexts: 'New text ({count} paragraphs)',
+      confirmAll: 'Confirm all replacements ({count})',
       confirmReplacement: 'Confirm replacement',
     },
     planDetails: {

@@ -554,9 +554,10 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
       );
     });
 
-  const confirmReplacement = (signature: string) =>
+  /** 确认一条或多条替换范围；只重新生成一次方案 */
+  const confirmReplacements = (signatures: string[]) =>
     resolveAndPreview('resolve', (taskId) =>
-      ImportPlanService.confirmReplacement(taskId, plan.value!.id, signature),
+      ImportPlanService.confirmReplacements(taskId, plan.value!.id, signatures),
     );
 
   const chooseChapterSettings = (draftChapterId: string, chapterId: string) =>
@@ -650,7 +651,7 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     applyPlan,
     resolveMatch,
     confirmTarget,
-    confirmReplacement,
+    confirmReplacements,
     chooseChapterSettings,
     revertOperation,
     revertStatus,

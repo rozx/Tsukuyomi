@@ -529,28 +529,34 @@ export class ImportPlanService {
     });
   }
 
-  /** 实际用户在已保存方案中选择替换范围；不提供给 Agent 工具。 */
-  static async confirmReplacement(
+  /**
+   * 实际用户在已保存方案中确认替换范围（可一次确认多条，只递增一次草稿序号、重生成一次方案）；
+   * 任一签名不属于当前方案时整体拒绝。不提供给 Agent 工具。
+   */
+  static async confirmReplacements(
     taskId: string,
     planId: string,
-    signature: string,
+    signatures: string[],
   ): Promise<number> {
     const plan = await this.get(planId);
+    const known = new Set(plan?.replacements?.map((entry) => entry.signature) ?? []);
     if (
       !plan ||
       plan.taskId !== taskId ||
-      !plan.replacements?.some((entry) => entry.signature === signature)
+      !signatures.length ||
+      signatures.some((signature) => !known.has(signature))
     )
       throw importError('PLAN_STALE', 'planStaleTheReplacementScopeDoesNotExist', {});
     return ImportRepository.mutateTask(taskId, (task) => {
       if (task.draft.revision !== plan.draftRevision || task.currentPlanId !== planId)
         throw importError('PLAN_STALE', 'planStaleReviewTheReplacementScopeAgain', {});
       task.draft.replacementConsents ??= [];
-      task.draft.replacementConsents.push({
-        signature,
-        bookId: plan.targetBookId,
-        bookRevision: plan.baseBookRevision,
-      });
+      for (const signature of new Set(signatures))
+        task.draft.replacementConsents.push({
+          signature,
+          bookId: plan.targetBookId,
+          bookRevision: plan.baseBookRevision,
+        });
       task.draft.revision++;
       task.state = 'draft';
       return Promise.resolve(task.draft.revision);

@@ -123,12 +123,20 @@ async function replacement(
     old: before.map((item) => ({ chapterId: item.chapterId, paragraph: item.paragraph })),
     next: after.map((item) => ({ key: item.key, text: item.text })),
   });
-  const confirmed = state.input.allowedReplacements?.includes(signature) ?? false;
+  const clearedVersions = before.reduce(
+    (count, item) => count + item.paragraph.translations.length,
+    0,
+  );
+  // 不会清空任何译文（如仅重新分段）时没有损失可确认，直接接受
+  const confirmed =
+    clearedVersions === 0 || (state.input.allowedReplacements?.includes(signature) ?? false);
   state.replacements.push({
     signature,
     oldKeys: before.map((item) => ({ chapterId: item.chapterId, paragraphId: item.paragraph.id })),
     newKeys: after.map((item) => item.key),
-    clearedVersions: before.reduce((count, item) => count + item.paragraph.translations.length, 0),
+    oldTexts: before.map((item) => item.paragraph.text),
+    newTexts: after.map((item) => item.text),
+    clearedVersions,
     confirmed,
   });
   if (!confirmed)

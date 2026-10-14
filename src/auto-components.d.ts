@@ -145,6 +145,7 @@ declare module 'vue' {
     ImportPlanHero: typeof import('./components/import/ImportPlanHero.vue')['default']
     ImportPlanPanel: typeof import('./components/import/ImportPlanPanel.vue')['default']
     ImportPlanRecipe: typeof import('./components/import/ImportPlanRecipe.vue')['default']
+    ImportPlanReplacement: typeof import('./components/import/ImportPlanReplacement.vue')['default']
     ImportPlanStats: typeof import('./components/import/ImportPlanStats.vue')['default']
     ImportQuestionCard: typeof import('./components/import/ImportQuestionCard.vue')['default']
     ImportRunBar: typeof import('./components/import/ImportRunBar.vue')['default']

@@ -177,6 +177,11 @@ export default {
       matchPlaceholder: '选择对应关系',
       settingsPlaceholder: '沿用哪一章的设置',
       confirmTarget: '确认更新这本小说',
+      showTexts: '查看原文',
+      hideTexts: '收起原文',
+      oldTexts: '旧原文（{count} 段）',
+      newTexts: '新原文（{count} 段）',
+      confirmAll: '全部确认替换（{count}）',
       confirmReplacement: '确认替换',
     },
     planDetails: {

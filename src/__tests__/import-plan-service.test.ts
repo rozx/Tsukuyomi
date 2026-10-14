@@ -396,17 +396,46 @@ describe('基于真实数据的导入方案', () => {
     );
     const first = await ImportPlanService.preview(input.taskId, 2);
     expect(first.conflicts.some((conflict) => conflict.code === 'REPLACEMENT_REQUIRED')).toBe(true);
-    const revision = await ImportPlanService.confirmReplacement(
-      input.taskId,
-      first.id,
+    const revision = await ImportPlanService.confirmReplacements(input.taskId, first.id, [
       first.replacements![0]!.signature,
-    );
+    ]);
     const second = await ImportPlanService.preview(input.taskId, revision);
     expect(second.conflicts).toEqual([]);
     expect(second.summary?.clearedVersions).toBe(6);
     expect(
       second.chapters[0]?.content.every((paragraph) => paragraph.translations.length === 0),
     ).toBe(true);
+  });
+
+  it('批量确认替换：一次确认全部签名，只递增一次草稿序号；含未知签名时整体拒绝', async () => {
+    await BookService.saveBook(book());
+    const input = await draft('完全不同的段落一\n完全不同的段落二');
+    await ImportDraftService.edit(
+      input.taskId,
+      {
+        baseDraftRevision: 1,
+        operations: [
+          { op: 'propose_target', bookId: 'book' },
+          { op: 'propose_match', chapterId: 'draft-c', targetChapterIds: ['old-c'] },
+        ],
+      },
+      { actor: 'user' },
+    );
+    const plan = await ImportPlanService.preview(input.taskId, 2);
+    const signatures = plan
+      .replacements!.filter((entry) => !entry.confirmed)
+      .map((e) => e.signature);
+    expect(signatures.length).toBeGreaterThan(0);
+
+    await expect(
+      ImportPlanService.confirmReplacements(input.taskId, plan.id, [...signatures, 'unknown']),
+    ).rejects.toThrow();
+    expect((await ImportRepository.getTask(input.taskId))!.draft.revision).toBe(2);
+
+    const revision = await ImportPlanService.confirmReplacements(input.taskId, plan.id, signatures);
+    expect(revision).toBe(3);
+    const next = await ImportPlanService.preview(input.taskId, revision);
+    expect(next.conflicts).toEqual([]);
   });
 
   it('目标修订后的预览绑定新序号，过时草稿不能标为 ready', async () => {

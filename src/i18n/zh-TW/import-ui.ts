@@ -175,6 +175,11 @@ export default {
       matchPlaceholder: '選擇對應關係',
       settingsPlaceholder: '沿用哪一章的設定',
       confirmTarget: '確認更新這本小說',
+      showTexts: '檢視原文',
+      hideTexts: '收起原文',
+      oldTexts: '舊原文（{count} 段）',
+      newTexts: '新原文（{count} 段）',
+      confirmAll: '全部確認取代（{count}）',
       confirmReplacement: '確認取代',
     },
     planDetails: {

@@ -156,4 +156,61 @@ describe('导入精确段落匹配', () => {
     });
     expect(changed.conflicts).not.toEqual([]);
   });
+
+  it('不会清空任何译文的替换（如仅重新分段）自动接受，不产生冲突', async () => {
+    const result = await matchImportParagraphs({
+      scopeId: 'book:1',
+      old: [old('甲\n乙\n丙', 'a', 'old', 0), old('丁\n戊', 'b', 'old', 0)],
+      next: ['甲', '乙', '丙', '丁', '戊'].map((text, index) => next(text, index)),
+    });
+    expect(result.conflicts).toEqual([]);
+    expect(result.replacements).toHaveLength(1);
+    expect(result.replacements[0]).toMatchObject({ clearedVersions: 0, confirmed: true });
+    expect(result.paragraphs.map((item) => item.paragraph.text)).toEqual([
+      '甲',
+      '乙',
+      '丙',
+      '丁',
+      '戊',
+    ]);
+  });
+
+  it('无译文的重复句歧义同样自动接受', async () => {
+    const result = await matchImportParagraphs({
+      scopeId: 'book:1',
+      old: [old('重复', 'a', 'old', 0), old('重复', 'b', 'old', 0)],
+      next: [next('重复', 0)],
+    });
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it('只有会清空译文的范围需要确认', async () => {
+    const result = await matchImportParagraphs({
+      scopeId: 'book:1',
+      old: [
+        old('旧甲', 'a', 'old', 0),
+        old('旧乙', 'b', 'old', 0),
+        old('锚点', 'm', 'old', 0),
+        old('旧丙', 'c', 'old', 2),
+        old('旧丁', 'd', 'old', 0),
+      ],
+      next: ['新甲', '新乙', '新丙', '锚点', '新丁', '新戊', '新己'].map((text, index) =>
+        next(text, index),
+      ),
+    });
+    expect(result.replacements.map((entry) => entry.confirmed)).toEqual([true, false]);
+    expect(result.conflicts).toHaveLength(1);
+  });
+
+  it('替换范围带上旧原文与新原文，供界面对比', async () => {
+    const result = await matchImportParagraphs({
+      scopeId: 'book:1',
+      old: [old('旧甲', 'a', 'old', 1), old('旧乙', 'b', 'old', 1)],
+      next: ['新甲', '新乙', '新丙'].map((text, index) => next(text, index)),
+    });
+    expect(result.replacements[0]).toMatchObject({
+      oldTexts: ['旧甲', '旧乙'],
+      newTexts: ['新甲', '新乙', '新丙'],
+    });
+  });
 });
