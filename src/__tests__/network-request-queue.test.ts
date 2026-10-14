@@ -202,6 +202,24 @@ describe('RequestQueue 熔断', () => {
     await expect(queue.run('site:a', () => Promise.resolve('ok'))).resolves.toBe('ok');
   });
 
+  it('非拒绝类错误打断连续拒绝：计数清零', async () => {
+    const queue = queueWith({ concurrency: 1, breaker: BREAKER });
+    await refuseTimes(queue, 'site:a', 2);
+    await expect(queue.run('site:a', () => Promise.reject(new Error('404')))).rejects.toThrow(
+      '404',
+    );
+    await refuseTimes(queue, 'site:a', 2);
+    await expect(queue.run('site:a', () => Promise.resolve('ok'))).resolves.toBe('ok');
+  });
+
+  it('取消不算站点的响应：既不计数也不清零', async () => {
+    const queue = queueWith({ concurrency: 1, breaker: BREAKER });
+    await refuseTimes(queue, 'site:a', 2);
+    const aborted = new DOMException('操作已取消', 'AbortError');
+    await expect(queue.run('site:a', () => Promise.reject(aborted))).rejects.toBe(aborted);
+    await expect(queue.run('site:a', refuse)).rejects.toBeInstanceOf(Tripped);
+  });
+
   it('熔断只影响该 lane', async () => {
     const queue = queueWith({ concurrency: 1, breaker: BREAKER });
     await trip(queue, 'site:a');
@@ -218,6 +236,21 @@ describe('RequestQueue 熔断', () => {
     await third;
     await fourth;
     expect(queued).not.toHaveBeenCalled();
+  });
+
+  it('排队者收到的熔断错误不清零计数：冷却后试探再被拒仍立即重新熔断', async () => {
+    const queue = queueWith({ concurrency: 1, minIntervalMs: 1_000, breaker: BREAKER });
+    await refuseTimes(queue, 'site:a', 2);
+    const third = expect(queue.run('site:a', refuse)).rejects.toBeInstanceOf(Tripped);
+    const waiter = expect(queue.run('site:a', () => Promise.resolve('ok'))).rejects.toBeInstanceOf(
+      Tripped,
+    );
+    await vi.runAllTimersAsync();
+    await third;
+    await waiter;
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    await expect(queue.run('site:a', refuse)).rejects.toBeInstanceOf(Tripped);
   });
 
   it('冷却结束后放行一次试探：再被拒立即重新熔断', async () => {

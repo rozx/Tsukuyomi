@@ -185,6 +185,8 @@ export default {
       replacementGroup:
         '{ranges} 处替换：{removed} 段旧原文 → {added} 段新原文，清空 {versions} 个译文版本',
       confirmChapter: '确认本章',
+      crossChapters: '跨 {count} 章',
+      confirmCrossChapter: '确认跨章替换',
       confirmReplacement: '确认替换',
     },
     planDetails: {

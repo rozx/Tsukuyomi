@@ -2,7 +2,7 @@ import type { ImportPlan } from 'src/models/import';
 import type { ImportReplacementRange } from 'src/models/import-matching';
 
 /**
- * 方案中需要用户处理的项目：普通冲突 + 按章节合并的多段替换。
+ * 方案中需要用户处理的项目：普通冲突 + 按受影响章节合并的多段替换。
  * 状态标签与待处理列表共用，保证两处数字一致。
  */
 
@@ -13,9 +13,15 @@ const REPLACEMENT_CONFLICT_CODES = new Set([
   'MATCHING_LIMIT',
 ]);
 
-/** 同一章（按被替换段落所在的书内章节）的全部未确认替换 */
+/**
+ * 受影响章节完全相同的全部未确认替换（按被替换段落所在的书内章节）。
+ * 跨章替换（如合章后）单独成组并列出全部章节，确认时不会顺带确认只涉及其中一章的替换。
+ */
 export interface ReplacementGroup {
-  chapterId: string;
+  /** 分组键：受影响章节 id 按出现顺序编码（JSON，章节 id 含逗号也不会碰撞） */
+  key: string;
+  /** 受影响章节，按出现顺序去重；旧方案缺少 oldKeys 时为空 */
+  chapterIds: string[];
   signatures: string[];
   entries: ImportReplacementRange[];
   /** 替换处数 */
@@ -39,11 +45,13 @@ export function planPendingItems(plan: ImportPlan): PlanPendingItems {
   const groups = new Map<string, ReplacementGroup>();
   for (const entry of plan.replacements ?? []) {
     if (entry.confirmed) continue;
-    const chapterId = entry.oldKeys?.[0]?.chapterId ?? '';
-    let group = groups.get(chapterId);
+    const chapterIds = [...new Set((entry.oldKeys ?? []).map((key) => key.chapterId))];
+    const key = JSON.stringify(chapterIds);
+    let group = groups.get(key);
     if (!group) {
       group = {
-        chapterId,
+        key,
+        chapterIds,
         signatures: [],
         entries: [],
         ranges: 0,
@@ -51,7 +59,7 @@ export function planPendingItems(plan: ImportPlan): PlanPendingItems {
         added: 0,
         versions: 0,
       };
-      groups.set(chapterId, group);
+      groups.set(key, group);
     }
     group.signatures.push(entry.signature);
     group.entries.push(entry);
