@@ -4,6 +4,9 @@ import type { SyncConfig } from './sync';
 import type { Memory } from './memory';
 import type { AppLocale } from './locale';
 
+/** 「通用设置」分区的稳定序号：首次进入设置页（没有保存过分区）时打开它 */
+export const GENERAL_SETTINGS_TAB = 10;
+
 /**
  * 任务默认模型配置
  * 键为任务类型，值为模型 ID 或 null（表示未设置）
@@ -83,8 +86,8 @@ export interface AppSettings {
   /** 各任务模型选择的修改时间（毫秒）；独立于标签页、代理等应用设置。 */
   taskDefaultModelsUpdatedAt?: Partial<Record<keyof AIModelDefaultTasks, number>>;
   /**
-   * 最后打开的设置标签页索引
-   * 默认值：0（第一个标签页）
+   * 最后打开的设置标签页（稳定序号，见 useSettingsPage 的 SETTINGS_TAB_DEFS）
+   * 默认值：GENERAL_SETTINGS_TAB（通用设置）
    */
   lastOpenedSettingsTab?: number;
   /**

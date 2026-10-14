@@ -6,6 +6,7 @@ import {
   settingsTabsFor,
   tabValueToSavedIndex,
 } from 'src/composables/settings-page/useSettingsPage';
+import { useSettingsStore } from 'src/stores/settings';
 import SiteMappingSettingsTab from 'src/components/settings/SiteMappingSettingsTab.vue';
 import ProxySettingsTab from 'src/components/settings/ProxySettingsTab.vue';
 
@@ -103,5 +104,25 @@ describe('通用设置语言入口', () => {
       expect(tabValueToSavedIndex(electron, general.value)).toBe(10);
       expect(settingsTabsFor(electron, 'zh-TW')[0]!.label).toBe('一般設定');
     }
+  });
+});
+
+describe('首次进入设置页（没有保存过分区）', () => {
+  it.each([false, true])('isElectron=%s：默认打开第一页「通用设置」', async (isElectron) => {
+    const store = useSettingsStore();
+    await store.loadSettings();
+    const value = savedIndexToTabValue(isElectron, store.lastOpenedSettingsTab);
+    expect(value).toBe('0');
+    expect(labelFor(isElectron, value)).toBe('通用设置');
+  });
+
+  it('设置里缺少该字段时同样回到「通用设置」', () => {
+    const store = useSettingsStore();
+    store.$patch((state) => {
+      delete state.settings.lastOpenedSettingsTab;
+    });
+    expect(labelFor(false, savedIndexToTabValue(false, store.lastOpenedSettingsTab))).toBe(
+      '通用设置',
+    );
   });
 });

@@ -16,6 +16,7 @@ import {
 } from 'vue';
 import { useRouter } from 'vue-router';
 import { useSettingsStore } from 'src/stores/settings';
+import { GENERAL_SETTINGS_TAB } from 'src/models/settings';
 import { useElectron } from 'src/composables/useElectron';
 import AIModelSettingsTab from 'src/components/settings/AIModelSettingsTab.vue';
 import ProxySettingsTab from 'src/components/settings/ProxySettingsTab.vue';
@@ -78,9 +79,14 @@ interface SettingsTabDef {
 }
 
 // 标签顺序与 public/help/zh-CN/settings-guide.md 一致。savedIndex 历史值：
-//   0=AI 模型 1=代理设置 2=同步 3=爬虫 4=导入/导出 6=API Keys 7=本地嵌入 8=关于 9=网站映射（新增）
+//   0=AI 模型 1=代理设置 2=同步 3=爬虫 4=导入/导出 6=API Keys 7=本地嵌入 8=关于 9=网站映射
+//   10=通用设置（GENERAL_SETTINGS_TAB，首次进入时的默认分区）
 const SETTINGS_TAB_DEFS: readonly SettingsTabDef[] = [
-  { label: 'settings.tabs.general', savedIndex: 10, component: GeneralSettingsTab },
+  {
+    label: 'settings.tabs.general',
+    savedIndex: GENERAL_SETTINGS_TAB,
+    component: GeneralSettingsTab,
+  },
   { label: 'settings.tabs.models', savedIndex: 0, component: AIModelSettingsTab },
   { label: 'settings.tabs.proxies', savedIndex: 1, component: ProxySettingsTab, webOnly: true },
   { label: 'settings.tabs.sites', savedIndex: 9, component: SiteMappingSettingsTab },

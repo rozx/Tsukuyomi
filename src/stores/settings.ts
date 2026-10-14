@@ -14,6 +14,7 @@ import type {
 } from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
+import { GENERAL_SETTINGS_TAB } from 'src/models/settings';
 import { TOMBSTONE_TTL_DAYS } from 'src/models/manifest';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
 import {
@@ -72,7 +73,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   taskDefaultModels: {},
   taskDefaultModelsUpdatedAt: {},
   apiKeysUpdatedAt: {},
-  lastOpenedSettingsTab: 0,
+  lastOpenedSettingsTab: GENERAL_SETTINGS_TAB,
   proxyEnabled: true,
   proxyUrl: DEFAULT_PROXY_LIST[0]!.url,
   // 已退役字段：保留默认值，使经同步读取设置的旧版本行为不变
@@ -443,7 +444,7 @@ export const useSettingsStore = defineStore('settings', {
      * 获取最后打开的设置标签页索引
      */
     lastOpenedSettingsTab: (state): number => {
-      return state.settings.lastOpenedSettingsTab ?? 0;
+      return state.settings.lastOpenedSettingsTab ?? GENERAL_SETTINGS_TAB;
     },
 
     /**
