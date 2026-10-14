@@ -65,6 +65,12 @@ describe('validateAndParseSettings 保留字段是否存在', () => {
     expect('coverHistory' in result.data!).toBe(false);
   });
 
+  it('只有应用设置的文件可以导入，其他字段均视为缺失', () => {
+    const result = parse({ aiModels: [], appSettings: { scraperConcurrencyLimit: 2 } });
+    expect(result.success).toBe(true);
+    expect(Object.keys(result.data!).sort()).toEqual(['appSettings', 'models']);
+  });
+
   it('只有空数组、没有应用设置时仍视为没有可导入内容', () => {
     const result = parse({ aiModels: [], novels: [], memories: [], sync: [] });
     expect(result.success).toBe(false);
@@ -125,6 +131,56 @@ describe('整份导入：有字段整体替换，无字段保持不变', () => {
     await SyncDataService.importSettingsSnapshot(parsed.data!, 'presence-empty-sync');
 
     expect(settings.syncs).toEqual([]);
+  });
+
+  it('文件缺少 memories 与 sync 字段时，本机 Memory 与同步配置保持不变', async () => {
+    setActivePinia(createPinia());
+    const settings = useSettingsStore();
+    await settings.loadSettings();
+    await settings.importSyncs([{ ...syncConfig, secret: 'keep-token' }]);
+    const db = await getDB();
+    await db.put('memories', {
+      id: 'keep-mem',
+      bookId: 'b',
+      content: 'keep',
+      summary: 's',
+      createdAt: 1,
+      lastAccessedAt: 1,
+    });
+
+    const parsed = parse({ aiModels: [model] });
+    await SyncDataService.importSettingsSnapshot(parsed.data!, 'presence-missing-mem-sync');
+
+    await expect(db.get('memories', 'keep-mem')).resolves.toBeDefined();
+    expect(settings.syncs.map((sync) => sync.secret)).toEqual(['keep-token']);
+  });
+
+  it('文件中 novels 与 coverHistory 为空数组时清空本机书籍与封面历史', async () => {
+    setActivePinia(createPinia());
+    await useSettingsStore().loadSettings();
+    const books = useBooksStore();
+    await books.addBook({
+      id: 'drop-book',
+      title: 'Drop',
+      createdAt: new Date(0),
+      lastEdited: new Date(0),
+    });
+    const covers = useCoverHistoryStore();
+    await (
+      await getDB()
+    ).put('cover-history', {
+      id: 'drop-cover',
+      url: 'https://img.example/drop.png',
+      addedAt: new Date(1),
+    });
+    await covers.loadCoverHistory();
+
+    const parsed = parse({ aiModels: [model], novels: [], coverHistory: [] });
+    await SyncDataService.importSettingsSnapshot(parsed.data!, 'presence-empty-books');
+
+    await expect((await getDB()).get('books', 'drop-book')).resolves.toBeUndefined();
+    expect(books.books).toEqual([]);
+    expect(covers.covers).toEqual([]);
   });
 });
 
