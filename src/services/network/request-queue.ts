@@ -1,4 +1,5 @@
 import { isCancelledError } from 'src/utils/is-cancelled-error';
+import type { CrossTabLanes } from 'src/services/network/cross-tab-lanes';
 import { RequestLimiter } from './request-limiter';
 
 /**
@@ -30,6 +31,8 @@ export interface LanePolicy {
   /** 相邻两次请求开始的最小间隔 */
   minIntervalMs?: number;
   breaker?: LaneBreaker;
+  /** 跨标签页协调：run 的请求跨标签页串行并保持间隔，熔断状态跨标签页共享 */
+  crossTab?: CrossTabLanes;
 }
 
 interface Lane {
@@ -53,22 +56,23 @@ export class RequestQueue {
   /** 排队执行一次请求：遵守并发、间隔、暂停与熔断 */
   async run<T>(lane: string, request: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     const state = this.lane(lane);
-    this.throwIfTripped(lane, state);
+    // 入口快速失败：此时未持跨标签页锁，只读不写共享状态
+    this.throwIfTripped(lane, state, false);
     const release = await state.limiter.acquire(signal);
     try {
-      // 排队期间其它请求可能已触发熔断：获准后再检查一次（熔断错误不经 recordFailure，不清零计数）
-      this.throwIfTripped(lane, state);
-      let value: T;
-      try {
-        value = await request();
-      } catch (error) {
-        // 触发熔断的这次请求直接报熔断，调用方（如批次）可立即停止
-        if (this.recordFailure(state, error)) throw this.trippedError(lane, state);
-        throw error;
-      }
-      state.refusals = 0;
-      state.trippedUntil = 0;
-      return value;
+      const crossTab = state.policy.crossTab;
+      const attempt = () => this.attempt(lane, state, request);
+      if (!crossTab) return await attempt();
+      return await crossTab.exclusive(
+        lane,
+        {
+          minIntervalMs: state.policy.minIntervalMs ?? 0,
+          signal,
+          // 其它标签页已熔断时立即失败，不在锁内空等间隔
+          precheck: () => this.throwIfTripped(lane, state),
+        },
+        attempt,
+      );
     } finally {
       release();
     }
@@ -89,10 +93,36 @@ export class RequestQueue {
     return this.lanes.get(lane)?.limiter.pauseRemainingMs() ?? 0;
   }
 
-  /** 清空运行状态（排队、暂停、熔断），保留已定义的策略；指定 lane 时只清该 lane */
+  /** 清空运行状态（排队、暂停、熔断，含跨标签页共享的熔断），保留已定义的策略；指定 lane 时只清该 lane */
   reset(lane?: string): void {
-    if (lane === undefined) this.lanes = new Map();
-    else this.lanes.delete(lane);
+    if (lane === undefined) {
+      // 共享状态可能由其它标签页写入、本页从未请求过：按策略清除全部
+      for (const policy of [this.defaultPolicy, ...this.policies.values()])
+        policy.crossTab?.clear();
+      this.lanes = new Map();
+    } else {
+      (this.lanes.get(lane)?.policy ?? this.policyFor(lane)).crossTab?.clear(lane);
+      this.lanes.delete(lane);
+    }
+  }
+
+  /**
+   * 获准后发送并记录结果。跨标签页时整个过程都在锁内：
+   * 排队期间其它请求（含其它标签页）可能已触发熔断，发送前再检查一次
+   * （熔断错误不经 recordFailure，不清零计数）；
+   * 结果在释放锁前写入共享状态，下一个拿到锁的标签页才能读到
+   */
+  private async attempt<T>(name: string, lane: Lane, request: () => Promise<T>): Promise<T> {
+    this.throwIfTripped(name, lane);
+    try {
+      const value = await request();
+      this.saveBreaker(name, lane, 0, 0);
+      return value;
+    } catch (error) {
+      // 触发熔断的这次请求直接报熔断，调用方（如批次）可立即停止
+      if (this.recordFailure(name, lane, error)) throw this.trippedError(name, lane);
+      throw error;
+    }
   }
 
   private lane(name: string): Lane {
@@ -124,8 +154,38 @@ export class RequestQueue {
     return matched?.[1] ?? this.defaultPolicy;
   }
 
-  private throwIfTripped(name: string, lane: Lane): void {
-    if (lane.policy.breaker && lane.trippedUntil > Date.now()) throw this.trippedError(name, lane);
+  /** locked：是否持有跨标签页锁（或无跨标签页协调），只有持锁时才写回共享状态 */
+  private throwIfTripped(name: string, lane: Lane, locked = true): void {
+    if (!lane.policy.breaker) return;
+    // 锁外读到需要修正的截止时间：不在这里判定，交给锁内检查修正并写回
+    if (!this.loadBreaker(name, lane, locked)) return;
+    if (lane.trippedUntil > Date.now()) throw this.trippedError(name, lane);
+  }
+
+  /**
+   * 读入其它标签页写下的熔断状态；无跨标签页或存储不可用时沿用本页状态。
+   * 返回 false 表示状态需要修正但当前未持锁、未读入
+   */
+  private loadBreaker(name: string, lane: Lane, locked = true): boolean {
+    const shared = lane.policy.crossTab?.readBreaker(name);
+    if (!shared) return true;
+    // 熔断时钟偏快后又校正、或存储被改坏时，截止时间可能远在未来：最多按一个冷却期算。
+    // 写回须在锁内，否则可能用旧计数覆盖持锁标签页刚写入的结果
+    const latest = Date.now() + (lane.policy.breaker?.cooldownMs ?? 0);
+    if (shared.trippedUntil <= latest) {
+      lane.refusals = shared.refusals;
+      lane.trippedUntil = shared.trippedUntil;
+      return true;
+    }
+    if (!locked) return false;
+    this.saveBreaker(name, lane, shared.refusals, latest);
+    return true;
+  }
+
+  private saveBreaker(name: string, lane: Lane, refusals: number, trippedUntil: number): void {
+    lane.refusals = refusals;
+    lane.trippedUntil = trippedUntil;
+    if (lane.policy.breaker) lane.policy.crossTab?.writeBreaker(name, { refusals, trippedUntil });
   }
 
   private trippedError(name: string, lane: Lane): Error {
@@ -133,25 +193,30 @@ export class RequestQueue {
   }
 
   /** 记录一次失败；本次失败触发熔断时返回 true */
-  private recordFailure(lane: Lane, error: unknown): boolean {
+  private recordFailure(name: string, lane: Lane, error: unknown): boolean {
     const breaker = lane.policy.breaker;
     if (!breaker || isCancelled(error)) return false;
+    // 请求期间不会有其它标签页写入（锁内），这里读到的就是最新计数
+    this.loadBreaker(name, lane);
     if (!breaker.isRefusal(error)) {
-      lane.refusals = 0;
+      this.saveBreaker(name, lane, 0, lane.trippedUntil);
       return false;
     }
-    lane.refusals++;
-    if (lane.refusals < breaker.tripAfter) return false;
-    lane.trippedUntil = Date.now() + breaker.cooldownMs;
-    return true;
+    const refusals = lane.refusals + 1;
+    const tripped = refusals >= breaker.tripAfter;
+    this.saveBreaker(
+      name,
+      lane,
+      refusals,
+      tripped ? Date.now() + breaker.cooldownMs : lane.trippedUntil,
+    );
+    return tripped;
   }
 }
 
 /** 调用方取消；部分环境（如 jsdom）的 DOMException 不继承 Error，单独判定 */
 function isCancelled(error: unknown): boolean {
-  return (
-    isCancelledError(error) || (error instanceof DOMException && error.name === 'AbortError')
-  );
+  return isCancelledError(error) || (error instanceof DOMException && error.name === 'AbortError');
 }
 
 /** 全局共用的请求队列：各访问层按需 define 自己的 lane 策略 */

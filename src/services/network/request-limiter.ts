@@ -13,7 +13,8 @@ interface Waiter {
   grant: (release: () => void) => void;
 }
 
-function abortError(signal: AbortSignal): Error {
+/** 取消原因：优先用 signal.reason，否则构造 AbortError */
+export function abortError(signal: AbortSignal): Error {
   return signal.reason instanceof Error
     ? signal.reason
     : new DOMException('操作已取消', 'AbortError');
