@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 一章内全部待确认的多段替换：一行汇总处数、段数与译文损失，一次确认整章；
+ * 受影响章节相同的全部待确认多段替换：一行汇总处数、段数与译文损失，一次确认整组；
+ * 跨章替换（如合章后）单独成行并列出全部章节，按钮写明确认的是跨章替换。
  * 可展开逐处对比旧原文与新原文（旧版本保存的方案没有原文，不提供展开）。
  */
 import { computed, ref } from 'vue';
@@ -8,11 +9,12 @@ import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import type { ReplacementGroup } from 'src/composables/import-page/import-plan-pending';
 
-const props = defineProps<{ group: ReplacementGroup; chapter: string; disabled: boolean }>();
+const props = defineProps<{ group: ReplacementGroup; chapters: string[]; disabled: boolean }>();
 const emit = defineEmits<{ confirm: [signatures: string[]] }>();
 const { t } = useI18n();
 
 const expanded = ref(false);
+const crossChapter = computed(() => props.chapters.length > 1);
 const comparable = computed(() =>
   props.group.entries.filter((entry) => entry.oldTexts && entry.newTexts),
 );
@@ -22,7 +24,12 @@ const comparable = computed(() =>
   <li class="iprg" data-testid="ipc-replacement">
     <div class="iprg-row">
       <span class="iprg-text">
-        <strong v-if="chapter" class="iprg-chapter">{{ chapter }}</strong>
+        <span v-if="crossChapter" class="iprg-cross">
+          {{ t('importUi.planConflicts.crossChapters', { count: chapters.length }) }}
+        </span>
+        <strong v-for="(chapter, index) in chapters" :key="index" class="iprg-chapter">
+          {{ chapter }}
+        </strong>
         {{
           t('importUi.planConflicts.replacementGroup', {
             ranges: group.ranges,
@@ -45,7 +52,11 @@ const comparable = computed(() =>
           @click="expanded = !expanded"
         />
         <Button
-          :label="t('importUi.planConflicts.confirmChapter')"
+          :label="
+            crossChapter
+              ? t('importUi.planConflicts.confirmCrossChapter')
+              : t('importUi.planConflicts.confirmChapter')
+          "
           size="small"
           severity="warn"
           outlined
@@ -103,6 +114,16 @@ const comparable = computed(() =>
   margin-right: 0.35rem;
   font-weight: 600;
   color: rgba(247, 244, 236, 0.95);
+}
+
+.iprg-cross {
+  margin-right: 0.35rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(253, 224, 71, 0.95);
+  background: rgba(234, 179, 8, 0.16);
 }
 
 .iprg-actions {

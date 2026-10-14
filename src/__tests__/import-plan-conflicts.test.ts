@@ -49,7 +49,18 @@ function replacement(signature: string, chapterId: string, confirmed = false) {
   };
 }
 
-function plan(): ImportPlan {
+/** 合章后跨越 c1、c2 的替换 */
+function crossReplacement(signature: string) {
+  return {
+    ...replacement(signature, 'c1'),
+    oldKeys: [
+      { chapterId: 'c1', paragraphId: `${signature}-p1` },
+      { chapterId: 'c2', paragraphId: `${signature}-p2` },
+    ],
+  };
+}
+
+function plan(extra: ReturnType<typeof replacement>[] = []): ImportPlan {
   return {
     targetBookId: 'book',
     chapterChanges: [],
@@ -76,15 +87,16 @@ function plan(): ImportPlan {
       replacement('r2', 'c1'),
       replacement('r3', 'c2'),
       replacement('r4', 'c1', true),
+      ...extra,
     ],
   } as unknown as ImportPlan;
 }
 
-async function mount() {
+async function mount(extra: ReturnType<typeof replacement>[] = []) {
   host = document.createElement('div');
   document.body.appendChild(host);
   useBooksStore().$patch({ books: [BOOK] });
-  app = createApp({ render: () => h(ImportPlanConflicts, { plan: plan(), disabled: false }) });
+  app = createApp({ render: () => h(ImportPlanConflicts, { plan: plan(extra), disabled: false }) });
   app.use(PrimeVue);
   app.use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
   app.mount(host);
@@ -96,7 +108,7 @@ const buttons = (root: Element, label: string) =>
   [...root.querySelectorAll('button')].filter((b) => (b.textContent ?? '').includes(label));
 const groups = (root: Element) => [...root.querySelectorAll('[data-testid="ipc-replacement"]')];
 
-describe('方案待处理项：多段替换按章合并', () => {
+describe('方案待处理项：多段替换按受影响章节合并', () => {
   it('每章一行，替换带出的冲突不再单独列出，其他冲突照常显示', async () => {
     const root = await mount();
     expect(root.textContent).not.toContain('多对多修订需要确认替换范围及译文损失');
@@ -141,5 +153,25 @@ describe('方案待处理项：多段替换按章合并', () => {
       .mockResolvedValue(undefined as never);
     buttons(root, '全部确认替换')[0]!.click();
     expect(confirm).toHaveBeenCalledWith(['r1', 'r2', 'r3']);
+  });
+
+  it('跨章替换单独一行，列出全部受影响章节，确认只提交跨章的签名', async () => {
+    const root = await mount([crossReplacement('r5')]);
+    const confirm = vi
+      .spyOn(useImportWorkspaceStore(), 'confirmReplacements')
+      .mockResolvedValue(undefined as never);
+    expect(groups(root)).toHaveLength(3);
+    expect(root.querySelector('.ipl-count')!.textContent).toBe('4');
+
+    const cross = groups(root)[2]!;
+    expect(cross.textContent).toContain('跨 2 章');
+    expect(cross.textContent).toContain('第1話');
+    expect(cross.textContent).toContain('第2話');
+    expect(buttons(cross, '确认本章')).toHaveLength(0);
+    buttons(cross, '确认跨章替换')[0]!.click();
+    expect(confirm).toHaveBeenLastCalledWith(['r5']);
+
+    buttons(groups(root)[0]!, '确认本章')[0]!.click();
+    expect(confirm).toHaveBeenLastCalledWith(['r1', 'r2']);
   });
 });

@@ -84,7 +84,7 @@ Paste an HTTP/HTTPS contents URL in Sources and choose Add URL. Individual chapt
 
 The assistant checks the contents and samples chapters before batch extraction. A batch is limited to 500 chapters; longer works need several batches. Discovered chapter links appear as assistant-discovered sources without manual entry.
 
-Pages from one site are read one at a time, at least 1 second apart. After 3 refusals since the last success, the site is paused for about 5 minutes and batch extraction stops, leaving the remaining chapters for later; with Firecrawl fallback on, Firecrawl reads them instead.
+Pages from one site are read one at a time, at least 1 second apart. After 3 refusals in a row, the site is paused for about 5 minutes and batch extraction stops, leaving the remaining chapters for later; with Firecrawl fallback on, Firecrawl reads them instead.
 
 Login, CAPTCHA, or script-only sites may be unreadable. Save missing chapters as files and add them to the same task, identifying their chapters. Retrieved text is retained.
 
@@ -161,7 +161,7 @@ Review create/update status and translation impact:
 - Unchanged source retains all language versions and selections, including when paragraphs move between chapters.
 - Revised source clears all language versions and selections for that paragraph. The plan reports the full affected version count.
 - Existing chapters absent from this source are retained.
-- When the old and new sources split paragraphs differently (for example, a book first imported with built-in site rules and now updated through the AI importer), the plan contains replacements where several old paragraphs give way to several new ones. Replacements that clear no translation versions are accepted automatically. The rest appear under **Needs attention**, one row per chapter where the old text starts, such as "3 replacements: 12 old paragraphs → 10 new, clearing 4 translation versions". A replacement spanning several chapters (for example, after merging chapters) is listed under the chapter where it starts, and the translations it clears may include later chapters. Choose **Show text** to compare Old text and New text range by range, **Confirm chapter** to accept every replacement in that row, or **Confirm all replacements** to accept them all at once.
+- When the old and new sources split paragraphs differently (for example, a book first imported with built-in site rules and now updated through the AI importer), the plan contains replacements where several old paragraphs give way to several new ones. Replacements that clear no translation versions are accepted automatically. The rest appear under **Needs attention**, one row per set of affected chapters, such as "3 replacements: 12 old paragraphs → 10 new, clearing 4 translation versions". A replacement spanning several chapters (for example, after merging chapters) gets its own row marked "Spans N chapters" that lists every affected chapter, instead of being folded into one chapter's row. Choose **Show text** to compare Old text and New text range by range, **Confirm chapter** or **Confirm cross-chapter** to accept every replacement in that row, or **Confirm all replacements** to accept them all at once.
 
 Providing chapters 11–15 therefore keeps 1–10. Inspect revisions before deciding to apply.
 

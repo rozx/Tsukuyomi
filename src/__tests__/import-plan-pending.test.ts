@@ -23,6 +23,17 @@ function range(
   };
 }
 
+/** 跨越多章的替换：每章各一段旧原文 */
+function spanning(signature: string, chapterIds: string[], versions: number): Range {
+  return {
+    signature,
+    oldKeys: chapterIds.map((chapterId, i) => ({ chapterId, paragraphId: `${signature}-${i}` })),
+    newKeys: [`${signature}-n0`],
+    clearedVersions: versions,
+    confirmed: false,
+  };
+}
+
 const conflict = (code: string) => ({ code, message: code });
 
 function plan(partial: Partial<ImportPlan>): ImportPlan {
@@ -42,7 +53,8 @@ describe('planPendingItems', () => {
     );
     expect(items.replacementGroups).toEqual([
       {
-        chapterId: 'c1',
+        key: '["c1"]',
+        chapterIds: ['c1'],
         signatures: ['a', 'c'],
         ranges: 2,
         removed: 11,
@@ -51,7 +63,8 @@ describe('planPendingItems', () => {
         entries: expect.any(Array),
       },
       {
-        chapterId: 'c2',
+        key: '["c2"]',
+        chapterIds: ['c2'],
         signatures: ['b'],
         ranges: 1,
         removed: 1,
@@ -102,6 +115,46 @@ describe('planPendingItems', () => {
       plan({ replacements: [{ signature: 'x', confirmed: false } as Range] }),
     );
     expect(items.replacementGroups).toHaveLength(1);
-    expect(items.replacementGroups[0]!.chapterId).toBe('');
+    expect(items.replacementGroups[0]!.chapterIds).toEqual([]);
+  });
+
+  it('跨章替换按受影响章节集合单独成组，列出全部章节，不并入首章', () => {
+    const items = planPendingItems(
+      plan({
+        replacements: [
+          range('a', 'c1', [1, 2, 0]),
+          spanning('x', ['c1', 'c2'], 1),
+          range('b', 'c2', [1, 2, 0]),
+          spanning('y', ['c1', 'c2'], 2),
+          spanning('z', ['c2', 'c3'], 0),
+        ],
+      }),
+    );
+    expect(
+      items.replacementGroups.map((group) => [group.chapterIds, group.signatures, group.removed]),
+    ).toEqual([
+      [['c1'], ['a'], 1],
+      [['c1', 'c2'], ['x', 'y'], 4],
+      [['c2'], ['b'], 1],
+      [['c2', 'c3'], ['z'], 2],
+    ]);
+    expect(items.pending).toBe(4);
+  });
+
+  it('章节 id 含逗号时分组键不与跨章组碰撞', () => {
+    const items = planPendingItems(
+      plan({ replacements: [range('a', 'x,y', [1, 2, 0]), spanning('b', ['x', 'y'], 1)] }),
+    );
+    expect(items.replacementGroups.map((group) => [group.chapterIds, group.signatures])).toEqual([
+      [['x,y'], ['a']],
+      [['x', 'y'], ['b']],
+    ]);
+  });
+
+  it('同一替换内章节按出现顺序去重', () => {
+    const entry = spanning('x', ['c2', 'c1'], 0);
+    entry.oldKeys.push({ chapterId: 'c2', paragraphId: 'x-extra' });
+    const items = planPendingItems(plan({ replacements: [entry] }));
+    expect(items.replacementGroups[0]!.chapterIds).toEqual(['c2', 'c1']);
   });
 });
