@@ -238,6 +238,21 @@ describe('RequestQueue 熔断', () => {
     expect(queued).not.toHaveBeenCalled();
   });
 
+  it('排队者收到的熔断错误不清零计数：冷却后试探再被拒仍立即重新熔断', async () => {
+    const queue = queueWith({ concurrency: 1, minIntervalMs: 1_000, breaker: BREAKER });
+    await refuseTimes(queue, 'site:a', 2);
+    const third = expect(queue.run('site:a', refuse)).rejects.toBeInstanceOf(Tripped);
+    const waiter = expect(queue.run('site:a', () => Promise.resolve('ok'))).rejects.toBeInstanceOf(
+      Tripped,
+    );
+    await vi.runAllTimersAsync();
+    await third;
+    await waiter;
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    await expect(queue.run('site:a', refuse)).rejects.toBeInstanceOf(Tripped);
+  });
+
   it('冷却结束后放行一次试探：再被拒立即重新熔断', async () => {
     const queue = queueWith({ concurrency: 1, breaker: BREAKER });
     await trip(queue, 'site:a');

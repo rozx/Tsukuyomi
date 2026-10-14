@@ -95,7 +95,8 @@ export class RequestQueue {
 
   /**
    * 获准后发送并记录结果。跨标签页时整个过程都在锁内：
-   * 排队期间其它请求（含其它标签页）可能已触发熔断，发送前再检查一次；
+   * 排队期间其它请求（含其它标签页）可能已触发熔断，发送前再检查一次
+   * （熔断错误不经 recordFailure，不清零计数）；
    * 结果在释放锁前写入共享状态，下一个拿到锁的标签页才能读到
    */
   private async attempt<T>(name: string, lane: Lane, request: () => Promise<T>): Promise<T> {

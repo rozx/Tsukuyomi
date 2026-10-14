@@ -157,6 +157,21 @@ describe('站点 lane 跨标签页协调', () => {
     expect(queued).not.toHaveBeenCalled();
   });
 
+  it('另一个标签页排队者收到的熔断错误不清零计数：冷却后试探再被拒仍立即重新熔断', async () => {
+    const tab = browser();
+    const [a, b] = [tab(), tab()];
+    for (let i = 0; i < 2; i++) await settle(a.run(LANE, refuse));
+    await vi.advanceTimersByTimeAsync(1_000);
+    const third = a.run(LANE, refuse).catch((e: unknown) => e);
+    const waiter = b.run(LANE, () => Promise.resolve('ok')).catch((e: unknown) => e);
+    await vi.runAllTimersAsync();
+    expect(await third).toBeInstanceOf(SiteRateLimitedError);
+    expect(await waiter).toBeInstanceOf(SiteRateLimitedError);
+    await vi.advanceTimersByTimeAsync(300_000);
+
+    expect(await settle(b.run(LANE, refuse))).toBeInstanceOf(SiteRateLimitedError);
+  });
+
   it('等待跨标签页锁时可取消，且不发送', async () => {
     const tab = browser();
     const [a, b] = [tab(), tab()];

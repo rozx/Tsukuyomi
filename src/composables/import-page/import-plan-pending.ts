@@ -18,7 +18,7 @@ const REPLACEMENT_CONFLICT_CODES = new Set([
  * 跨章替换（如合章后）单独成组并列出全部章节，确认时不会顺带确认只涉及其中一章的替换。
  */
 export interface ReplacementGroup {
-  /** 分组键：受影响章节 id 按出现顺序拼接 */
+  /** 分组键：受影响章节 id 按出现顺序编码（JSON，章节 id 含逗号也不会碰撞） */
   key: string;
   /** 受影响章节，按出现顺序去重；旧方案缺少 oldKeys 时为空 */
   chapterIds: string[];
@@ -46,7 +46,7 @@ export function planPendingItems(plan: ImportPlan): PlanPendingItems {
   for (const entry of plan.replacements ?? []) {
     if (entry.confirmed) continue;
     const chapterIds = [...new Set((entry.oldKeys ?? []).map((key) => key.chapterId))];
-    const key = chapterIds.join(',');
+    const key = JSON.stringify(chapterIds);
     let group = groups.get(key);
     if (!group) {
       group = {
