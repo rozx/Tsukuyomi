@@ -1,3 +1,4 @@
+import './setup';
 import { describe, expect, it } from 'vitest';
 import { formatAppVersion } from 'src/utils/app-version';
 

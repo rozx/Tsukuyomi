@@ -1,3 +1,4 @@
+import './setup';
 import { describe, expect, it } from 'vitest';
 import { resolveBuildInfo, type GitRunner } from '../../vite-plugins/build-info';
 
