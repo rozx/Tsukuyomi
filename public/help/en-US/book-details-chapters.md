@@ -78,16 +78,17 @@ Entries:
 
 - **Desktop/tablet update**: sidebar Settings → Check updates, route `/books/:id/settings/update`.
 - **Mobile update**: Check updates in the book overview, displayed full-screen with a Back control.
-- **New book**: Import from website on Home/Books, or Fetch from website in the new-book dialog, opens `/books/new/web`. Enter a contents URL and Check; `?url=` starts checking automatically. Fetch from website while editing opens the current book's update workspace.
+- **New book**: Import from website on Home/Books, or Fetch from website in the new-book dialog, opens `/books/new/web`. Enter a contents URL and Check (for built-in sites, a chapter URL also works and is resolved to the work's contents page); `?url=` starts checking automatically. Fetch from website while editing opens the current book's update workspace.
 
 Workspace:
 
 - **Source**: site and contents URL, with Recheck. Recipe details show extraction/cleanup. Legacy built-in books without a recipe can use site rules.
+- **New book details**: when creating a book, a card above the conclusion shows the cover, title, author, tags, and description that the new book will use. Long descriptions are collapsed; choose Show full description. Not shown when updating an existing book.
 - **Conclusion**: Up to date or counts of new/revised chapters, plus imported/unchanged-by-date/uncompared/skipped counts. No changes means no chapter list or apply bar.
 - **New chapters**: checked initially and grouped by destination volume. Change destination volume to an existing/new volume; preview each body.
 - **Revisions**: added/changed/deleted paragraph counts and all-language translation versions to clear. Inspect differences. Revised chapters are never checked automatically. Changed source clears all language versions/selections; unchanged paragraphs retain them.
 - **Quick check**: reads contents only, without fetching existing bodies. Built-in update dates classify unchanged, possibly revised, or uncompared chapters.
-- **Compare chapter bodies**: check chapters individually with progress and cancellation. Completed comparisons remain. An unchanged result records the site's date for future checks. Firecrawl throttling shows an approximate wait. Blank-line-only differences are not revisions.
+- **Compare chapter bodies**: check chapters individually with progress and cancellation. Completed comparisons remain. An unchanged result records the site's date for future checks. Firecrawl throttling shows an approximate wait, and "N fetched via Firecrawl" counts chapters actually fetched through Firecrawl (cached chapters excluded). Blank-line-only differences are not revisions.
 - **Manual chapters**: title or position between linked chapters can match a contents entry and record its URL; unmatched entries remain new.
 - **Widespread differences**: when at least five chapters are compared and more than half changed, a warning suggests site changes or a stale recipe. Inspect samples first.
 - **Skip**: unwanted chapters remain Skipped in future checks. Expand that group to undo a skip.
@@ -96,8 +97,9 @@ Apply:
 
 1. Choose Apply to book or Apply and create book. Review added/updated chapter counts, cleared versions, and new volumes.
 2. Busy books reject application with a reason. Book changes after confirmation require recalculation and another confirmation.
-3. Failed fetches are listed separately; successful chapters are written and failed ones can be retried.
-4. Undo is available within the session or notification, unless the book has subsequent changes. Creation opens the new book.
+3. After confirming, the dialog shows a progress bar with "Fetching chapters N / M", the Firecrawl wait when throttled, and "Chapters fetched, saving the book…" once all chapters are fetched.
+4. Failed fetches are listed separately; successful chapters are written and failed ones can be retried. Chapters from one site are fetched one at a time, at least 1 second apart. If the site keeps refusing requests and is paused, the remaining chapters stop and are listed as failed while fetched ones are still written; with Firecrawl fallback on, they are fetched via Firecrawl instead. Compare chapter bodies stops the same way, leaving the rest uncompared.
+5. Undo is available within the session or notification, unless the book has subsequent changes. The completion notice includes the Firecrawl count. Creation shows "Book created" and opens the new book.
 
 When replay is unavailable:
 

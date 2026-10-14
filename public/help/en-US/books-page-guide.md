@@ -61,7 +61,7 @@ The target language is the interface language when the new book is actually save
 
 ### 2) Import from a website {#books-page-guide-section-7}
 
-Choose **Import from website** from the split-button menu to open `/books/new/web`. Enter a novel's contents URL, check it, and select chapters. You can skip chapters, move them to a new volume, or preview their source. Confirm to create the book and open it. See the website import/update section in [Chapter management](/help/book-details-chapters).
+Choose **Import from website** from the split-button menu to open `/books/new/web`. Enter a novel's contents URL (a chapter URL also works for built-in sites), check it, review the title, author, and description under New book details, and select chapters. You can skip chapters, move them to a new volume, or preview their source. Confirm to fetch the chapters with progress, create the book, and open it. See the website import/update section in [Chapter management](/help/book-details-chapters).
 
 Built-in sites:
 

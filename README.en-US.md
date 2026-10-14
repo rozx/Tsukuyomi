@@ -221,7 +221,7 @@ bun run dev
 | **Context**       | [Terminology](public/help/en-US/book-details-terminology.md) \| [Character settings](public/help/en-US/book-details-characters.md) \| [Memory](public/help/en-US/book-details-memory.md)            |
 | **AI import**     | [Import workspace: steps, splitting, and adding chapters](public/help/en-US/import-guide.md)                                                                                                        |
 | **Advanced**      | [Chat assistant](public/help/en-US/chat-assistant-guide.md) \| [Local embeddings and chapter search](public/help/en-US/local-embedding.md)                                                          |
-| **Release notes** | [v0.18.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.18.0.md)                                                                                                          |
+| **Release notes** | [v0.18.1 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.18.1.md)                                                                                                          |
 
 > The in-app **Help** page has the user guides; docs on the main branch are synced to the [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki) by a workflow.
 

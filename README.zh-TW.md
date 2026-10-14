@@ -221,7 +221,7 @@ bun run dev
 | **核心邏輯** | [術語管理](public/help/zh-TW/book-details-terminology.md) \| [角色設定](public/help/zh-TW/book-details-characters.md) \| [記憶系統](public/help/zh-TW/book-details-memory.md)  |
 | **AI 匯入**  | [匯入工作台：分步操作、拆章與補章](public/help/zh-TW/import-guide.md)                                                                                                          |
 | **進階工具** | [聊天助手實戰](public/help/zh-TW/chat-assistant-guide.md) \| [本地嵌入與章節檢索](public/help/zh-TW/local-embedding.md)                                                        |
-| **更新紀錄** | [v0.18.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.18.0.md)                                                                                                   |
+| **更新紀錄** | [v0.18.1 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.18.1.md)                                                                                                   |
 
 > 應用程式內「說明」可查閱使用指南；主分支文件透過工作流程同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)（簡體中文）。
 

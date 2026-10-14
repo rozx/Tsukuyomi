@@ -540,6 +540,15 @@
     }
   },
   {
+    "id": "v0.18.1",
+    "title": "v0.18.1",
+    "file": "RELEASE_NOTES_v0.18.1.md",
+    "path": "releaseNotes",
+    "category": "Release notes",
+    "description": "Per-site request queueing with a pause after repeated refusals, new book details and apply progress when importing from a website, chapter-level replacement review in the AI importer, and progress plus current data for settings import/export",
+    "categoryId": "release-notes"
+  },
+  {
     "id": "v0.18.0",
     "title": "v0.18.0",
     "file": "RELEASE_NOTES_v0.18.0.md",
