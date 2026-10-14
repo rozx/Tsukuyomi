@@ -1,3 +1,5 @@
+import { createCrossTabLanes } from 'src/services/network/cross-tab-lanes';
+import type { CrossTabLanes } from 'src/services/network/cross-tab-lanes';
 import { networkQueue } from 'src/services/network/request-queue';
 import type { LanePolicy } from 'src/services/network/request-queue';
 import { isSiteRefusal, SiteRateLimitedError } from 'src/services/proxy-fetch-plan';
@@ -7,6 +9,7 @@ import { isElectron } from 'src/utils/platform';
  * 网页抓取按目标站点分道排队：同站请求串行并保持间隔，连续被拒后熔断。
  * 小说站按出口 IP 限流（Web 端所有用户共用 CORS 代理出口），突发并发很快就会让代理被封；
  * 被拒后继续请求只会延长封禁，因此熔断期间不再发请求。
+ * Web 端同一浏览器的多个标签页共用这些限制（排队、间隔、熔断）；桌面版单窗口，只在本页计算。
  */
 
 const SITE_LANE_PREFIX = 'site:';
@@ -23,11 +26,14 @@ const DEFAULT_SITE_LANE: SiteLaneOptions = {
   cooldownMs: 5 * 60_000,
 };
 
-export function createSiteLanePolicy(options: Partial<SiteLaneOptions> = {}): LanePolicy {
-  const { minIntervalMs, tripAfter, cooldownMs } = { ...DEFAULT_SITE_LANE, ...options };
+export function createSiteLanePolicy(
+  options: Partial<SiteLaneOptions> & { crossTab?: CrossTabLanes | undefined } = {},
+): LanePolicy {
+  const { minIntervalMs, tripAfter, cooldownMs, crossTab } = { ...DEFAULT_SITE_LANE, ...options };
   return {
     concurrency: 1,
     minIntervalMs,
+    ...(crossTab && { crossTab }),
     breaker: {
       tripAfter,
       cooldownMs,
@@ -51,7 +57,10 @@ export function siteLane(url: string): string {
   }
 }
 
-networkQueue.define(SITE_LANE_PREFIX, createSiteLanePolicy());
+networkQueue.define(
+  SITE_LANE_PREFIX,
+  createSiteLanePolicy(isElectron() ? {} : { crossTab: createCrossTabLanes() }),
+);
 
 /** 经目标站点的 lane 发送一次请求 */
 export function runSiteRequest<T>(
