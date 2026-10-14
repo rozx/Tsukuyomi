@@ -98,7 +98,7 @@ Apply:
 1. Choose Apply to book or Apply and create book. Review added/updated chapter counts, cleared versions, and new volumes.
 2. Busy books reject application with a reason. Book changes after confirmation require recalculation and another confirmation.
 3. After confirming, the dialog shows a progress bar with "Fetching chapters N / M", the Firecrawl wait when throttled, and "Chapters fetched, saving the book…" once all chapters are fetched.
-4. Failed fetches are listed separately; successful chapters are written and failed ones can be retried. Chapters from one site are fetched one at a time, at least 1 second apart. If the site keeps refusing requests and is paused, the remaining chapters stop and are listed as failed while fetched ones are still written; with Firecrawl fallback on, they are fetched via Firecrawl instead. Compare chapter bodies stops the same way, leaving the rest uncompared.
+4. Failed fetches are listed separately; successful chapters are written and failed ones can be retried. Chapters from one site are fetched one at a time, at least 1 second apart. If the site refuses requests repeatedly and is paused, the remaining chapters stop and are listed as failed while fetched ones are still written; with Firecrawl fallback on, they are fetched via Firecrawl instead. Compare chapter bodies stops the same way, leaving the rest uncompared.
 5. Undo is available within the session or notification, unless the book has subsequent changes. The completion notice includes the Firecrawl count. Creation shows "Book created" and opens the new book.
 
 When replay is unavailable:
