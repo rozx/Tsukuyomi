@@ -272,6 +272,32 @@ describe('站点 lane 跨标签页协调', () => {
     expect(await settle(a.run(LANE, () => Promise.resolve('ok')))).toBe('ok');
   });
 
+  it('锁外的入口检查不写回存储，不覆盖持锁标签页的结果', async () => {
+    const tab = browser();
+    const [a, c] = [tab(), tab()];
+    let finishFirst!: () => void;
+    const first = a.run(
+      LANE,
+      () => new Promise<string>((resolve) => (finishFirst = () => resolve('ok'))),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    const corrupt = JSON.stringify({
+      refusals: 3,
+      trippedUntil: Date.now() + 24 * 60 * 60_000,
+      lastStartAt: Date.now(),
+    });
+    localStorage.setItem(KEY, corrupt);
+
+    const second = c.run(LANE, () => Promise.resolve('ok')).catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(localStorage.getItem(KEY)).toBe(corrupt);
+
+    finishFirst();
+    await vi.runAllTimersAsync();
+    expect(await first).toBe('ok');
+    expect(await second).toBe('ok');
+  });
+
   it('存储中途无法写入后不再信任旧值，本标签页照常熔断', async () => {
     const { storage, state } = flakyStorage();
     const a = browser({ storage })();

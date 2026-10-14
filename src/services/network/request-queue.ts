@@ -56,7 +56,8 @@ export class RequestQueue {
   /** 排队执行一次请求：遵守并发、间隔、暂停与熔断 */
   async run<T>(lane: string, request: () => Promise<T>, signal?: AbortSignal): Promise<T> {
     const state = this.lane(lane);
-    this.throwIfTripped(lane, state);
+    // 入口快速失败：此时未持跨标签页锁，只读不写共享状态
+    this.throwIfTripped(lane, state, false);
     const release = await state.limiter.acquire(signal);
     try {
       const crossTab = state.policy.crossTab;
@@ -153,21 +154,32 @@ export class RequestQueue {
     return matched?.[1] ?? this.defaultPolicy;
   }
 
-  private throwIfTripped(name: string, lane: Lane): void {
+  /** locked：是否持有跨标签页锁（或无跨标签页协调），只有持锁时才写回共享状态 */
+  private throwIfTripped(name: string, lane: Lane, locked = true): void {
     if (!lane.policy.breaker) return;
-    this.loadBreaker(name, lane);
+    // 锁外读到需要修正的截止时间：不在这里判定，交给锁内检查修正并写回
+    if (!this.loadBreaker(name, lane, locked)) return;
     if (lane.trippedUntil > Date.now()) throw this.trippedError(name, lane);
   }
 
-  /** 读入其它标签页写下的熔断状态；无跨标签页或存储不可用时沿用本页状态 */
-  private loadBreaker(name: string, lane: Lane): void {
+  /**
+   * 读入其它标签页写下的熔断状态；无跨标签页或存储不可用时沿用本页状态。
+   * 返回 false 表示状态需要修正但当前未持锁、未读入
+   */
+  private loadBreaker(name: string, lane: Lane, locked = true): boolean {
     const shared = lane.policy.crossTab?.readBreaker(name);
-    if (!shared) return;
-    lane.refusals = shared.refusals;
-    lane.trippedUntil = shared.trippedUntil;
-    // 熔断时钟偏快后又校正、或存储被改坏时，截止时间可能远在未来：最多按一个冷却期算
+    if (!shared) return true;
+    // 熔断时钟偏快后又校正、或存储被改坏时，截止时间可能远在未来：最多按一个冷却期算。
+    // 写回须在锁内，否则可能用旧计数覆盖持锁标签页刚写入的结果
     const latest = Date.now() + (lane.policy.breaker?.cooldownMs ?? 0);
-    if (lane.trippedUntil > latest) this.saveBreaker(name, lane, lane.refusals, latest);
+    if (shared.trippedUntil <= latest) {
+      lane.refusals = shared.refusals;
+      lane.trippedUntil = shared.trippedUntil;
+      return true;
+    }
+    if (!locked) return false;
+    this.saveBreaker(name, lane, shared.refusals, latest);
+    return true;
   }
 
   private saveBreaker(name: string, lane: Lane, refusals: number, trippedUntil: number): void {
