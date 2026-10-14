@@ -72,11 +72,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
         run: |
-          # Get current version from src/constants/version.ts (Source of Truth for 4-part versions)
+          # Get current version from src/constants/version.ts (x.y.z; commit count / SHA are injected at build time)
           CURRENT_VERSION=$(grep "export const APP_VERSION =" src/constants/version.ts | sed -E "s/.*'([^']+)'.*/\1/")
           EXPECTED_VERSION="${{ steps.extract_version.outputs.expected_version }}"
 
-          echo "Current version in package.json: $CURRENT_VERSION"
+          echo "Current version in version.ts: $CURRENT_VERSION"
           echo "Expected version from branch: $EXPECTED_VERSION"
 
           # Normalize versions to ensure they have 3 parts (major.minor.patch)
@@ -95,7 +95,7 @@ jobs:
             if [ ${#parts[@]} -eq 2 ]; then
               parts+=("0")
             fi
-            # Ignore build number if present (keep only major.minor.patch)
+            # Drop any 4th segment from the branch name (e.g. release/0.9.0.55 -> 0.9.0)
             echo "${parts[0]}.${parts[1]}.${parts[2]}"
           }
 
@@ -120,11 +120,11 @@ jobs:
             IFS='.' read -r -a v1_parts <<< "$v1"
             IFS='.' read -r -a v2_parts <<< "$v2"
             
-            # Ensure both versions have 4 parts (major.minor.patch.build)
-            while [ ${#v1_parts[@]} -lt 4 ]; do
+            # Ensure both versions have 3 parts (major.minor.patch)
+            while [ ${#v1_parts[@]} -lt 3 ]; do
               v1_parts+=("0")
             done
-            while [ ${#v2_parts[@]} -lt 4 ]; do
+            while [ ${#v2_parts[@]} -lt 3 ]; do
               v2_parts+=("0")
             done
             
@@ -146,13 +146,6 @@ jobs:
             if [ "${v1_parts[2]}" -gt "${v2_parts[2]}" ]; then
               return 1
             elif [ "${v1_parts[2]}" -lt "${v2_parts[2]}" ]; then
-              return 2
-            fi
-
-            # Compare build version
-            if [ "${v1_parts[3]}" -gt "${v2_parts[3]}" ]; then
-              return 1
-            elif [ "${v1_parts[3]}" -lt "${v2_parts[3]}" ]; then
               return 2
             fi
             
@@ -245,18 +238,12 @@ jobs:
             VERSION="${{ steps.check_version.outputs.final_version }}"
             echo "Using version from version check step: $VERSION"
           else
+            # package.json and version.ts both hold x.y.z (kept in sync by scripts/bump-version.ts)
             VERSION=$(jq -r .version package.json)
-            # Try to get from version.ts if package.json version is different (implies build number usage)
-            VERSION_TS=$(grep "export const APP_VERSION =" src/constants/version.ts | sed -E "s/.*'([^']+)'.*/\1/")
-            if [ "$VERSION" != "$VERSION_TS" ]; then
-               VERSION="$VERSION_TS"
-            fi
-            echo "Using version from files: $VERSION"
+            echo "Using version from package.json: $VERSION"
           fi
 
-          # Strip build number (4th segment) for tag/release: 0.9.0.58 -> 0.9.0
-          VERSION=$(echo "$VERSION" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+)(\.[0-9]+)?$/\1/')
-          echo "Release version (without build number): $VERSION"
+          echo "Release version: $VERSION"
 
           echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -288,23 +275,14 @@ jobs:
         if: steps.check_label.outputs.has_release_label == 'true'
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
-          # Strip build number to get 3-part version (v0.9.0.58 -> v0.9.0)
-          VERSION_3PART=$(echo "$VERSION" | sed -E 's/^(v[0-9]+\.[0-9]+\.[0-9]+)(\.[0-9]+)?$/\1/')
-
           RELEASE_NOTES_FILE="public/releaseNotes/RELEASE_NOTES_${VERSION}.md"
-          RELEASE_NOTES_FILE_3PART="public/releaseNotes/RELEASE_NOTES_${VERSION_3PART}.md"
 
           echo "Checking for release notes file: $RELEASE_NOTES_FILE"
-          echo "Fallback 3-part version file: $RELEASE_NOTES_FILE_3PART"
 
           if [ -f "$RELEASE_NOTES_FILE" ]; then
-            echo "✅ Release notes file found (exact match): $RELEASE_NOTES_FILE"
+            echo "✅ Release notes file found: $RELEASE_NOTES_FILE"
             echo "has_release_notes=true" >> "$GITHUB_OUTPUT"
             echo "release_notes_path=$RELEASE_NOTES_FILE" >> "$GITHUB_OUTPUT"
-          elif [ "$RELEASE_NOTES_FILE" != "$RELEASE_NOTES_FILE_3PART" ] && [ -f "$RELEASE_NOTES_FILE_3PART" ]; then
-            echo "✅ Release notes file found (3-part version): $RELEASE_NOTES_FILE_3PART"
-            echo "has_release_notes=true" >> "$GITHUB_OUTPUT"
-            echo "release_notes_path=$RELEASE_NOTES_FILE_3PART" >> "$GITHUB_OUTPUT"
           else
             echo "ℹ️ No release notes file found, will use auto-generated notes"
             echo "has_release_notes=false" >> "$GITHUB_OUTPUT"
