@@ -347,7 +347,7 @@ Current behavior:
 - Models, books, and covers: always replaced with the file's contents. If the file lacks the books or cover history field (or it is empty), the local data is cleared too.
 - Memories: when the file contains at least one memory, all local memories are cleared and rebuilt from the file (keeping IDs and timestamps); without a memories field or with an empty array they stay unchanged.
 - Settings: processed by the settings importer.
-- Sync configuration: replaced only when the file contains at least one entry; with no sync field or an empty array, local sync configuration (including the Gist ID and token) stays unchanged instead of being replaced with the rest of the listed current data.
+- Sync configuration: replaced only when the file contains at least one entry; with no sync field or an empty array, local sync configuration (including the Gist ID and token) stays unchanged instead of being replaced along with the rest of the data listed under Current data.
 
 > Import does not provide fine-grained field selection. Export a backup first.
 
