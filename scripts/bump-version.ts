@@ -127,9 +127,14 @@ async function main() {
         if (newVersionString !== bumpType) {
           console.log(`ℹ️ Normalized version to ${newVersionString} (x.y.z)`);
         }
+      } else if (bumpType === 'build') {
+        throw new Error(
+          "'build' 已移除：版本号只维护 x.y.z，提交数 / 短 SHA 在构建时由 vite-plugins/build-info.ts 注入",
+        );
       } else {
-        console.warn('Warning: Version does not look like x.y or x.y.z');
-        newVersionString = bumpType;
+        throw new Error(
+          `无效的版本参数 '${bumpType}'：应为 major / minor / patch 或 x.y[.z] 格式的版本号`,
+        );
       }
     }
 
