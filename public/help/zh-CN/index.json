@@ -545,7 +545,7 @@
     "file": "RELEASE_NOTES_v0.18.1.md",
     "path": "releaseNotes",
     "category": "更新日志",
-    "description": "网页抓取按站点排队并在连续被拒后暂停、从网站导入显示新书信息与应用进度、AI 导入原文替换按章确认、设置导入导出显示进度与当前数据",
+    "description": "网页抓取按站点排队并在多次被拒后暂停、从网站导入显示新书信息与应用进度、AI 导入原文替换按章确认、设置导入导出显示进度与当前数据",
     "categoryId": "release-notes"
   },
   {

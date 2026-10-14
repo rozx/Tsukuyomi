@@ -542,7 +542,7 @@
   {
     "category": "更新紀錄",
     "categoryId": "release-notes",
-    "description": "網頁抓取依網站排隊並在連續被拒後暫停、從網站匯入顯示新書資訊與套用進度、AI 匯入原文替換依章確認、設定匯入匯出顯示進度與目前資料",
+    "description": "網頁抓取依網站排隊並在多次被拒後暫停、從網站匯入顯示新書資訊與套用進度、AI 匯入原文替換依章確認、設定匯入匯出顯示進度與目前資料",
     "file": "RELEASE_NOTES_v0.18.1.md",
     "id": "v0.18.1",
     "path": "releaseNotes",
