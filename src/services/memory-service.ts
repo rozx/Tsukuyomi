@@ -1096,6 +1096,11 @@ export class MemoryService {
     return allMemories;
   }
 
+  /** 全库 Memory 总数（所有书籍），用于显示导入会覆盖多少数据 */
+  static async countAllMemories(): Promise<number> {
+    return (await getDB()).count('memories');
+  }
+
   /**
    * 获取最近的 Memory（用于 AI 上下文）
    * @param bookId 书籍 ID

@@ -891,6 +891,19 @@ interface DataBackup {
   syncs?: SyncConfig[];
 }
 
+/** 整份设置导入的阶段，按执行顺序排列；缺少的部分（如没有封面历史）不会报告对应阶段 */
+export const SETTINGS_IMPORT_STAGES = [
+  'backup',
+  'models',
+  'novels',
+  'covers',
+  'memories',
+  'settings',
+  'finalize',
+] as const;
+
+export type SettingsImportStage = (typeof SETTINGS_IMPORT_STAGES)[number];
+
 /**
  * 同步数据服务
  * 处理上传/下载配置的通用逻辑
@@ -900,6 +913,7 @@ export class SyncDataService {
   static async importSettingsSnapshot(
     data: Partial<NonNullable<ImportResult['data']>>,
     operationId: string,
+    onProgress?: (stage: SettingsImportStage) => void,
   ): Promise<void> {
     await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: true });
     const settings = useSettingsStore();
@@ -919,17 +933,29 @@ export class SyncDataService {
       )
     )
       return;
+    onProgress?.('backup');
     const backup = await SyncDataService.createBackup();
     try {
-      if (data.models !== undefined) await models.bulkImportModels(data.models);
-      if (data.novels !== undefined) await books.replaceBooks(data.novels, bookScope);
+      if (data.models !== undefined) {
+        onProgress?.('models');
+        await models.bulkImportModels(data.models);
+      }
+      if (data.novels !== undefined) {
+        onProgress?.('novels');
+        await books.replaceBooks(data.novels, bookScope);
+      }
       // 按导入记录原样写入（保留 id 与添加时间），同一 URL 只留最新一条
-      if (data.coverHistory !== undefined)
+      if (data.coverHistory !== undefined) {
+        onProgress?.('covers');
         await covers.replaceHistory(dedupeCoverHistoryByUrl(data.coverHistory));
+      }
+      onProgress?.('memories');
       await importMemoriesPreservingIdentity(data.memories, '[SyncDataService]');
+      onProgress?.('settings');
       if (data.appSettings !== undefined) await settings.importSettings(data.appSettings);
       if (data.sync !== undefined) await settings.importSyncs(data.sync);
       else await settings.clearSyncDeletionPropagationState();
+      onProgress?.('finalize');
       const tx = db.transaction('entity-operations', 'readwrite');
       await completeIdbTransaction(tx, () =>
         completeRestoreOperation(tx.store, 'snapshot', scopeId, signature, []),
