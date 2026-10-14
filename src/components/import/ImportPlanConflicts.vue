@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * 方案中的待处理项：章节对应、合章设置来源、更新目标确认，以及多段替换的译文损失确认。
- * 每次处理都会修改草稿并重新生成方案。多段替换按章合并为一行（可展开对比原文、整章确认），
+ * 每次处理都会修改草稿并重新生成方案。多段替换按受影响章节合并为一行（可展开对比原文、整组确认；
+ * 跨章替换单独成行并列出全部章节），
  * 不再重复列出对应的冲突说明；不会清空译文的替换已在生成方案时自动接受。
  * 待处理项的划分见 planPendingItems，与方案状态标签的计数一致。
  */
@@ -132,9 +133,9 @@ const chooseSettings = (chapterId: string, value: string) =>
       </li>
       <ImportPlanReplacementGroup
         v-for="group in groups"
-        :key="group.chapterId"
+        :key="group.key"
         :group="group"
-        :chapter="group.chapterId ? chapterTitle(group.chapterId) : ''"
+        :chapters="group.chapterIds.map(chapterTitle)"
         :disabled="disabled"
         @confirm="confirmReplacements"
       />

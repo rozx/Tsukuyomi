@@ -189,6 +189,8 @@ export default {
       replacementGroup:
         '{ranges} replacements: {removed} old paragraphs → {added} new, clearing {versions} translation versions',
       confirmChapter: 'Confirm chapter',
+      crossChapters: 'Spans {count} chapters',
+      confirmCrossChapter: 'Confirm cross-chapter',
       confirmReplacement: 'Confirm replacement',
     },
     planDetails: {

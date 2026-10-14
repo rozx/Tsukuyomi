@@ -183,6 +183,8 @@ export default {
       replacementGroup:
         '{ranges} 處取代：{removed} 段舊原文 → {added} 段新原文，清空 {versions} 個譯文版本',
       confirmChapter: '確認本章',
+      crossChapters: '跨 {count} 章',
+      confirmCrossChapter: '確認跨章取代',
       confirmReplacement: '確認取代',
     },
     planDetails: {
