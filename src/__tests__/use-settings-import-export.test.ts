@@ -335,3 +335,58 @@ describe('当前数据', () => {
     expect(s.currentData.value.books).toBe(0);
   });
 });
+
+describe('切换选项卡（组件卸载后重新挂载）', () => {
+  it('新实例沿用进行中的状态，且不能再启动导入或导出', async () => {
+    const parse = deferred<typeof PARSED>();
+    const read = vi.spyOn(SettingsService, 'importSettingsFromFile').mockReturnValue(parse.promise);
+    vi.spyOn(SyncDataService, 'importSettingsSnapshot').mockResolvedValue();
+    const load = vi.spyOn(electronSettings, 'loadBooksWithContentAndMemories');
+    const before = useSettingsImportExport();
+    const running = before.importFromFile(FILE);
+
+    const after = useSettingsImportExport();
+    expect(after.busy.value).toBe('import');
+    expect(after.stage.value).toBe('reading');
+    expect(after.progress.value).not.toBeNull();
+    await after.importFromFile(FILE);
+    await after.exportSettings();
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(load).not.toHaveBeenCalled();
+
+    parse.resolve(PARSED);
+    await running;
+    expect(after.busy.value).toBeNull();
+    expect(after.lastResult.value).toMatchObject({ kind: 'import', ok: true });
+  });
+
+  it('操作结束后重新进入时仍能看到上次结果', async () => {
+    vi.spyOn(SettingsService, 'importSettingsFromFile').mockResolvedValue(PARSED);
+    vi.spyOn(SyncDataService, 'importSettingsSnapshot').mockResolvedValue();
+    await useSettingsImportExport().importFromFile(FILE);
+
+    expect(useSettingsImportExport().lastResult.value).toMatchObject({
+      kind: 'import',
+      ok: true,
+      detail: '已导入 0 本书',
+    });
+  });
+
+  it('导入中途重新进入的实例，在导入结束后也会看到重新统计的 Memory 数量', async () => {
+    const countSpy = vi.spyOn(MemoryService, 'countAllMemories').mockResolvedValue(5);
+    const parse = deferred<typeof PARSED>();
+    vi.spyOn(SettingsService, 'importSettingsFromFile').mockReturnValue(parse.promise);
+    vi.spyOn(SyncDataService, 'importSettingsSnapshot').mockResolvedValue();
+    const running = useSettingsImportExport().importFromFile(FILE);
+    const after = useSettingsImportExport();
+    await flush();
+    expect(after.currentData.value.memories).toBe(5);
+
+    countSpy.mockResolvedValue(0);
+    parse.resolve(PARSED);
+    await running;
+    await flush();
+
+    expect(after.currentData.value.memories).toBe(0);
+  });
+});

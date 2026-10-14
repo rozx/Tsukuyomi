@@ -1,14 +1,16 @@
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
+import { storeToRefs } from 'pinia';
 import { v4 } from 'uuid';
 import { SettingsService } from 'src/services/settings-service';
 import { SETTINGS_IMPORT_STAGES, SyncDataService } from 'src/services/sync-data-service';
-import type { SettingsImportStage } from 'src/services/sync-data-service';
 import { loadBooksWithContentAndMemories } from 'src/composables/useElectronSettings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useSettingsStore } from 'src/stores/settings';
+import { useSettingsTransferStore } from 'src/stores/settings-transfer';
+import type { SettingsTransferResult, SettingsTransferStage } from 'src/stores/settings-transfer';
 import { translateText } from 'src/i18n/translate';
 import { localizedErrorMessage } from 'src/utils/localized-error';
 import { MemoryService } from 'src/services/memory-service';
@@ -17,9 +19,8 @@ import type { MessageKey } from 'src/i18n/types';
 /**
  * 设置页「导入 / 导出资料」：执行流程并暴露进行状态，供界面显示进度、阶段说明并禁用按钮。
  * 同一时间只允许一个导入或导出，进行中再次触发会被忽略。
+ * 进行状态与上次结果存在 useSettingsTransferStore 中，切换选项卡（组件卸载）后仍然保留。
  */
-
-export type SettingsTransferStage = 'reading' | SettingsImportStage | 'exporting';
 
 /** 导入流程的全部阶段：先读取校验文件，再按服务端顺序写入 */
 const IMPORT_FLOW: readonly SettingsTransferStage[] = ['reading', ...SETTINGS_IMPORT_STAGES];
@@ -35,16 +36,6 @@ const STAGE_TEXT: Record<SettingsTransferStage, MessageKey> = {
   finalize: 'settingsUi.importExport.stage.finalize',
   exporting: 'settingsUi.importExport.stage.exporting',
 };
-
-/** 最近一次导入 / 导出的结果，留在页面上直到下一次操作开始 */
-export interface SettingsTransferResult {
-  kind: 'import' | 'export';
-  ok: boolean;
-  /** 结果说明（完成时按当时界面语言生成，与 toast 一致） */
-  detail: string;
-  /** 完成时间（毫秒时间戳） */
-  at: number;
-}
 
 const OUTCOME_TEXT = {
   import: {
@@ -78,10 +69,7 @@ export function useSettingsImportExport() {
   const settingsStore = useSettingsStore();
   const t = (key: MessageKey) => translateText(settingsStore.uiLocale, key);
 
-  const busy = ref<'import' | 'export' | null>(null);
-  const stage = ref<SettingsTransferStage | null>(null);
-  const lastResult = ref<SettingsTransferResult | null>(null);
-  const memoryCount = ref<number | null>(null);
+  const { busy, stage, lastResult, memoryCount } = storeToRefs(useSettingsTransferStore());
 
   const currentData = computed<CurrentDataSummary>(() => ({
     models: aiModelsStore.models.length,

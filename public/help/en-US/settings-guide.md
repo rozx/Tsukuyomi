@@ -338,16 +338,19 @@ Accepts `.json` or `.txt` containing valid JSON.
 
 - The **Import data** card shows "Current data (an import replaces all of it)" with the counts of AI models, books, chapters, cover history, memories, and sync configurations on this device.
 - During import, a progress bar shows the current stage, such as "Backing up current data…", "Importing books…", or "Importing memories…", with the hint "In progress. Don't close or reload the page."
-- While you stay on this tab, both buttons are disabled during an import or export, and the last result (success, or failure with its reason) and its finish time stay in the card until the next operation starts.
-- Switching to another tab and back does not keep the progress, button state, or last result, although a started import or export keeps running. Because an import replaces data, stay on the tab and do not start another import until it finishes.
+- Only one import or export can run at a time: both buttons are disabled while one is in progress, and the last result (success, or failure with its reason) and its finish time stay in the card until the next operation starts.
+- If you switch to another tab and come back during an operation, the progress, button state, and last result are kept.
 
 Current behavior:
 
 - Current data is backed up locally first. If writing fails, the previous data is restored and the reason is shown.
-- Models, books, and covers: always replaced with the file's contents. If the file lacks the books or cover history field (or it is empty), the local data is cleared too.
-- Memories: when the file contains at least one memory, all local memories are cleared and rebuilt from the file (keeping IDs and timestamps); without a memories field or with an empty array they stay unchanged.
+- The same rule applies to every part: if the file has the field, the local data is replaced with the file's contents (an empty array clears it); if the field is missing, the local data stays unchanged. A non-empty field with no valid entries (for example from an old or damaged backup) is treated as missing; when only some entries are invalid, the valid ones are imported.
+- Models: the file must include the models field (it may be an empty array); models are replaced by the rule above, so a models field with no valid entries leaves local models unchanged.
+- Books and cover history: replaced or kept unchanged by the rule above.
+- Memories: when the field is present, all local memories are cleared and rebuilt from the file (keeping IDs and timestamps).
 - Settings: processed by the settings importer.
-- Sync configuration: replaced only when the file contains at least one entry; with no sync field or an empty array, local sync configuration (including the Gist ID and token) stays unchanged instead of being replaced along with the rest of the data listed under Current data.
+- Sync configuration: when the field is present, local sync configuration (including the Gist ID and token) is replaced, and an empty array clears it; without the field it stays unchanged, and only pending sync deletions for the imported books, models, and memories are removed so that the next sync does not delete what you just imported.
+- A file that contains only empty arrays and no app settings is treated as having nothing to import, and nothing is changed.
 
 > Import does not provide fine-grained field selection. Export a backup first.
 

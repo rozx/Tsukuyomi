@@ -954,7 +954,7 @@ export class SyncDataService {
       onProgress?.('settings');
       if (data.appSettings !== undefined) await settings.importSettings(data.appSettings);
       if (data.sync !== undefined) await settings.importSyncs(data.sync);
-      else await settings.clearSyncDeletionPropagationState();
+      else await settings.clearImportedDeletionPropagationState(data);
       onProgress?.('finalize');
       const tx = db.transaction('entity-operations', 'readwrite');
       await completeIdbTransaction(tx, () =>
@@ -2208,7 +2208,7 @@ export class SyncDataService {
   /**
    * 覆盖快照后恢复本地 Gist 凭据 / lastSyncTime，并清掉所有"会主动传播删除"的状态。
    *
-   * 清空字段交给 settings store 的 `clearSyncDeletionPropagationState`：
+   * 清空字段见 settings store 的 `getSyncDeletionPropagationStateClearedPatch`：
    * `deletedNovelIds` / `deletedModelIds` / `deletedMemoryIds` / `knownRemoteTombstones`。
    * 必须清这些是因为它们会被 `buildLocalSyncBundle` 合并进 manifest.tombstones 或写到
    * memories envelope.tombstones；恢复的旧条目 lastEdited 比这些墓碑 deletedAt 更早，

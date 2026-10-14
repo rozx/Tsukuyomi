@@ -95,14 +95,29 @@ function buildImportMessage(counts: ImportCounts, locale: AppLocale): string {
 
 /**
  * validateAndParseSettings 各分区的解析结果集合。
+ * 数组分区保留「字段是否存在」（aiModels 由结构校验保证存在，全部无效时同样视为缺失）：文件缺少该字段为 undefined（导入时保持本机数据不变），
+ * 字段存在但为空数组为 []（导入时整体替换为空，即清空本机数据）。
  */
 interface ParsedImportSections {
-  models: ReturnType<typeof parseAiModels>;
-  novels: ReturnType<typeof parseNovels>;
-  coverHistory: ReturnType<typeof parseCoverHistory>;
-  memories: ReturnType<typeof parseMemories>;
-  sync: ReturnType<typeof parseSyncConfigs>;
+  models: ReturnType<typeof parseAiModels> | undefined;
+  novels: ReturnType<typeof parseNovels> | undefined;
+  coverHistory: ReturnType<typeof parseCoverHistory> | undefined;
+  memories: ReturnType<typeof parseMemories> | undefined;
+  sync: ReturnType<typeof parseSyncConfigs> | undefined;
   appSettings: ReturnType<typeof parseAppSettings>;
+}
+
+/**
+ * 字段存在时才解析，缺失时返回 undefined 以保留「字段是否存在」。
+ * 非空数组里没有任何有效条目（旧版或损坏的备份）也按缺失处理，避免误把本机数据清空。
+ */
+function parseIfPresent<T>(
+  raw: unknown[] | undefined,
+  parser: (value: unknown[]) => T[],
+): T[] | undefined {
+  if (raw === undefined) return undefined;
+  const parsed = parser(raw);
+  return raw.length > 0 && parsed.length === 0 ? undefined : parsed;
 }
 
 /**
@@ -110,25 +125,26 @@ interface ParsedImportSections {
  */
 function parseImportedSections(settings: Settings): ParsedImportSections {
   return {
-    models: parseAiModels(settings.aiModels),
-    novels: parseNovels(settings.novels),
-    coverHistory: parseCoverHistory(settings.coverHistory),
-    memories: parseMemories(settings.memories),
-    sync: parseSyncConfigs(settings.sync),
+    models: parseIfPresent(settings.aiModels, parseAiModels),
+    novels: parseIfPresent(settings.novels, parseNovels),
+    coverHistory: parseIfPresent(settings.coverHistory, parseCoverHistory),
+    memories: parseIfPresent(settings.memories, parseMemories),
+    sync: parseIfPresent(settings.sync, parseSyncConfigs),
     appSettings: parseAppSettings(settings.appSettings),
   };
 }
 
 /**
  * 判断解析结果是否包含任何可导入的内容（任一分区非空即返回 true）。
+ * 只有空数组的文件视为没有内容，避免误用空白文件清空本机全部数据。
  */
 function hasImportedContent(sections: ParsedImportSections): boolean {
   return (
-    sections.models.length > 0 ||
-    sections.novels.length > 0 ||
-    sections.coverHistory.length > 0 ||
-    sections.memories.length > 0 ||
-    sections.sync.length > 0 ||
+    (sections.models?.length ?? 0) > 0 ||
+    (sections.novels?.length ?? 0) > 0 ||
+    (sections.coverHistory?.length ?? 0) > 0 ||
+    (sections.memories?.length ?? 0) > 0 ||
+    (sections.sync?.length ?? 0) > 0 ||
     Boolean(sections.appSettings)
   );
 }
@@ -217,21 +233,21 @@ export class SettingsService {
       success: true,
       message: buildImportMessage(
         {
-          models: sections.models.length,
-          novels: sections.novels.length,
-          coverHistory: sections.coverHistory.length,
-          memories: sections.memories.length,
-          sync: sections.sync.length,
+          models: sections.models?.length ?? 0,
+          novels: sections.novels?.length ?? 0,
+          coverHistory: sections.coverHistory?.length ?? 0,
+          memories: sections.memories?.length ?? 0,
+          sync: sections.sync?.length ?? 0,
           appSettings: Boolean(sections.appSettings),
         },
         locale,
       ),
       data: {
-        models: sections.models,
-        novels: sections.novels,
-        coverHistory: sections.coverHistory,
-        ...(sections.memories.length > 0 ? { memories: sections.memories } : {}),
-        ...(sections.sync.length > 0 ? { sync: sections.sync } : {}),
+        ...(sections.models ? { models: sections.models } : {}),
+        ...(sections.novels ? { novels: sections.novels } : {}),
+        ...(sections.coverHistory ? { coverHistory: sections.coverHistory } : {}),
+        ...(sections.memories ? { memories: sections.memories } : {}),
+        ...(sections.sync ? { sync: sections.sync } : {}),
         ...(sections.appSettings ? { appSettings: sections.appSettings } : {}),
       },
     };

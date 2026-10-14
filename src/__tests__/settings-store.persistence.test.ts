@@ -235,10 +235,17 @@ describe('cleanupOldDeletionRecords (TTL helper)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// clearSyncDeletionPropagationState — 文件导入 + 修订恢复共用的清理 helper
+// clearImportedDeletionPropagationState — 文件导入（无 sync 字段）时清理被导入条目的删除记录
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('clearSyncDeletionPropagationState', () => {
+/** 覆盖下面用例里出现的全部条目：n1 / foo 书籍、m1 模型、book-x 下的 mem1 */
+const IMPORTED = {
+  novels: [{ id: 'n1' }, { id: 'foo' }],
+  models: [{ id: 'm1' }],
+  memories: [{ id: 'mem1', bookId: 'book-x' }],
+} as never;
+
+describe('clearImportedDeletionPropagationState', () => {
   beforeEach(() => {
     localStorage.clear();
     setActivePinia(createPinia());
@@ -250,7 +257,7 @@ describe('clearSyncDeletionPropagationState', () => {
     mock.restore();
   });
 
-  it('清空主动传播删除的 4 个字段（novel/model/memory + knownRemoteTombstones）', async () => {
+  it('清空被导入条目在 4 个主动传播字段中的记录（novel/model/memory + knownRemoteTombstones）', async () => {
     const settingsStore = useSettingsStore();
     await settingsStore.updateGistSync({
       deletedNovelIds: [{ id: 'n1', deletedAt: 100 }],
@@ -259,7 +266,7 @@ describe('clearSyncDeletionPropagationState', () => {
       knownRemoteTombstones: { 'novel:n1': '2026-04-01T00:00:00.000Z' },
     });
 
-    await settingsStore.clearSyncDeletionPropagationState();
+    await settingsStore.clearImportedDeletionPropagationState(IMPORTED);
 
     expect(settingsStore.gistSync.deletedNovelIds).toEqual([]);
     expect(settingsStore.gistSync.deletedModelIds).toEqual([]);
@@ -274,7 +281,7 @@ describe('clearSyncDeletionPropagationState', () => {
       deletedCoverUrls: [{ url: 'https://x/y.jpg', deletedAt: 100 }],
     });
 
-    await settingsStore.clearSyncDeletionPropagationState();
+    await settingsStore.clearImportedDeletionPropagationState(IMPORTED);
 
     expect(settingsStore.gistSync.deletedCoverIds).toEqual([{ id: 'c1', deletedAt: 100 }]);
     expect(settingsStore.gistSync.deletedCoverUrls).toEqual([
@@ -290,7 +297,7 @@ describe('clearSyncDeletionPropagationState', () => {
       knownRemoteTombstones: { 'novel:foo': '2026-04-01T00:00:00.000Z' },
     });
 
-    await settingsStore.clearSyncDeletionPropagationState();
+    await settingsStore.clearImportedDeletionPropagationState(IMPORTED);
 
     expect(settingsStore.gistSync.secret).toBe('token-abc');
     expect(settingsStore.gistSync.syncParams).toMatchObject({
@@ -308,7 +315,7 @@ describe('clearSyncDeletionPropagationState', () => {
       lastRemoteETag: 'etag-xyz',
     });
 
-    await settingsStore.clearSyncDeletionPropagationState();
+    await settingsStore.clearImportedDeletionPropagationState(IMPORTED);
 
     expect(settingsStore.gistSync.knownRemoteHashes).toEqual({ settings: 'h1' });
     expect(settingsStore.gistSync.knownRemoteEntries).toEqual({ settings: { hash: 'h1' } });
@@ -319,8 +326,23 @@ describe('clearSyncDeletionPropagationState', () => {
     const settingsStore = useSettingsStore();
     settingsStore.syncs = []; // 清空所有 sync 配置
 
-    await settingsStore.clearSyncDeletionPropagationState();
+    await settingsStore.clearImportedDeletionPropagationState(IMPORTED);
     expect(settingsStore.syncs).toEqual([]);
+  });
+
+  it('不属于导入条目的删除记录与墓碑保留', async () => {
+    const settingsStore = useSettingsStore();
+    await settingsStore.updateGistSync({
+      deletedNovelIds: [{ id: 'other', deletedAt: 100 }],
+      knownRemoteTombstones: { 'novel:other': '2026-04-01T00:00:00.000Z' },
+    });
+
+    await settingsStore.clearImportedDeletionPropagationState(IMPORTED);
+
+    expect(settingsStore.gistSync.deletedNovelIds).toEqual([{ id: 'other', deletedAt: 100 }]);
+    expect(settingsStore.gistSync.knownRemoteTombstones).toEqual({
+      'novel:other': '2026-04-01T00:00:00.000Z',
+    });
   });
 
   it('幂等：连续调用两次状态相同（第二次为 no-op）', async () => {
@@ -330,10 +352,10 @@ describe('clearSyncDeletionPropagationState', () => {
       knownRemoteTombstones: { 'novel:n1': '2026-04-01T00:00:00.000Z' },
     });
 
-    await settingsStore.clearSyncDeletionPropagationState();
+    await settingsStore.clearImportedDeletionPropagationState(IMPORTED);
     const after1 = JSON.stringify(settingsStore.gistSync);
 
-    await settingsStore.clearSyncDeletionPropagationState();
+    await settingsStore.clearImportedDeletionPropagationState(IMPORTED);
     const after2 = JSON.stringify(settingsStore.gistSync);
 
     expect(after1).toBe(after2);
