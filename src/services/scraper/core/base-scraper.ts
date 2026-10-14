@@ -62,6 +62,11 @@ export abstract class BaseScraper<
     }
   }
 
+  /** 本站任意网址（目录页或章节页）对应的作品目录页网址；不属于本站时原样返回 */
+  catalogUrl(url: string): string {
+    return this.isValidUrl(url) ? this.getNovelIndexUrl(url) : url;
+  }
+
   /**
    * 当传入的 URL 不符合该站点的格式时返回的错误（带错误码，默认说明为简中）
    */

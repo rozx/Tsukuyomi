@@ -28,6 +28,17 @@ describe('更新配方', () => {
     });
     expect(original.updateRecipe).toBeUndefined();
   });
+  it.each([
+    [
+      'https://kakuyomu.jp/works/2912051597538602184/episodes/2912051597540135938',
+      'https://kakuyomu.jp/works/2912051597538602184',
+    ],
+    ['https://ncode.syosetu.com/n1234ab/5/', 'https://ncode.syosetu.com/n1234ab/'],
+    ['https://novel18.syosetu.com/n1234ab/12/', 'https://novel18.syosetu.com/n1234ab/'],
+    ['https://syosetu.org/novel/375522/6.html', 'https://syosetu.org/novel/375522/'],
+  ])('章节网址 %s 推导出的虚拟配方指向作品目录页', (url, catalog) => {
+    expect(resolveRecipe(book(url)).recipe.catalogUrls).toEqual([catalog]);
+  });
   it('优先使用真实配方，序列化往返完整保留', () => {
     const original = book();
     original.updateRecipe = {

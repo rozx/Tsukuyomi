@@ -34,6 +34,9 @@ export interface NovelScraper {
    */
   isValidUrl(url: string): boolean;
 
+  /** 本站任意网址（目录页或章节页）对应的作品目录页网址；不属于本站时原样返回 */
+  catalogUrl(url: string): string;
+
   /**
    * 获取并解析小说信息
    * @param url 小说 URL

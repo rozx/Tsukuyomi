@@ -31,7 +31,8 @@ export function resolveRecipe(book: Pick<Novel, 'updateRecipe' | 'webUrl'>): {
     recipe: {
       version: 1,
       engine: { kind: 'builtin', site },
-      catalogUrls: [url],
+      // 用户可能贴的是章节网址：章节页没有目录数据，必须从作品目录页回放
+      catalogUrls: [NovelScraperFactory.getScraper(url)!.catalogUrl(url)],
       verifiedChapterCount: 0,
       recordedAt: 0,
     },
