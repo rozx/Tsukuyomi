@@ -107,12 +107,17 @@ interface ParsedImportSections {
   appSettings: ReturnType<typeof parseAppSettings>;
 }
 
-/** 字段存在时才解析，缺失时返回 undefined 以保留「字段是否存在」 */
+/**
+ * 字段存在时才解析，缺失时返回 undefined 以保留「字段是否存在」。
+ * 非空数组里没有任何有效条目（旧版或损坏的备份）也按缺失处理，避免误把本机数据清空。
+ */
 function parseIfPresent<T>(
   raw: unknown[] | undefined,
   parser: (value: unknown[]) => T[],
 ): T[] | undefined {
-  return raw === undefined ? undefined : parser(raw);
+  if (raw === undefined) return undefined;
+  const parsed = parser(raw);
+  return raw.length > 0 && parsed.length === 0 ? undefined : parsed;
 }
 
 /**

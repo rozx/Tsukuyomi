@@ -344,12 +344,12 @@ Accepts `.json` or `.txt` containing valid JSON.
 Current behavior:
 
 - Current data is backed up locally first. If writing fails, the previous data is restored and the reason is shown.
-- The same rule applies to every part: if the file has the field, the local data is replaced with the file's contents (an empty array clears it); if the field is missing, the local data stays unchanged.
+- The same rule applies to every part: if the file has the field, the local data is replaced with the file's contents (an empty array clears it); if the field is missing, the local data stays unchanged. A non-empty field with no valid entries (for example from an old or damaged backup) is treated as missing; when only some entries are invalid, the valid ones are imported.
 - Models: the file must include the models field, so models are always replaced.
 - Books and cover history: replaced or kept unchanged by the rule above.
 - Memories: when the field is present, all local memories are cleared and rebuilt from the file (keeping IDs and timestamps).
 - Settings: processed by the settings importer.
-- Sync configuration: when the field is present, local sync configuration (including the Gist ID and token) is replaced, and an empty array clears it; without the field it stays unchanged.
+- Sync configuration: when the field is present, local sync configuration (including the Gist ID and token) is replaced, and an empty array clears it; without the field it stays unchanged, and only pending sync deletions for the imported books, models, and memories are removed so that the next sync does not delete what you just imported.
 - A file that contains only empty arrays and no app settings is treated as having nothing to import, and nothing is changed.
 
 > Import does not provide fine-grained field selection. Export a backup first.

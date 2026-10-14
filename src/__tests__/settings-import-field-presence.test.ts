@@ -127,3 +127,76 @@ describe('整份导入：有字段整体替换，无字段保持不变', () => {
     expect(settings.syncs).toEqual([]);
   });
 });
+
+describe('非空但没有任何有效条目的字段按缺失处理', () => {
+  it('解析结果不包含这些字段，本机对应数据保持不变', () => {
+    const result = parse({
+      aiModels: [model],
+      novels: [{ id: 'bad' }],
+      coverHistory: [{ id: 'bad' }],
+      memories: [{ id: 'bad' }],
+      sync: [{ id: 'bad' }],
+    });
+    expect(result.success).toBe(true);
+    expect(Object.keys(result.data!).sort()).toEqual(['models']);
+  });
+
+  it('部分条目无效时只导入有效条目', () => {
+    const result = parse({ aiModels: [], novels: [novel, { id: 'bad' }] });
+    expect(result.data!.novels).toHaveLength(1);
+  });
+});
+
+describe('文件缺少 sync 字段时只清理被导入条目的删除记录', () => {
+  it('其他待传播的删除记录与远端墓碑保留', async () => {
+    setActivePinia(createPinia());
+    const settings = useSettingsStore();
+    await settings.loadSettings();
+    await settings.updateGistSync({
+      deletedNovelIds: [
+        { id: 'n', deletedAt: 100 },
+        { id: 'gone-book', deletedAt: 100 },
+      ],
+      deletedModelIds: [
+        { id: 'm', deletedAt: 100 },
+        { id: 'gone-model', deletedAt: 100 },
+      ],
+      deletedMemoryIds: [
+        { id: 'mem-in', bookId: 'n', deletedAt: 100 },
+        { id: 'gone-mem', bookId: 'gone-book', deletedAt: 100 },
+      ],
+      knownRemoteTombstones: {
+        'novel:n': '2026-01-01T00:00:00.000Z',
+        'chapters:n:a': '2026-01-01T00:00:00.000Z',
+        'memories:n': '2026-01-01T00:00:00.000Z',
+        'novel:gone-book': '2026-01-01T00:00:00.000Z',
+        'memories:gone-book': '2026-01-01T00:00:00.000Z',
+      },
+    });
+
+    const parsed = parse({
+      aiModels: [model],
+      novels: [novel],
+      memories: [
+        {
+          id: 'mem-in',
+          bookId: 'n',
+          content: 'c',
+          summary: 's',
+          createdAt: 1,
+          lastAccessedAt: 1,
+        },
+      ],
+    });
+    await SyncDataService.importSettingsSnapshot(parsed.data!, 'presence-no-sync');
+
+    const gist = settings.gistSync;
+    expect(gist.deletedNovelIds!.map((r) => r.id)).toEqual(['gone-book']);
+    expect(gist.deletedModelIds!.map((r) => r.id)).toEqual(['gone-model']);
+    expect(gist.deletedMemoryIds!.map((r) => r.id)).toEqual(['gone-mem']);
+    expect(Object.keys(gist.knownRemoteTombstones!).sort()).toEqual([
+      'memories:gone-book',
+      'novel:gone-book',
+    ]);
+  });
+});

@@ -9,6 +9,7 @@ import { cloneDeep } from 'lodash';
 import { v4 } from 'uuid';
 import type {
   AppSettings,
+  ImportResult,
   MemoryInjectionSettings,
   ProxySiteMappingEntry,
 } from 'src/models/settings';
@@ -27,6 +28,7 @@ import { isAppLocale, resolveAppLocale } from 'src/models/locale';
 import type { AppLocale } from 'src/models/locale';
 import { LocalizedError } from 'src/utils/localized-error';
 import { normalizeTaskModelSettings } from 'src/services/settings/task-default-models';
+import { pruneDeletionStateForImport } from 'src/services/settings/import-deletion-state';
 import { API_KEY_FIELDS, normalizeApiKeySettings } from 'src/services/settings/api-keys';
 
 // localStorage 仅用于向后兼容读取（历史版本曾使用 localStorage 存储 settings/syncs）
@@ -92,10 +94,10 @@ const DEFAULT_SETTINGS: AppSettings = {
 /**
  * 返回一个"清空所有主动传播删除字段"的 partial SyncConfig。
  *
- * 公开导出以便 SyncDataService 在恢复快照、文件导入等场景下能直接 spread 进
+ * 公开导出以便 SyncDataService 在恢复快照时能直接 spread 进
  * `updateGistSync({...currentSync, ...patch})` 单次调用，避免连续两次写入。
  *
- * 字段语义见 `clearSyncDeletionPropagationState`。
+ * 字段语义见 `clearImportedDeletionPropagationState`。
  */
 export function getSyncDeletionPropagationStateClearedPatch(): Pick<
   SyncConfig,
@@ -1118,24 +1120,23 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
-     * 清空所有"主动传播删除"的同步状态（一次 updateGistSync 调用）。
+     * 文件导入（且导入文件没有 sync 字段）后，移除指向被导入条目的「主动传播删除」记录，
+     * 避免下次同步把刚导入的内容再次删除；其他尚未传播的删除照常保留（一次 updateGistSync 调用）。
      *
-     * 在以下场景调用以避免恢复回来的条目被旧墓碑再次删除：
-     *   - 修订快照恢复（overwriteFromSnapshot）
-     *   - 文件导入覆盖（ImportExportTab，且导入文件没有 sync 字段时）
-     *
-     * 清空字段：
+     * 涉及字段：
      *   - `deletedNovelIds`        → 写入 manifest.tombstones["novel:<id>"]
      *   - `deletedModelIds`        → 上传合并时过滤远端模型
      *   - `deletedMemoryIds`       → 写入 memories envelope.tombstones（v3+ 主动传播）
-     *   - `knownRemoteTombstones`  → 与上面合并进 manifest.tombstones（旧远端状态残留）
+     *   - `knownRemoteTombstones`  → 与上面合并进 manifest.tombstones（按所属书籍清理）
      *
      * 保留字段（仅本地过滤、不主动跨设备传播）：deletedCoverIds / deletedCoverUrls
      */
-    async clearSyncDeletionPropagationState(): Promise<void> {
+    async clearImportedDeletionPropagationState(
+      data: Partial<NonNullable<ImportResult['data']>>,
+    ): Promise<void> {
       const config = this.syncs.find((sync) => sync.syncType === SyncType.Gist);
       if (!config) return;
-      await this.updateGistSync(getSyncDeletionPropagationStateClearedPatch());
+      await this.updateGistSync(pruneDeletionStateForImport(config, data));
     },
 
     /**
