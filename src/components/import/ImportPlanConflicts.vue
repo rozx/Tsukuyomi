@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * 方案中的待处理项：章节对应、合章设置来源、更新目标确认，以及多段替换的译文损失确认。
- * 每次处理都会修改草稿并重新生成方案。多段替换只列替换范围本身（附章节与原文对比），
+ * 每次处理都会修改草稿并重新生成方案。多段替换按章合并为一行（可展开对比原文、整章确认），
  * 不再重复列出对应的冲突说明；不会清空译文的替换已在生成方案时自动接受。
+ * 待处理项的划分见 planPendingItems，与方案状态标签的计数一致。
  */
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -12,10 +13,10 @@ import Select from 'primevue/select';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { useBooksStore } from 'src/stores/books';
 import type { ImportPlan } from 'src/models/import';
-import type { ImportReplacementRange } from 'src/models/import-matching';
 import { getChapterDisplayTitle, getVolumeDisplayTitle } from 'src/utils/novel-utils';
 import { readableError } from './import-labels';
-import ImportPlanReplacement from './ImportPlanReplacement.vue';
+import ImportPlanReplacementGroup from './ImportPlanReplacementGroup.vue';
+import { planPendingItems } from 'src/composables/import-page/import-plan-pending';
 
 const props = defineProps<{ plan: ImportPlan; disabled: boolean }>();
 const store = useImportWorkspaceStore();
@@ -46,38 +47,26 @@ const settingsOptions = (draftChapterId: string) =>
       ?.oldChapterIds ?? []
   ).map((id) => ({ label: chapterTitle(id), value: id }));
 
-/** 由多段替换产生的冲突：已经以替换范围的形式列出（带确认按钮），不再单独列一行 */
-const REPLACEMENT_CODES = new Set([
-  'REPLACEMENT_REQUIRED',
-  'AMBIGUOUS_PARAGRAPH',
-  'MATCHING_LIMIT',
-]);
+const pending = computed(() => planPendingItems(props.plan));
 
 type Resolver = 'match' | 'settings' | 'target' | 'none';
 const conflicts = computed(() =>
-  props.plan.conflicts
-    .filter((conflict) => !REPLACEMENT_CODES.has(conflict.code))
-    .map((conflict) => {
-      const chapterId = conflict.chapterId ?? '';
-      let resolver: Resolver = 'none';
-      if (conflict.code === 'CHAPTER_MATCH_REQUIRED' && chapterId && bookChapters.value.length)
-        resolver = 'match';
-      else if (conflict.code === 'CHAPTER_SETTINGS_CONFLICT' && chapterId) resolver = 'settings';
-      else if (conflict.code === 'TARGET_CONFIRMATION_REQUIRED') resolver = 'target';
-      return {
-        message: readableError(conflict, resolveAppLocale(locale.value)),
-        chapterId,
-        resolver,
-      };
-    }),
+  pending.value.conflicts.map((conflict) => {
+    const chapterId = conflict.chapterId ?? '';
+    let resolver: Resolver = 'none';
+    if (conflict.code === 'CHAPTER_MATCH_REQUIRED' && chapterId && bookChapters.value.length)
+      resolver = 'match';
+    else if (conflict.code === 'CHAPTER_SETTINGS_CONFLICT' && chapterId) resolver = 'settings';
+    else if (conflict.code === 'TARGET_CONFIRMATION_REQUIRED') resolver = 'target';
+    return {
+      message: readableError(conflict, resolveAppLocale(locale.value)),
+      chapterId,
+      resolver,
+    };
+  }),
 );
-const replacements = computed(() =>
-  (props.plan.replacements ?? []).filter((entry) => !entry.confirmed),
-);
-const replacementChapter = (entry: ImportReplacementRange) => {
-  const chapterId = entry.oldKeys[0]?.chapterId;
-  return chapterId ? chapterTitle(chapterId) : '';
-};
+const groups = computed(() => pending.value.replacementGroups);
+const allSignatures = computed(() => groups.value.flatMap((group) => group.signatures));
 const confirmReplacements = (signatures: string[]) => void store.confirmReplacements(signatures);
 
 const resolveMatch = (chapterId: string, value: string) =>
@@ -87,22 +76,22 @@ const chooseSettings = (chapterId: string, value: string) =>
 </script>
 
 <template>
-  <section v-if="conflicts.length || replacements.length" class="ipl-card ipc">
+  <section v-if="pending.pending" class="ipl-card ipc">
     <div class="ipl-card-head">
       <h3 class="ipl-card-title">
         <i class="pi pi-exclamation-triangle" aria-hidden="true" />{{
           t('importUi.planConflicts.title')
         }}
-        <span class="ipl-count">{{ conflicts.length + replacements.length }}</span>
+        <span class="ipl-count">{{ pending.pending }}</span>
       </h3>
       <Button
-        v-if="replacements.length"
-        :label="t('importUi.planConflicts.confirmAll', { count: replacements.length })"
+        v-if="groups.length"
+        :label="t('importUi.planConflicts.confirmAll', { count: allSignatures.length })"
         icon="pi pi-check-square"
         size="small"
         severity="warn"
         :disabled="disabled"
-        @click="confirmReplacements(replacements.map((entry) => entry.signature))"
+        @click="confirmReplacements(allSignatures)"
       />
     </div>
     <p class="ipl-muted">{{ t('importUi.planConflicts.hint') }}</p>
@@ -141,13 +130,13 @@ const chooseSettings = (chapterId: string, value: string) =>
           @click="store.confirmTarget"
         />
       </li>
-      <ImportPlanReplacement
-        v-for="entry in replacements"
-        :key="entry.signature"
-        :entry="entry"
-        :chapter="replacementChapter(entry)"
+      <ImportPlanReplacementGroup
+        v-for="group in groups"
+        :key="group.chapterId"
+        :group="group"
+        :chapter="group.chapterId ? chapterTitle(group.chapterId) : ''"
         :disabled="disabled"
-        @confirm="(signature) => confirmReplacements([signature])"
+        @confirm="confirmReplacements"
       />
     </ul>
   </section>

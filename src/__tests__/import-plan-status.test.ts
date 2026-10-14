@@ -66,6 +66,23 @@ describe('导入方案状态', () => {
     expect(status.label).toContain('2');
   });
 
+  it('同一章的多处替换只算一项，替换带出的冲突不重复计入', () => {
+    const status = importPlanStatus({
+      ...base,
+      plan: plan({
+        conflicts: [
+          { code: 'REPLACEMENT_REQUIRED', message: 'x' },
+          { code: 'REPLACEMENT_REQUIRED', message: 'x' },
+        ],
+        replacements: [
+          { signature: 'a', confirmed: false, oldKeys: [{ chapterId: 'c1', paragraphId: 'p' }] },
+          { signature: 'b', confirmed: false, oldKeys: [{ chapterId: 'c1', paragraphId: 'q' }] },
+        ] as NonNullable<ImportPlan['replacements']>,
+      }),
+    });
+    expect(status).toMatchObject({ kind: 'conflicts', pending: 1 });
+  });
+
   it('方案与书库一致时没有可导入的变化', () => {
     const summary = { ...plan().summary!, hasChanges: false };
     expect(importPlanStatus({ ...base, plan: plan({ summary }) })).toMatchObject({

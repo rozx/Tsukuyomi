@@ -182,6 +182,9 @@ export default {
       oldTexts: '旧原文（{count} 段）',
       newTexts: '新原文（{count} 段）',
       confirmAll: '全部确认替换（{count}）',
+      replacementGroup:
+        '{ranges} 处替换：{removed} 段旧原文 → {added} 段新原文，清空 {versions} 个译文版本',
+      confirmChapter: '确认本章',
       confirmReplacement: '确认替换',
     },
     planDetails: {

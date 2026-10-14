@@ -4,6 +4,7 @@
 import type { ImportPlan } from 'src/models/import';
 import type { AppLocale } from 'src/models/locale';
 import { translateText } from 'src/i18n/translate';
+import { planPendingItems } from './import-plan-pending';
 
 export type ImportPlanStatusKind =
   | 'none'
@@ -41,8 +42,7 @@ type Base = Omit<ImportPlanStatus, 'canPreview' | 'canApply'>;
 function describePlan(plan: ImportPlan, input: StatusInput): Base {
   const t = (key: Parameters<typeof translateText>[1], values?: Record<string, number>) =>
     translateText(input.locale ?? 'zh-CN', key, values);
-  const pending =
-    plan.conflicts.length + (plan.replacements ?? []).filter((entry) => !entry.confirmed).length;
+  const { pending } = planPendingItems(plan);
   if (input.applied)
     return {
       kind: 'applied',

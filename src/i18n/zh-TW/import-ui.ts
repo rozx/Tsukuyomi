@@ -180,6 +180,9 @@ export default {
       oldTexts: '舊原文（{count} 段）',
       newTexts: '新原文（{count} 段）',
       confirmAll: '全部確認取代（{count}）',
+      replacementGroup:
+        '{ranges} 處取代：{removed} 段舊原文 → {added} 段新原文，清空 {versions} 個譯文版本',
+      confirmChapter: '確認本章',
       confirmReplacement: '確認取代',
     },
     planDetails: {

@@ -186,6 +186,9 @@ export default {
       oldTexts: 'Old text ({count} paragraphs)',
       newTexts: 'New text ({count} paragraphs)',
       confirmAll: 'Confirm all replacements ({count})',
+      replacementGroup:
+        '{ranges} replacements: {removed} old paragraphs → {added} new, clearing {versions} translation versions',
+      confirmChapter: 'Confirm chapter',
       confirmReplacement: 'Confirm replacement',
     },
     planDetails: {
