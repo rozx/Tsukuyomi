@@ -69,6 +69,18 @@ describe('站点请求 lane', () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it('拒绝之间夹着网络错误或 404 时不算连续，不熔断', async () => {
+    const queue = siteQueue();
+    await fail(queue, new HttpStatusError(403));
+    await fail(queue, new Error('Network Error'));
+    await fail(queue, new HttpStatusError(404));
+    await fail(queue, new HttpStatusError(429));
+    await fail(queue, new BlockedResponseError('x'));
+    const request = vi.fn(() => Promise.resolve('ok'));
+    await expect(queue.run(siteLane(KAKUYOMU), request)).resolves.toBe('ok');
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it('桌面版熔断文案不建议「改用桌面版」', async () => {
     (window as unknown as { electronAPI?: unknown }).electronAPI = { isElectron: true };
     try {

@@ -84,7 +84,7 @@ Paste an HTTP/HTTPS contents URL in Sources and choose Add URL. Individual chapt
 
 The assistant checks the contents and samples chapters before batch extraction. A batch is limited to 500 chapters; longer works need several batches. Discovered chapter links appear as assistant-discovered sources without manual entry.
 
-Pages from one site are read one at a time, at least 1 second apart. After 3 refusals since the last success, the site is paused for about 5 minutes and batch extraction stops, leaving the remaining chapters for later; with Firecrawl fallback on, Firecrawl reads them instead.
+Pages from one site are read one at a time, at least 1 second apart. After 3 refusals in a row, the site is paused for about 5 minutes and batch extraction stops, leaving the remaining chapters for later; with Firecrawl fallback on, Firecrawl reads them instead.
 
 Login, CAPTCHA, or script-only sites may be unreadable. Save missing chapters as files and add them to the same task, identifying their chapters. Retrieved text is retained.
 

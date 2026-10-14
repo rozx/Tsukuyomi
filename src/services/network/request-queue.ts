@@ -1,3 +1,4 @@
+import { isCancelledError } from 'src/utils/is-cancelled-error';
 import { RequestLimiter } from './request-limiter';
 
 /**
@@ -7,7 +8,9 @@ import { RequestLimiter } from './request-limiter';
  * - 并发上限与相邻请求的最小间隔
  * - 暂停整条 lane（如收到 429 按 Retry-After 等待）
  * - 熔断：连续被拒达到阈值时，该次请求即抛出策略给出的错误，冷却期内不再发请求；
- *   冷却结束后放行一次试探，再被拒立即重新熔断，成功则恢复
+ *   冷却结束后放行一次试探，再被拒立即重新熔断，成功则恢复。
+ *   「连续」指中间没有夹着其它结果：成功或非拒绝类错误（如网络错误、404）都会清零计数，
+ *   取消不是站点的响应，既不计数也不清零
  */
 
 export interface LaneBreaker {
@@ -15,7 +18,7 @@ export interface LaneBreaker {
   tripAfter: number;
   /** 熔断持续时间 */
   cooldownMs: number;
-  /** 该错误是否计为「被拒」；其余错误既不计数也不清零 */
+  /** 该错误是否计为「被拒」；其余错误（取消除外）清零连续拒绝计数 */
   isRefusal: (error: unknown) => boolean;
   /** 熔断期间抛出的错误 */
   trippedError: (lane: string, remainingMs: number) => Error;
@@ -129,12 +132,23 @@ export class RequestQueue {
   /** 记录一次失败；本次失败触发熔断时返回 true */
   private recordFailure(lane: Lane, error: unknown): boolean {
     const breaker = lane.policy.breaker;
-    if (!breaker?.isRefusal(error)) return false;
+    if (!breaker || isCancelled(error)) return false;
+    if (!breaker.isRefusal(error)) {
+      lane.refusals = 0;
+      return false;
+    }
     lane.refusals++;
     if (lane.refusals < breaker.tripAfter) return false;
     lane.trippedUntil = Date.now() + breaker.cooldownMs;
     return true;
   }
+}
+
+/** 调用方取消；部分环境（如 jsdom）的 DOMException 不继承 Error，单独判定 */
+function isCancelled(error: unknown): boolean {
+  return (
+    isCancelledError(error) || (error instanceof DOMException && error.name === 'AbortError')
+  );
 }
 
 /** 全局共用的请求队列：各访问层按需 define 自己的 lane 策略 */

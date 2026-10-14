@@ -202,6 +202,24 @@ describe('RequestQueue 熔断', () => {
     await expect(queue.run('site:a', () => Promise.resolve('ok'))).resolves.toBe('ok');
   });
 
+  it('非拒绝类错误打断连续拒绝：计数清零', async () => {
+    const queue = queueWith({ concurrency: 1, breaker: BREAKER });
+    await refuseTimes(queue, 'site:a', 2);
+    await expect(queue.run('site:a', () => Promise.reject(new Error('404')))).rejects.toThrow(
+      '404',
+    );
+    await refuseTimes(queue, 'site:a', 2);
+    await expect(queue.run('site:a', () => Promise.resolve('ok'))).resolves.toBe('ok');
+  });
+
+  it('取消不算站点的响应：既不计数也不清零', async () => {
+    const queue = queueWith({ concurrency: 1, breaker: BREAKER });
+    await refuseTimes(queue, 'site:a', 2);
+    const aborted = new DOMException('操作已取消', 'AbortError');
+    await expect(queue.run('site:a', () => Promise.reject(aborted))).rejects.toBe(aborted);
+    await expect(queue.run('site:a', refuse)).rejects.toBeInstanceOf(Tripped);
+  });
+
   it('熔断只影响该 lane', async () => {
     const queue = queueWith({ concurrency: 1, breaker: BREAKER });
     await trip(queue, 'site:a');
