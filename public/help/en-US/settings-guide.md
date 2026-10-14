@@ -104,7 +104,7 @@ Assign ordered fetch methods to a website. Available on Web and desktop.
 2. Otherwise try mapped CORS proxies in order, or the default proxy without a mapping. With proxy off, use `/api/...` or direct access. Desktop always connects directly. Network errors, timeouts, 429, and 5xx receive one delayed retry.
 3. If access is still blocked by 403, 429, 5xx, network errors, or an anti-bot page such as Cloudflare, use Firecrawl when enabled. A missing page such as 404 does not trigger fallback.
 
-Apart from Firecrawl, fetches are queued per target site: one request at a time, at least 1 second apart. After 3 refusals from the same site since its last successful request (403, 429, or an anti-bot page; network errors or 404s in between do not reset the count), requests to it pause for about 5 minutes; switching proxies or retrying within one request counts once. While a site is paused, Firecrawl is used when fallback is enabled; otherwise the request fails, and batch imports and update checks stop taking new chapters while keeping the ones already fetched.
+Apart from Firecrawl, fetches are queued per target site: one request at a time, at least 1 second apart. After 3 refusals from the same site since its last successful request (403, 429, or an anti-bot page; network errors or 404s in between do not reset the count), requests to it pause for about 5 minutes; switching proxies or retrying within one request counts once. While a site is paused, Firecrawl is used when fallback is enabled; otherwise the request fails, and batch imports and update checks stop taking new chapters while keeping the ones already fetched. Queueing and refusal counts are kept separately in each browser tab; importing or checking the same site in several tabs at once sends requests from each of them and makes rate limiting more likely, so use one tab.
 
 ### Automatic mapping {#settings-guide-section-14}
 
@@ -347,7 +347,7 @@ Current behavior:
 - Models, books, and covers: always replaced with the file's contents. If the file lacks the books or cover history field (or it is empty), the local data is cleared too.
 - Memories: when the file contains at least one memory, all local memories are cleared and rebuilt from the file (keeping IDs and timestamps); without a memories field or with an empty array they stay unchanged.
 - Settings: processed by the settings importer.
-- Sync configuration: replaces current configuration when present.
+- Sync configuration: replaced only when the file contains at least one entry; with no sync field or an empty array, local sync configuration (including the Gist ID and token) stays unchanged instead of being replaced with the rest of the listed current data.
 
 > Import does not provide fine-grained field selection. Export a backup first.
 
