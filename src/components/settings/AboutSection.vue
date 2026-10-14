@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
 import DesktopUpdateSection from './DesktopUpdateSection.vue';
-import { APP_VERSION } from 'src/constants/version';
+import { APP_DISPLAY_VERSION } from 'src/constants/build-info';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 
-const version = APP_VERSION;
+const version = APP_DISPLAY_VERSION;
 const githubUrl = 'https://github.com/rozx/Tsukuyomi';
 const authorUrl = 'https://github.com/rozx';
 const author = 'Rozx';

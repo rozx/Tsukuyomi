@@ -15,7 +15,7 @@ bun run pack:electron        # 从已有应用目录制作 Velopack 包
 
 产物位于 `dist/electron/Releases/`：Windows 为 Portable ZIP，macOS 为包含 `.app` 的 Portable ZIP，Linux 为 AppImage；同时生成 `.nupkg` 和 `releases.<平台-架构>.json`。请勿在生成后重命名文件，也不要仅上传便携包而遗漏更新包与清单。
 
-CI 支持 win-x64、linux-x64、osx-arm64、osx-x64。平台和架构进入通道名，避免不同矩阵互相覆盖。正式版本取 `package.json` 的三段版本，`APP_VERSION` 的第四段只用于展示。每次正式发布都必须递增三段版本，不覆盖已公开的 tag。
+CI 支持 win-x64、linux-x64、osx-arm64、osx-x64。平台和架构进入通道名，避免不同矩阵互相覆盖。正式版本取 `package.json` 的三段版本；`APP_VERSION` 也只存三段，界面显示的提交数和短 SHA 由 `vite-plugins/build-info.ts` 在构建时注入（构建任务需完整 checkout 才有提交数）。每次正式发布都必须递增三段版本，不覆盖已公开的 tag。
 
 `TSUKUYOMI_VPK` 可指定本地已安装的同版本 vpk 可执行文件；默认通过 `dnx` 获取固定版本。构建本身不发布任何文件。GitHub Actions 先创建 draft，各平台构建成功后统一校验、上传，再公开为 latest；某个平台失败时 draft 不公开。
 

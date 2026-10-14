@@ -5,6 +5,7 @@ import { defineConfig } from '#q-app/wrappers';
 import { fileURLToPath } from 'node:url';
 import { PrimeVueResolver } from 'unplugin-vue-components/resolvers';
 import { dynamicAIProxy } from './vite-plugins/dynamic-ai-proxy';
+import { createGitRunner, resolveBuildInfo } from './vite-plugins/build-info';
 
 /**
  * 脚本自动导入的 PrimeVue 解析器：跳过运行环境已有的全局名（如 DataView、Image）。
@@ -22,6 +23,12 @@ const resolvePrimeVueScript = (name: string) => {
 };
 
 export default defineConfig((ctx: any) => {
+  // 构建时确定版本标识（短 SHA + 可选提交数），用于确认网站部署的是哪个 commit
+  const buildInfo = resolveBuildInfo(
+    process.env,
+    createGitRunner(fileURLToPath(new URL('.', import.meta.url))),
+  );
+
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
     // preFetch: true,
@@ -72,7 +79,10 @@ export default defineConfig((ctx: any) => {
       publicPath:
         'pwa' in ctx.mode || 'ssr' in ctx.mode ? '/' : 'electron' in ctx.mode ? './' : '/',
       // analyze: true,
-      // env: {},
+      env: {
+        APP_BUILD_COMMIT: buildInfo.commit,
+        APP_BUILD_COMMIT_COUNT: buildInfo.commitCount?.toString() ?? '',
+      },
       // rawDefine: {}
       // ignorePublicFolder: true,
       // minify: false,

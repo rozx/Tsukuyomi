@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 const { t: i18nT } = useI18n();
-import { APP_VERSION } from 'src/constants/version';
+import { APP_DISPLAY_VERSION } from 'src/constants/build-info';
 import { APP_NAME } from 'src/constants/app';
 import AppFooterUpdateBadge from './AppFooterUpdateBadge.vue';
 
@@ -22,7 +22,7 @@ const updatesAvailable = Boolean(window.electronAPI?.updates);
     </div>
 
     <div class="dsk-statusbar-right">
-      <span class="dsk-statusbar-version">v{{ APP_VERSION }}</span>
+      <span class="dsk-statusbar-version">v{{ APP_DISPLAY_VERSION }}</span>
       <AppFooterUpdateBadge v-if="updatesAvailable" />
       <a
         href="https://github.com/rozx/Tsukuyomi"

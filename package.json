@@ -23,7 +23,6 @@
     "test:coverage": "cross-env NODE_OPTIONS=--max-old-space-size=2048 vitest run --coverage",
     "test:bun": "bun test",
     "bump": "bun scripts/bump-version.ts",
-    "setup:git-hooks": "node scripts/setup-git-hooks.js",
     "dev": "quasar dev",
     "dev:electron": "quasar dev -m electron",
     "build": "quasar build",

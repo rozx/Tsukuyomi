@@ -1,15 +1,16 @@
 #!/usr/bin/env bun
 /**
  * Bump version in package.json and src/constants/version.ts
- * Usage: bun scripts/bump-version.ts <major|minor|patch|build|version>
+ * Usage: bun scripts/bump-version.ts <major|minor|patch|version>
  * Examples:
- *   bun scripts/bump-version.ts major     - Bump major version (e.g., 0.8.4.5 -> 1.0.0)
- *   bun scripts/bump-version.ts minor     - Bump minor version (e.g., 0.8.4.5 -> 0.9.0)
- *   bun scripts/bump-version.ts patch     - Bump patch version (e.g., 0.8.4.5 -> 0.8.5)
- *   bun scripts/bump-version.ts build     - Bump build version (e.g., 0.8.4.5 -> 0.8.4.6) DOES NOT UPDATE package.json
+ *   bun scripts/bump-version.ts major     - Bump major version (e.g., 0.8.4 -> 1.0.0)
+ *   bun scripts/bump-version.ts minor     - Bump minor version (e.g., 0.8.4 -> 0.9.0)
+ *   bun scripts/bump-version.ts patch     - Bump patch version (e.g., 0.8.4 -> 0.8.5)
  *   bun scripts/bump-version.ts 0.5.18    - Set version directly
  *
- * Note: When bumping major/minor/patch, build number is reset to 0 and stripped from package.json
+ * Note: 只维护 x.y.z。界面上的提交数 / 短 SHA 在构建时由 vite-plugins/build-info.ts 生成，
+ * 不写进仓库（以前 pre-commit 自动写 build 号会让并行分支的 PR 必然冲突）。
+ * 传入 4 段版本（如分支名 release/0.9.0.55）时只取前 3 段。
  */
 
 import { readFileSync, writeFileSync } from 'fs';
@@ -34,12 +35,9 @@ async function promptVersionType(): Promise<string> {
     console.log('  1) major - 主版本号升级 (Major version bump: x.0.0)');
     console.log('  2) minor - 次版本号升级 (Minor version bump: x.y.0)');
     console.log('  3) patch - 补丁版本号升级 (Patch version bump: x.y.z)');
-    console.log(
-      '  4) build - 构建号升级 (Build bump: x.y.z.w) - ONLY updates constants/version.ts',
-    );
     console.log('');
 
-    rl.question('请输入选项 (1/2/3/4): ', (answer) => {
+    rl.question('请输入选项 (1/2/3): ', (answer) => {
       rl.close();
       const choice = answer.trim().toLowerCase();
 
@@ -49,8 +47,6 @@ async function promptVersionType(): Promise<string> {
         resolve('minor');
       } else if (choice === '3' || choice === 'patch') {
         resolve('patch');
-      } else if (choice === '4' || choice === 'build') {
-        resolve('build');
       } else {
         console.error(
           '❌ 无效的选项，请重新运行脚本 (Invalid choice, please run the script again)',
@@ -78,7 +74,7 @@ async function main() {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
     const versionFileContent = readFileSync(versionFilePath, 'utf-8');
 
-    // We use the version file as the source of truth for the FULL version (including build)
+    // version.ts 是版本号的来源（旧文件可能还带第 4 段 build 号，计算时会忽略）
     const currentFullVersion = getVersionFromContent(versionFileContent);
     const pkgVersion = packageJson.version;
 
@@ -91,84 +87,66 @@ async function main() {
 
     // Parse current full version
     const parts = currentFullVersion.split('.').map(Number);
-    
+
     // Validate that all version segments are non-negative integers
-    const invalidPart = parts.find(
-      (n) => !Number.isFinite(n) || !Number.isInteger(n) || n < 0,
-    );
+    const invalidPart = parts.find((n) => !Number.isFinite(n) || !Number.isInteger(n) || n < 0);
     if (invalidPart !== undefined) {
       throw new Error(
         `Invalid APP_VERSION '${currentFullVersion}' in src/constants/version.ts. Expected only non-negative numeric segments separated by dots.`,
       );
     }
-    
+
     // Ensure we have at least 3 parts
     while (parts.length < 3) parts.push(0);
 
     let [major = 0, minor = 0, patch = 0] = parts;
-    let build = parts[3] ?? 0;
 
     let newVersionString = '';
-    let shouldUpdatePackageJson = true;
 
     if (bumpType === 'major') {
       major++;
       minor = 0;
       patch = 0;
-      build = 0;
       newVersionString = `${major}.${minor}.${patch}`;
     } else if (bumpType === 'minor') {
       minor++;
       patch = 0;
-      build = 0;
       newVersionString = `${major}.${minor}.${patch}`;
     } else if (bumpType === 'patch') {
       patch++;
-      build = 0;
       newVersionString = `${major}.${minor}.${patch}`;
-    } else if (bumpType === 'build') {
-      build++;
-      newVersionString = `${major}.${minor}.${patch}.${build}`;
-      shouldUpdatePackageJson = false; // Don't update package.json for build bumps
     } else {
       // Direct set
       if (/^\d+\.\d+(\.\d+)?(\.\d+)?$/.test(bumpType)) {
-        newVersionString = bumpType;
-        // Normalize to at least 3 parts when updating package.json (semver requirement)
-        const versionParts = newVersionString.split('.');
-        if (versionParts.length < 3 && shouldUpdatePackageJson) {
-          while (versionParts.length < 3) {
-            versionParts.push('0');
-          }
-          newVersionString = versionParts.join('.');
-          console.log(`ℹ️ Normalized version to ${newVersionString} for package.json (semver)`);
+        // Normalize to exactly 3 parts (semver; 4th segment is no longer stored)
+        const versionParts = bumpType.split('.').slice(0, 3);
+        while (versionParts.length < 3) {
+          versionParts.push('0');
         }
-        // If it has 4 parts, we probably shouldn't set that to package.json to avoid errors
-        if (newVersionString.split('.').length > 3) {
-          console.warn(
-            '⚠️ New version has 4 components. Updating ONLY version.ts to avoid electron-builder errors.',
-          );
-          shouldUpdatePackageJson = false;
+        newVersionString = versionParts.join('.');
+        if (newVersionString !== bumpType) {
+          console.log(`ℹ️ Normalized version to ${newVersionString} (x.y.z)`);
         }
+      } else if (bumpType === 'build') {
+        throw new Error(
+          "'build' 已移除：版本号只维护 x.y.z，提交数 / 短 SHA 在构建时由 vite-plugins/build-info.ts 注入",
+        );
       } else {
-        console.warn('Warning: Version does not look like x.y, x.y.z, or x.y.z.build');
-        newVersionString = bumpType;
+        throw new Error(
+          `无效的版本参数 '${bumpType}'：应为 major / minor / patch 或 x.y[.z] 格式的版本号`,
+        );
       }
     }
 
-    // Update package.json if needed
-    if (shouldUpdatePackageJson) {
-      packageJson.version = newVersionString;
-      writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n', 'utf-8');
-      console.log(`✅ Updated package.json to version: ${newVersionString}`);
-    } else {
-      console.log(`ℹ️ Skipping package.json update (keeping ${pkgVersion})`);
-    }
+    packageJson.version = newVersionString;
+    writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n', 'utf-8');
+    console.log(`✅ Updated package.json to version: ${newVersionString}`);
 
     // Update src/constants/version.ts
     const newVersionFileContent = `// 应用版本号
 // 此文件由 scripts/bump-version.ts 自动生成，请勿手动修改
-// 如需更新版本，请运行: bun scripts/bump-version.ts <major|minor|patch|build|version>
+// 如需更新版本，请运行: bun scripts/bump-version.ts <major|minor|patch|version>
+// 界面显示的提交数 / 短 SHA 在构建时注入，见 vite-plugins/build-info.ts
 export const APP_VERSION = '${newVersionString}';
 `;
 

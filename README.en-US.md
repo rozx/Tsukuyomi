@@ -202,9 +202,6 @@ cd Tsukuyomi
 # Install dependencies
 bun install
 
-# Register the commit hook after the first clone (bumps the build number on commit)
-bun run setup:git-hooks
-
 # Start the dev environment
 bun run dev
 ```
@@ -244,7 +241,6 @@ bun run dev
 | Command                   | Purpose                                                                                       |
 | :------------------------ | :-------------------------------------------------------------------------------------------- |
 | `bun install`             | Install dependencies                                                                          |
-| `bun run setup:git-hooks` | Register the pre-commit build-number hook after the first clone                               |
 | `bun run dev`             | Start the web dev server (port 9000 by default)                                               |
 | `bun run dev:electron`    | Start Electron dev mode                                                                       |
 | `bun run build:spa`       | Build the production web SPA                                                                  |

@@ -32,8 +32,6 @@ Commit all current changes with an automatically generated commit message.
    git commit -m "<commit-message>"
    ```
 
-   The pre-commit hook bumps the build number in `src/constants/version.ts` and adds it to the commit. That is expected.
-
 6. **Verify**
 
    Run `git status --short` and `git --no-pager log --oneline -1` to confirm the commit succeeded.

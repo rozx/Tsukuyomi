@@ -10,7 +10,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 bun install                    # 安装依赖
-bun run setup:git-hooks        # 首次 clone 后必跑：注册 .githooks/pre-commit（自动 bump build 号）
 
 bun run dev                    # Web 开发模式 (前端:9000, 后端:8080)
 bun run dev:electron           # Electron 开发模式
@@ -32,7 +31,7 @@ bunx vitest run -t "测试描述"  # 按测试名过滤
 
 **修改代码后必须运行**: `bun run lint && bun run type-check && bun run quality-check`
 
-**首次 clone 必跑**: `bun run setup:git-hooks` — 把 `core.hooksPath` 指向仓库内的 [`.githooks/`](.githooks/)，启用 pre-commit 自动 bump build 号。脚本不存在或目录被删时 hook 会**静默跳过**（git 不报错），别忘了跑。
+**版本号**：仓库里只维护 `x.y.z`（`src/constants/version.ts` / `package.json`，由 `bun run bump <major|minor|patch|x.y.z>` 修改）。界面显示的 `x.y.z.提交数 (短 SHA)` 在构建时由 [`vite-plugins/build-info.ts`](vite-plugins/build-info.ts) 生成：短 SHA 依次取 `BUILD_COMMIT` 环境变量（DigitalOcean 绑定 `${<组件>.COMMIT_HASH}`）→ `git rev-parse HEAD` → `dev`；提交数只在完整克隆时显示。不再有 pre-commit 自动 bump，提交时不要手动写第 4 段 build 号（会让并行分支的 PR 冲突）。
 
 ## 架构分层
 
