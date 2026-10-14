@@ -10,7 +10,7 @@ This guide describes the settings available in the current version, organized by
 
 - Open **Settings** in navigation or visit `/settings`.
 - Use the upper-left Back button to return.
-- The last selected tab is remembered.
+- The first visit opens **General**; after that, the last selected tab is remembered.
 
 ---
 
@@ -103,6 +103,8 @@ Assign ordered fetch methods to a website. Available on Web and desktop.
 1. If Firecrawl is first in the mapping and fallback is enabled, fetch with Firecrawl directly.
 2. Otherwise try mapped CORS proxies in order, or the default proxy without a mapping. With proxy off, use `/api/...` or direct access. Desktop always connects directly. Network errors, timeouts, 429, and 5xx receive one delayed retry.
 3. If access is still blocked by 403, 429, 5xx, network errors, or an anti-bot page such as Cloudflare, use Firecrawl when enabled. A missing page such as 404 does not trigger fallback.
+
+Apart from Firecrawl, fetches are queued per target site: one request at a time, at least 1 second apart. After 3 refusals from the same site since its last successful request (403, 429, or an anti-bot page; network errors or 404s in between do not reset the count), requests to it pause for about 5 minutes; switching proxies or retrying within one request counts once. While a site is paused, Firecrawl is used when fallback is enabled; otherwise the request fails, and batch imports and update checks stop taking new chapters while keeping the ones already fetched. Queueing and refusal counts are kept separately in each browser tab; importing or checking the same site in several tabs at once sends requests from each of them and makes rate limiting more likely, so use one tab.
 
 ### Automatic mapping {#settings-guide-section-14}
 
@@ -319,7 +321,7 @@ Local vectors support semantic memory search and `query_chapter`. See [Local emb
 
 ### Export data {#settings-guide-section-37}
 
-File: `tsukuyomi-settings-YYYY-MM-DD.json`.
+Choose **Export data**; "Packaging data for export…" is shown until the file is saved as `tsukuyomi-settings-YYYY-MM-DD.json`.
 
 Includes:
 
@@ -334,12 +336,18 @@ Includes:
 
 Accepts `.json` or `.txt` containing valid JSON.
 
+- The **Import data** card shows "Current data (an import replaces all of it)" with the counts of AI models, books, chapters, cover history, memories, and sync configurations on this device.
+- During import, a progress bar shows the current stage, such as "Backing up current data…", "Importing books…", or "Importing memories…", with the hint "In progress. Don't close or reload the page."
+- While you stay on this tab, both buttons are disabled during an import or export, and the last result (success, or failure with its reason) and its finish time stay in the card until the next operation starts.
+- Switching to another tab and back does not keep the progress, button state, or last result, although a started import or export keeps running. Because an import replaces data, stay on the tab and do not start another import until it finishes.
+
 Current behavior:
 
-- Models, books, and covers: each collection is cleared before import when its data is present.
-- Memories: created per book, without first clearing the entire memory store.
+- Current data is backed up locally first. If writing fails, the previous data is restored and the reason is shown.
+- Models, books, and covers: always replaced with the file's contents. If the file lacks the books or cover history field (or it is empty), the local data is cleared too.
+- Memories: when the file contains at least one memory, all local memories are cleared and rebuilt from the file (keeping IDs and timestamps); without a memories field or with an empty array they stay unchanged.
 - Settings: processed by the settings importer.
-- Sync configuration: replaces current configuration when present.
+- Sync configuration: replaced only when the file contains at least one entry; with no sync field or an empty array, local sync configuration (including the Gist ID and token) stays unchanged instead of being replaced along with the rest of the data listed under Current data.
 
 > Import does not provide fine-grained field selection. Export a backup first.
 
@@ -385,6 +393,8 @@ Desktop connects directly, with Firecrawl fallback for blocked pages. Website ma
 ### What if a website repeatedly fails, for example with 403? {#settings-guide-section-43}
 
 Enable Firecrawl fallback under API keys. Keyless mode has daily limits; for large imports configure a key and check credits.
+
+The web app reaches sites through a shared CORS proxy, and sites such as Kakuyomu may rate-limit the proxy's IP. When a message says requests to a site are paused for about N minutes, the site refused requests several times: wait a few minutes, use the desktop app, or put Firecrawl first for that site in **Site mappings**.
 
 ### Why are OpenAI/Gemini keys absent here? {#settings-guide-section-44}
 

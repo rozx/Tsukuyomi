@@ -84,6 +84,8 @@ Paste an HTTP/HTTPS contents URL in Sources and choose Add URL. Individual chapt
 
 The assistant checks the contents and samples chapters before batch extraction. A batch is limited to 500 chapters; longer works need several batches. Discovered chapter links appear as assistant-discovered sources without manual entry.
 
+Pages from one site are read one at a time, at least 1 second apart. After 3 refusals since the last success, the site is paused for about 5 minutes and batch extraction stops, leaving the remaining chapters for later; with Firecrawl fallback on, Firecrawl reads them instead.
+
 Login, CAPTCHA, or script-only sites may be unreadable. Save missing chapters as files and add them to the same task, identifying their chapters. Retrieved text is retained.
 
 ### Split a complete TXT {#import-guide-section-11}
@@ -159,6 +161,7 @@ Review create/update status and translation impact:
 - Unchanged source retains all language versions and selections, including when paragraphs move between chapters.
 - Revised source clears all language versions and selections for that paragraph. The plan reports the full affected version count.
 - Existing chapters absent from this source are retained.
+- When the old and new sources split paragraphs differently (for example, a book first imported with built-in site rules and now updated through the AI importer), the plan contains replacements where several old paragraphs give way to several new ones. Replacements that clear no translation versions are accepted automatically. The rest appear under **Needs attention**, one row per chapter where the old text starts, such as "3 replacements: 12 old paragraphs → 10 new, clearing 4 translation versions". A replacement spanning several chapters (for example, after merging chapters) is listed under the chapter where it starts, and the translations it clears may include later chapters. Choose **Show text** to compare Old text and New text range by range, **Confirm chapter** to accept every replacement in that row, or **Confirm all replacements** to accept them all at once.
 
 Providing chapters 11–15 therefore keeps 1–10. Inspect revisions before deciding to apply.
 
@@ -231,20 +234,21 @@ Deleting the task removes sources, chat, extraction, and undo records. Applied b
 
 ## Understanding messages {#import-guide-section-27}
 
-| Situation                              | Next step                                                                                                                  |
-| :------------------------------------- | :------------------------------------------------------------------------------------------------------------------------- |
-| Unread                                 | Send an import request or Continue organizing; adding a source does not read it immediately                                |
-| Inspected, no body                     | Continue organizing to extract chapters                                                                                    |
-| Extracted                              | Check counts, order, and body in Draft, then generate a plan                                                               |
-| Excluded                               | Specify the source if it should be used                                                                                    |
-| Processing/extraction failed           | Read the reason. Retry only failed chapters for temporary errors; use files for login/verification pages                   |
-| Waiting for answer                     | Reply in chat                                                                                                              |
-| Ready for preview, absent from library | Inspect/generate the plan and Confirm import                                                                               |
-| Completeness unconfirmed               | Verify contents further or review a partial import                                                                         |
-| Confirm disabled                       | Wait/pause, answer questions, handle pending items, or regenerate an outdated plan. No changes means nothing needs writing |
-| Target busy                            | Wait for translation, polishing, proofreading, or assistant writes, including final saves after stopping                   |
-| Storage failure                        | Recover storage before closing; latest progress may be unsaved                                                             |
-| Database upgrade blocked               | Close other app tabs and reload                                                                                            |
+| Situation                                         | Next step                                                                                                                                                                     |
+| :------------------------------------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unread                                            | Send an import request or Continue organizing; adding a source does not read it immediately                                                                                   |
+| Inspected, no body                                | Continue organizing to extract chapters                                                                                                                                       |
+| Extracted                                         | Check counts, order, and body in Draft, then generate a plan                                                                                                                  |
+| Excluded                                          | Specify the source if it should be used                                                                                                                                       |
+| Processing/extraction failed                      | Read the reason. Retry only failed chapters for temporary errors; use files for login/verification pages                                                                      |
+| Requests to a site are paused for about N minutes | The site refused requests several times. Retry the remaining chapters after a few minutes, use the desktop app, or enable Firecrawl for the site in Settings → Site mappings. |
+| Waiting for answer                                | Reply in chat                                                                                                                                                                 |
+| Ready for preview, absent from library            | Inspect/generate the plan and Confirm import                                                                                                                                  |
+| Completeness unconfirmed                          | Verify contents further or review a partial import                                                                                                                            |
+| Confirm disabled                                  | Wait/pause, answer questions, handle pending items, or regenerate an outdated plan. No changes means nothing needs writing                                                    |
+| Target busy                                       | Wait for translation, polishing, proofreading, or assistant writes, including final saves after stopping                                                                      |
+| Storage failure                                   | Recover storage before closing; latest progress may be unsaved                                                                                                                |
+| Database upgrade blocked                          | Close other app tabs and reload                                                                                                                                               |
 
 During apply/undo, new translation tasks for that book are temporarily blocked. Other books and read-only operations remain available.
 
