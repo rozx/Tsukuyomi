@@ -53,7 +53,7 @@ describe('planPendingItems', () => {
     );
     expect(items.replacementGroups).toEqual([
       {
-        key: 'c1',
+        key: '["c1"]',
         chapterIds: ['c1'],
         signatures: ['a', 'c'],
         ranges: 2,
@@ -63,7 +63,7 @@ describe('planPendingItems', () => {
         entries: expect.any(Array),
       },
       {
-        key: 'c2',
+        key: '["c2"]',
         chapterIds: ['c2'],
         signatures: ['b'],
         ranges: 1,
@@ -139,6 +139,16 @@ describe('planPendingItems', () => {
       [['c2', 'c3'], ['z'], 2],
     ]);
     expect(items.pending).toBe(4);
+  });
+
+  it('章节 id 含逗号时分组键不与跨章组碰撞', () => {
+    const items = planPendingItems(
+      plan({ replacements: [range('a', 'x,y', [1, 2, 0]), spanning('b', ['x', 'y'], 1)] }),
+    );
+    expect(items.replacementGroups.map((group) => [group.chapterIds, group.signatures])).toEqual([
+      [['x,y'], ['a']],
+      [['x', 'y'], ['b']],
+    ]);
   });
 
   it('同一替换内章节按出现顺序去重', () => {

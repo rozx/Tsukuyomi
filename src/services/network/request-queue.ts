@@ -56,16 +56,19 @@ export class RequestQueue {
     this.throwIfTripped(lane, state);
     const release = await state.limiter.acquire(signal);
     try {
-      // 排队期间其它请求可能已触发熔断：获准后再检查一次
+      // 排队期间其它请求可能已触发熔断：获准后再检查一次（熔断错误不经 recordFailure，不清零计数）
       this.throwIfTripped(lane, state);
-      const value = await request();
+      let value: T;
+      try {
+        value = await request();
+      } catch (error) {
+        // 触发熔断的这次请求直接报熔断，调用方（如批次）可立即停止
+        if (this.recordFailure(state, error)) throw this.trippedError(lane, state);
+        throw error;
+      }
       state.refusals = 0;
       state.trippedUntil = 0;
       return value;
-    } catch (error) {
-      // 触发熔断的这次请求直接报熔断，调用方（如批次）可立即停止
-      if (this.recordFailure(state, error)) throw this.trippedError(lane, state);
-      throw error;
     } finally {
       release();
     }
