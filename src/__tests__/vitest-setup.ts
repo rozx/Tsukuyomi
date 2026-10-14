@@ -1,7 +1,7 @@
 /**
  * Vitest 全局 setup：
  * - 沿用 bun 测试体系的 IndexedDB / localStorage / FileReader polyfill
- * - 自动初始化 Pinia（每个 test 前重置）
+ * - 自动初始化 Pinia（每个 test 前重置），清空网络请求队列的排队 / 暂停 / 熔断状态
  * - 全局 mock PrimeVue useToast，避免 "No PrimeVue Toast provided" 错误
  * - 在 jsdom 下补齐 globalThis.dispatchEvent 与 navigator.userAgent 可写语义
  */
@@ -10,6 +10,7 @@ import { beforeEach, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { installLocalStoragePolyfill } from './local-storage-polyfill';
 import { clearRemoteChapterCache } from 'src/services/book-sync/remote-chapter-cache';
+import { networkQueue } from 'src/services/network/request-queue';
 
 // localStorage polyfill 必须在 setup（IndexedDB 初始化）之前装好，否则
 // stores / services 在模块加载阶段读 localStorage 就已经炸了
@@ -21,6 +22,7 @@ beforeEach(() => {
   localStorage.clear();
   setActivePinia(createPinia());
   clearRemoteChapterCache();
+  networkQueue.reset();
 });
 
 vi.mock('primevue/usetoast', () => ({

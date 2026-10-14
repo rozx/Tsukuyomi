@@ -4,7 +4,9 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import {
   BlockedResponseError,
   HttpStatusError,
+  SiteRateLimitedError,
   classifyFetchFailure,
+  haltsFetchBatch,
   resolveFetchPlan,
   type FetchPlanInput,
 } from 'src/services/proxy-fetch-plan';
@@ -153,6 +155,10 @@ describe('classifyFetchFailure', () => {
     expect(classifyFetchFailure(new HttpStatusError(status))).toBe('fatal');
   });
 
+  it('站点熔断（本地未发请求）→ blocked，可回退 Firecrawl', () => {
+    expect(classifyFetchFailure(new SiteRateLimitedError('kakuyomu.jp', 5))).toBe('blocked');
+  });
+
   it('质询页 → blocked', () => {
     expect(classifyFetchFailure(new BlockedResponseError('challenge'))).toBe('blocked');
   });
@@ -176,5 +182,17 @@ describe('classifyFetchFailure', () => {
 
   it('取消 → abort', () => {
     expect(classifyFetchFailure(new DOMException('操作已取消', 'AbortError'))).toBe('abort');
+  });
+});
+
+describe('haltsFetchBatch', () => {
+  it.each([
+    ['FIRECRAWL_QUOTA', true],
+    ['FETCH_SITE_RATE_LIMITED', true],
+    ['FETCH_SITE_REFUSED', false],
+    ['FETCH_HTTP_FAILED', false],
+    [undefined, false],
+  ])('%s → %s', (code, halts) => {
+    expect(haltsFetchBatch(code)).toBe(halts);
   });
 });

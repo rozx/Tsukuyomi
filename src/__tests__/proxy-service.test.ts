@@ -4,6 +4,7 @@ import './setup';
 import { ProxyService } from '../services/proxy-service';
 import { GlobalConfig } from '../services/global-config-cache';
 import { useSettingsStore } from '../stores/settings';
+import { SiteRateLimitedError } from '../services/proxy-fetch-plan';
 
 const NOVEL18_URL = 'https://novel18.syosetu.com/n2819do/';
 const CORS_PROXY = 'https://cors.rozx.moe/?{url}';
@@ -239,6 +240,113 @@ describe('ProxyService 抓取尝试链（Firecrawl 回退）', () => {
     await expect(
       ProxyService.executeWithAutoSwitch(SYOSETU_URL, () => Promise.reject(statusError(403))),
     ).rejects.toThrow('403');
+  });
+
+  it('首要请求经 throttle 排队发送，Firecrawl 不经 throttle', async () => {
+    const throttled: string[] = [];
+    const result = await ProxyService.executeWithAutoSwitch(
+      SYOSETU_URL,
+      () => Promise.reject(statusError(403)),
+      {
+        firecrawl: () => Promise.resolve('fc'),
+        throttle: (request) => {
+          throttled.push('primary');
+          return request();
+        },
+      },
+    );
+    expect(result).toBe('fc');
+    expect(throttled).toEqual(['primary']);
+  });
+
+  it('多代理逐个被拦截：整条尝试链只经一次 throttle，throttle 看到最终失败', async () => {
+    siteProxies = [OTHER_PROXY, CORS_PROXY];
+    const calls: string[] = [];
+    const outcomes: string[] = [];
+    const result = await ProxyService.executeWithAutoSwitch(
+      KAKUYOMU_URL,
+      (url) => {
+        calls.push(url);
+        return Promise.reject(statusError(403));
+      },
+      {
+        firecrawl: () => Promise.resolve('fc'),
+        throttle: (request) =>
+          request().then(
+            (value) => {
+              outcomes.push('ok');
+              return value;
+            },
+            (error: unknown) => {
+              outcomes.push('rejected');
+              throw error;
+            },
+          ),
+      },
+    );
+    expect(result).toBe('fc');
+    expect(calls).toHaveLength(2);
+    expect(outcomes).toEqual(['rejected']);
+  });
+
+  it('429 重试后成功：整条尝试链只经一次 throttle，且视为成功', async () => {
+    let attempt = 0;
+    const outcomes: string[] = [];
+    const result = await ProxyService.executeWithAutoSwitch(
+      KAKUYOMU_URL,
+      () => (++attempt === 1 ? Promise.reject(statusError(429)) : Promise.resolve('ok')),
+      {
+        throttle: (request) =>
+          request().then((value) => {
+            outcomes.push('ok');
+            return value;
+          }),
+      },
+    );
+    expect(result).toBe('ok');
+    expect(attempt).toBe(2);
+    expect(outcomes).toEqual(['ok']);
+  }, 10_000);
+
+  it('经 throttle 时致命错误（404）仍直接抛出，不回退', async () => {
+    let firecrawlCalls = 0;
+    await expect(
+      ProxyService.executeWithAutoSwitch(KAKUYOMU_URL, () => Promise.reject(statusError(404)), {
+        firecrawl: () => {
+          firecrawlCalls++;
+          return Promise.resolve('fc');
+        },
+        throttle: (request) => request(),
+      }),
+    ).rejects.toThrow('404');
+    expect(firecrawlCalls).toBe(0);
+  });
+
+  it('站点已熔断：不发首要请求，直接回退 Firecrawl', async () => {
+    const calls: string[] = [];
+    const result = await ProxyService.executeWithAutoSwitch(
+      KAKUYOMU_URL,
+      (url) => {
+        calls.push(url);
+        return Promise.resolve('ok');
+      },
+      {
+        firecrawl: () => Promise.resolve('fc'),
+        throttle: () => Promise.reject(new SiteRateLimitedError('kakuyomu.jp', 5)),
+      },
+    );
+    expect(result).toBe('fc');
+    expect(calls).toEqual([]);
+  });
+
+  it('站点已熔断且无回退：抛出 SiteRateLimitedError', async () => {
+    fallbackEnabled = false;
+    await expect(
+      ProxyService.executeWithAutoSwitch(KAKUYOMU_URL, () => Promise.resolve('ok'), {
+        firecrawl: () => Promise.resolve('fc'),
+        throttle: () => Promise.reject(new SiteRateLimitedError('kakuyomu.jp', 5)),
+      }),
+    ).rejects.toBeInstanceOf(SiteRateLimitedError);
   });
 
   it('skipExternalProxy 被拦截时仍回退 Firecrawl', async () => {

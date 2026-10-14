@@ -24,6 +24,14 @@ export default {
       unknown: '取得頁面時發生未知錯誤',
       blockedElectron: '目標網站回傳了反爬蟲驗證頁（Electron 直連）',
       blockedProxy: '目標網站回傳了反爬蟲驗證頁（{url}）',
+      siteRefused:
+        '目標網站拒絕了請求（{status}），可能是在對代理出口 IP 限流。請稍後重試，或改用桌面版直連，或在網站對應中為該網站啟用 Firecrawl',
+      siteRefusedDesktop:
+        '目標網站拒絕了請求（{status}），可能觸發了存取頻率限制。請稍後重試，或在網站對應中為該網站啟用 Firecrawl',
+      siteRateLimited:
+        '{host} 連續拒絕請求（可能在對代理出口 IP 限流），已暫停存取該網站約 {minutes} 分鐘。可改用桌面版直連，或在網站對應中為該網站啟用 Firecrawl',
+      siteRateLimitedDesktop:
+        '{host} 連續拒絕請求（可能觸發了存取頻率限制），已暫停存取該網站約 {minutes} 分鐘。可稍後重試，或在網站對應中為該網站啟用 Firecrawl',
       firecrawlQuotaKeyless:
         'Firecrawl 免費額度（按 IP 每日限額）已用盡，可在設定 → API Keys 設定 Firecrawl Key',
       firecrawlQuota: 'Firecrawl 額度已用盡，請在設定 → API Keys 中檢查額度',

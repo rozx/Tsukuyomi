@@ -26,14 +26,6 @@ export abstract class BaseScraper<
   TNovelInfo extends ParsedNovelInfo = ParsedNovelInfo,
 > implements NovelScraper {
   /**
-   * 是否使用服务器代理路径（在浏览器环境中使用 /api/... 代理）
-   * 注意：在 Node.js/Bun 环境下不再使用 AllOrigins，而是直接访问或使用服务器代理
-   * 子类可以通过设置此属性来控制是否使用代理
-   * @default true
-   */
-  protected useProxy: boolean = true;
-
-  /**
    * 验证 URL 是否为该服务支持的 URL
    * @param url 要验证的 URL
    * @returns 是否为支持的 URL

@@ -7,13 +7,13 @@ import {
   FirecrawlRateLimitError,
   FirecrawlTargetError,
 } from './firecrawl-errors';
-import { RequestLimiter } from './firecrawl-limiter';
+import { networkQueue } from 'src/services/network/request-queue';
 
 /**
  * Firecrawl API 客户端（网页抓取回退与 AI 网络工具共用）。
  *
  * - 有 Key 时只用 Key；无 Key 时走 keyless（按 IP 每日限额），绝不在 Key 失败后降级为 keyless
- * - 所有请求经同一个限流器；429 按 Retry-After 有限重试
+ * - 所有请求经网络请求队列的 firecrawl lane；429 按 Retry-After 有限重试
  * - 额度耗尽后进入锁存：后续请求不发网络请求直接失败（见 design.md D2/D3）
  */
 
@@ -37,11 +37,8 @@ const QUOTA_LATCH_MS = 60 * 60_000;
  * 只限并发（免费档并发浏览器为 2）；不设固定的每分钟上限，以免付费档（每分钟 100–5000 次）
  * 被免费档的 10 次拖慢。免费档 / keyless 超速时由 Firecrawl 返回 429，整个队列按其等待时间暂停。
  */
-const LIMITER_OPTIONS = {
-  concurrency: 2,
-  windowMs: 60_000,
-  maxPerWindow: Number.POSITIVE_INFINITY,
-};
+const FIRECRAWL_LANE = 'firecrawl';
+networkQueue.define(FIRECRAWL_LANE, { concurrency: 2 });
 
 type ScrapeFormat = 'rawHtml' | 'markdown';
 
@@ -75,11 +72,10 @@ interface HttpReply {
   headers?: Record<string, unknown>;
 }
 
-let limiter = new RequestLimiter(LIMITER_OPTIONS);
 let quotaLatch: { key: string | undefined; until: number } | null = null;
 
 export function __resetFirecrawlClientForTesting(): void {
-  limiter = new RequestLimiter(LIMITER_OPTIONS);
+  networkQueue.reset(FIRECRAWL_LANE);
   quotaLatch = null;
 }
 
@@ -168,12 +164,15 @@ function applyReplyPolicy(
   // 重试耗尽：只有明确的日额度信号才算额度耗尽（上面已处理），普通短期 429 仍是限速
   if (attempt >= MAX_429_RETRIES) return 'rate-limit';
   // 暂停整个队列，而不是各请求各自等待后同时重试（避免连锁 429）
-  limiter.pauseFor(Math.min(retryAfterMs(reply) ?? DEFAULT_RETRY_AFTER_MS, MAX_RETRY_AFTER_MS));
+  networkQueue.pause(
+    FIRECRAWL_LANE,
+    Math.min(retryAfterMs(reply) ?? DEFAULT_RETRY_AFTER_MS, MAX_RETRY_AFTER_MS),
+  );
   return 'retry';
 }
 
 /**
- * 经限流器发送 POST，处理 402 / 429 / 其它非 2xx，返回 2xx 响应体。
+ * 经 firecrawl lane 排队发送 POST，处理 402 / 429 / 其它非 2xx，返回 2xx 响应体。
  */
 async function postWithPolicy(
   path: string,
@@ -183,7 +182,7 @@ async function postWithPolicy(
   const key = currentKey();
   for (let attempt = 0; ; attempt++) {
     assertNotLatched(key);
-    const release = await limiter.acquire(signal);
+    const release = await networkQueue.acquire(FIRECRAWL_LANE, signal);
     let reply: HttpReply;
     let outcome: ReplyOutcome;
     try {
@@ -271,7 +270,7 @@ async function search(
 }
 
 /**
- * 查询指定 Key 的额度（不经限流器，不消耗额度）。当前 Key 仍有额度时解除锁存。
+ * 查询指定 Key 的额度（不经请求队列，不消耗额度）。当前 Key 仍有额度时解除锁存。
  */
 async function getCreditUsage(key: string): Promise<FirecrawlCreditUsage> {
   const reply = (await axios.get(`${API_BASE}/team/credit-usage`, {
@@ -304,7 +303,7 @@ async function getCreditUsage(key: string): Promise<FirecrawlCreditUsage> {
 
 /** 队列因 429 暂停的剩余时间（毫秒），供界面显示「等待 Firecrawl 限速」 */
 function pauseRemainingMs(): number {
-  return limiter.pauseRemainingMs();
+  return networkQueue.pauseRemainingMs(FIRECRAWL_LANE);
 }
 
 export const FirecrawlClient = { scrape, search, getCreditUsage, pauseRemainingMs };

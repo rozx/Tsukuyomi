@@ -2,11 +2,17 @@ import axios from 'axios';
 import { ProxyService } from 'src/services/proxy-service';
 import { isElectron } from 'src/utils/platform';
 import { runAbortable } from 'src/utils/abortable-operation';
-import { BlockedResponseError, HttpStatusError } from 'src/services/proxy-fetch-plan';
+import {
+  BlockedResponseError,
+  HttpStatusError,
+  fetchFailureStatus,
+  isSiteRefusal,
+} from 'src/services/proxy-fetch-plan';
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import type { ScraperPageSnapshot } from '../types';
 import { isChallengePage } from './challenge-detection';
 import { LocalizedError } from 'src/utils/localized-error';
+import { runSiteRequest } from './site-request-lanes';
 
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -191,8 +197,18 @@ function emptyResponseError(): LocalizedError {
   return new LocalizedError('FETCH_EMPTY_RESPONSE', 'bookUi.fetch.emptyResponse');
 }
 
-/** 将 axios 错误归一化为带错误码的自有错误；第三方状态说明作为参数保留原文 */
-function normalizeFetchError(error: unknown): Error {
+/**
+ * 将抓取错误归一化为带错误码的自有错误；第三方状态说明作为参数保留原文。
+ * 目标站拒绝（403 / 429）单独提示：网页版多为共享代理出口被限流，桌面版为本机直连。
+ */
+function normalizeFetchError(error: unknown, desktop: boolean): Error {
+  if (isSiteRefusal(error) && !(error instanceof BlockedResponseError)) {
+    return new LocalizedError(
+      'FETCH_SITE_REFUSED',
+      desktop ? 'bookUi.fetch.siteRefusedDesktop' : 'bookUi.fetch.siteRefused',
+      { status: fetchFailureStatus(error) ?? 403 },
+    );
+  }
   if (axios.isAxiosError(error)) {
     if (error.response) {
       return new LocalizedError('FETCH_HTTP_FAILED', 'bookUi.fetch.httpFailed', {
@@ -236,6 +252,7 @@ export async function fetchScraperPage(
           skipExternalProxy: options.skipExternalProxy ?? false,
           skipInternalProxy: electron,
           firecrawl: () => fetchViaFirecrawl(url, options.extraHeaders, options.signal),
+          throttle: (request) => runSiteRequest(url, request, options.signal),
           ...(options.signal ? { signal: options.signal } : {}),
         },
       ),
@@ -243,6 +260,6 @@ export async function fetchScraperPage(
   } catch (error) {
     if (options.signal?.aborted)
       throw options.signal.reason ?? new DOMException('操作已取消', 'AbortError');
-    throw normalizeFetchError(error);
+    throw normalizeFetchError(error, electron);
   }
 }

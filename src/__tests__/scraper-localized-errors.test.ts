@@ -10,7 +10,11 @@ import { SyosetuScraper } from 'src/services/scraper/scrapers/syosetu-scraper';
 import { NcodeSyosetuScraper } from 'src/services/scraper/scrapers/ncode-syosetu-scraper';
 import { Novel18SyosetuScraper } from 'src/services/scraper/scrapers/novel18-syosetu-scraper';
 import { KakuyomuScraper } from 'src/services/scraper/scrapers/kakuyomu-scraper';
-import { BlockedResponseError, HttpStatusError } from 'src/services/proxy-fetch-plan';
+import {
+  BlockedResponseError,
+  HttpStatusError,
+  SiteRateLimitedError,
+} from 'src/services/proxy-fetch-plan';
 import {
   FirecrawlEmptyContentError,
   FirecrawlError,
@@ -155,6 +159,64 @@ describe('抓取链路自有错误带错误码', () => {
     expect(http.diagnostic).toBe('provider 原始诊断');
     expect(http.messageFor('en-US')).toContain('provider 原始诊断');
     expect(FirecrawlError.http(500, '').message).toBe('Firecrawl 请求失败: 500');
+  });
+
+  it('站点熔断错误给出暂停时长与替代方案（网页版 / 桌面版）', () => {
+    const web = expectLocalized(
+      new SiteRateLimitedError('kakuyomu.jp', 5),
+      'FETCH_SITE_RATE_LIMITED',
+      'kakuyomu.jp 连续拒绝请求（可能在对代理出口 IP 限流），已暂停访问该站点约 5 分钟。可改用桌面版直连，或在网站映射中为该站点启用 Firecrawl',
+    );
+    expect(web.messageFor('en-US')).toContain('kakuyomu.jp');
+    expectLocalized(
+      new SiteRateLimitedError('kakuyomu.jp', 5, true),
+      'FETCH_SITE_RATE_LIMITED',
+      'kakuyomu.jp 连续拒绝请求（可能触发了访问频率限制），已暂停访问该站点约 5 分钟。可稍后重试，或在网站映射中为该站点启用 Firecrawl',
+    );
+  });
+
+  it.each([403, 429])(
+    '网页版目标站 %i 归一化为 FETCH_SITE_REFUSED，提示代理限流与替代方案',
+    async (status) => {
+      await useSettingsStore().updateSettings({
+        proxyEnabled: false,
+        proxySiteMapping: {},
+        firecrawlFallbackEnabled: false,
+      });
+      vi.spyOn(axios, 'get').mockRejectedValue(
+        Object.assign(new Error(`Request failed with status code ${status}`), {
+          isAxiosError: true,
+          response: { status, statusText: '', headers: {}, data: '' },
+        }),
+      );
+      const error = await fetchScraperPage('https://example.com/page').catch((e: unknown) => e);
+      expectLocalized(
+        error,
+        'FETCH_SITE_REFUSED',
+        `目标网站拒绝了请求（${status}），可能是在对代理出口 IP 限流。请稍后重试，或改用桌面版直连，或在网站映射中为该站点启用 Firecrawl`,
+      );
+    },
+  );
+
+  it('桌面版目标站 403 归一化为 FETCH_SITE_REFUSED，不建议改用桌面版', async () => {
+    await useSettingsStore().updateSettings({
+      proxySiteMapping: {},
+      firecrawlFallbackEnabled: false,
+    });
+    (window as unknown as { electronAPI?: unknown }).electronAPI = {
+      isElectron: true,
+      fetch: () => Promise.resolve({ status: 403, statusText: '', headers: {}, data: '' }),
+    };
+    try {
+      const error = await fetchScraperPage('https://example.com/page').catch((e: unknown) => e);
+      expectLocalized(
+        error,
+        'FETCH_SITE_REFUSED',
+        '目标网站拒绝了请求（403），可能触发了访问频率限制。请稍后重试，或在网站映射中为该站点启用 Firecrawl',
+      );
+    } finally {
+      delete (window as unknown as { electronAPI?: unknown }).electronAPI;
+    }
   });
 
   it('网络失败归一化为 FETCH_NETWORK_FAILED', async () => {

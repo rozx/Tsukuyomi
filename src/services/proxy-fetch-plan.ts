@@ -1,6 +1,7 @@
 import { FIRECRAWL_MAPPING_TOKEN } from 'src/constants/proxy';
 import { LocalizedError } from 'src/utils/localized-error';
 import { shouldBypassExternalProxy } from 'src/services/proxy-url-policy';
+import { FIRECRAWL_QUOTA_CODE } from 'src/services/firecrawl/firecrawl-errors';
 
 /**
  * 网页抓取尝试链的纯函数部分：决定本次抓取依次请求哪些 URL、是否直接走 Firecrawl，
@@ -107,6 +108,26 @@ export class BlockedResponseError extends LocalizedError {
   }
 }
 
+/** 目标站点熔断：连续拒绝请求后本地暂停访问，期间不发请求 */
+export const SITE_RATE_LIMITED_CODE = 'FETCH_SITE_RATE_LIMITED';
+
+export class SiteRateLimitedError extends LocalizedError {
+  /** desktop：桌面版直连，文案不再建议「改用桌面版」 */
+  constructor(host: string, minutes: number, desktop = false) {
+    super(
+      SITE_RATE_LIMITED_CODE,
+      desktop ? 'bookUi.fetch.siteRateLimitedDesktop' : 'bookUi.fetch.siteRateLimited',
+      { host, minutes },
+    );
+    this.name = 'SiteRateLimitedError';
+  }
+}
+
+/** 继续抓取只会失败或延长封禁、需停止整批的错误码：Firecrawl 额度耗尽、目标站点熔断 */
+export function haltsFetchBatch(code: string | undefined): boolean {
+  return code === FIRECRAWL_QUOTA_CODE || code === SITE_RATE_LIMITED_CODE;
+}
+
 export type FetchFailureKind = 'transient' | 'blocked' | 'fatal' | 'abort';
 
 const TRANSIENT_MESSAGE_KEYWORDS: readonly string[] = [
@@ -132,7 +153,8 @@ const TRANSIENT_AXIOS_CODES: readonly string[] = [
   'ENOTFOUND',
 ];
 
-function statusOf(error: unknown): number | undefined {
+/** 抓取错误携带的 HTTP 状态码（HttpStatusError 或 axios 响应），无状态码时为 undefined */
+export function fetchFailureStatus(error: unknown): number | undefined {
   if (error instanceof HttpStatusError) return error.status;
   if (error && typeof error === 'object' && 'isAxiosError' in error) {
     return (error as { response?: { status?: number } }).response?.status;
@@ -146,10 +168,18 @@ function classifyStatus(status: number): FetchFailureKind {
   return 'fatal';
 }
 
+/** 目标站点拒绝了请求（403 / 429 / 反爬质询页），计入站点熔断 */
+export function isSiteRefusal(error: unknown): boolean {
+  if (error instanceof BlockedResponseError) return true;
+  const status = fetchFailureStatus(error);
+  return status === 403 || status === 429;
+}
+
 export function classifyFetchFailure(error: unknown): FetchFailureKind {
   if (error instanceof DOMException && error.name === 'AbortError') return 'abort';
-  if (error instanceof BlockedResponseError) return 'blocked';
-  const status = statusOf(error);
+  if (error instanceof BlockedResponseError || error instanceof SiteRateLimitedError)
+    return 'blocked';
+  const status = fetchFailureStatus(error);
   if (status !== undefined) return classifyStatus(status);
   if (error && typeof error === 'object' && 'isAxiosError' in error) {
     const code = (error as { code?: string }).code;

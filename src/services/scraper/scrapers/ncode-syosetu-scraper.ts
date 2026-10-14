@@ -27,8 +27,6 @@ function isNotFoundError(error: unknown): boolean {
 }
 
 export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
-  protected override useProxy: boolean = false; // ncode.syosetu.com 不使用代理
-
   protected static readonly BASE_URL: string = 'https://ncode.syosetu.com';
   // 匹配 ncode.syosetu.com 的小说 URL
   // 格式：https://ncode.syosetu.com/{novel_id}/ 或 https://ncode.syosetu.com/{novel_id}/{chapter_id}

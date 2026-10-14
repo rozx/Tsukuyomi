@@ -464,13 +464,21 @@ describe('Agent 章节批次', () => {
   });
 });
 
-describe('章节批次遇到 Firecrawl 额度耗尽', () => {
-  it('停止领取剩余章节，保留已完成章，失败项标记额度错误', async () => {
+describe.each([
+  ['FIRECRAWL_QUOTA', 'Firecrawl 额度耗尽'],
+  ['FETCH_SITE_RATE_LIMITED', '目标站点熔断'],
+])('章节批次遇到 %s（%s）', (code) => {
+  it('停止领取剩余章节，保留已完成章，失败项标记对应错误', async () => {
     const { FirecrawlQuotaError } = await import('../services/firecrawl/firecrawl-errors');
+    const { SiteRateLimitedError } = await import('../services/proxy-fetch-plan');
+    const halt = () =>
+      code === 'FIRECRAWL_QUOTA'
+        ? new FirecrawlQuotaError(true)
+        : new SiteRateLimitedError('example.com', 5);
     const f = await webBatch(5);
     const held = new Map<string, () => void>();
     const fetch = vi.spyOn(transport, 'fetchScraperPage').mockImplementation((url) => {
-      if (url.endsWith('/c2')) return Promise.reject(new FirecrawlQuotaError(true));
+      if (url.endsWith('/c2')) return Promise.reject(halt());
       return new Promise((resolve) => {
         held.set(url, () =>
           resolve({
@@ -499,6 +507,6 @@ describe('章节批次遇到 Firecrawl 额度耗尽', () => {
     const task = (await ImportRepository.getTask(f.taskId))!;
     const failedChapter = task.draft.chapters.find((c) => c.status === 'failed');
     expect(failedChapter).toBeDefined();
-    expect(JSON.stringify(result)).toContain('FIRECRAWL_QUOTA');
+    expect(JSON.stringify(result)).toContain(code);
   });
 });

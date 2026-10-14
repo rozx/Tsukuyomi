@@ -19,7 +19,8 @@ import type {
 import { ImportLibraryReader } from 'src/services/import/import-library-reader';
 import { ChapterService } from 'src/services/chapter-service';
 import { resolveRecipe } from './recipe';
-import { BookSyncReplay, FIRECRAWL_QUOTA_CODE } from './replay';
+import { BookSyncReplay } from './replay';
+import { haltsFetchBatch } from 'src/services/proxy-fetch-plan';
 import { getCachedRemoteChapter, setCachedRemoteChapter } from './remote-chapter-cache';
 import { BookSyncError } from './errors';
 import { compareChapter, inferNewChapters, linkManualChapters } from './changes';
@@ -185,8 +186,8 @@ class BookSyncSession {
       signal,
     );
     if (!result.ok) {
-      // 额度耗尽不代表配方失效：报检查失败（可稍后重试 / 补充额度），不引导重建配方
-      if (result.code === FIRECRAWL_QUOTA_CODE)
+      // 额度耗尽 / 站点熔断不代表配方失效：报检查失败（可稍后重试），不引导重建配方
+      if (haltsFetchBatch(result.code))
         throw new BookSyncError(result.code, restoreImportError(result));
       this.invalidate(result.code, result.message, '', result.localization);
       return false;
@@ -338,8 +339,8 @@ class BookSyncSession {
                 ...this.state.failed.filter((e) => e.url !== entry.url),
                 { ...serializeImportError(error, code), url: entry.url, code, message },
               ];
-              // Firecrawl 额度耗尽：停止剩余章节（保持未检查），不作废配方
-              if (code === FIRECRAWL_QUOTA_CODE) {
+              // Firecrawl 额度耗尽 / 站点熔断：停止剩余章节（保持未检查），不作废配方
+              if (haltsFetchBatch(code)) {
                 controller.abort();
                 break;
               }
@@ -415,10 +416,10 @@ class BookSyncSession {
     const failed: SyncFailure[] = [];
     let cursor = 0;
     let fatal: BookSyncError | undefined;
-    let quotaFailure: SyncFailure | undefined;
+    let haltFailure: SyncFailure | undefined;
     await Promise.all(
       Array.from({ length: Math.min(3, entries.length) }, async () => {
-        while (cursor < entries.length && !fatal && !quotaFailure) {
+        while (cursor < entries.length && !fatal && !haltFailure) {
           const entry = entries[cursor++]!;
           const update = this.state.updated.find((e) => e.url === entry.url);
           const added = inferred.find((e) => e.url === entry.url);
@@ -457,15 +458,15 @@ class BookSyncSession {
             const outcome = this.collectFailure(error, entry.url);
             if (outcome.fatal) fatal = outcome.fatal;
             else failed.push(outcome.failure);
-            if (outcome.failure.code === FIRECRAWL_QUOTA_CODE) quotaFailure ??= outcome.failure;
+            if (haltsFetchBatch(outcome.failure.code)) haltFailure ??= outcome.failure;
           }
         }
       }),
     );
     if (fatal) throw fatal;
-    // Firecrawl 额度耗尽：未抓取的所选章节同样记为额度失败，已抓取的照常写入
-    if (quotaFailure) {
-      for (const entry of entries.slice(cursor)) failed.push({ ...quotaFailure, url: entry.url });
+    // 额度耗尽 / 站点熔断：未抓取的所选章节记为同一失败，已抓取的照常写入
+    if (haltFailure) {
+      for (const entry of entries.slice(cursor)) failed.push({ ...haltFailure, url: entry.url });
     }
     return {
       writes: entries.flatMap((e) => (writes.has(e.url) ? [writes.get(e.url)!] : [])),

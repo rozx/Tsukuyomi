@@ -11,8 +11,6 @@ import { LocalizedError } from 'src/utils/localized-error';
  * 都会自动应用到 Novel18SyosetuScraper
  */
 export class Novel18SyosetuScraper extends NcodeSyosetuScraper {
-  protected override useProxy: boolean = false; // 跳过外部 CORS 代理，Electron 直连
-
   protected static override readonly BASE_URL = 'https://novel18.syosetu.com';
   // 匹配 novel18.syosetu.com 的小说 URL
   // 格式：https://novel18.syosetu.com/{novel_id}/ 或 https://novel18.syosetu.com/{novel_id}/{chapter_id}

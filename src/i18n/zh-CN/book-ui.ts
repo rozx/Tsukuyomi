@@ -24,6 +24,14 @@ export default {
       unknown: '获取页面时发生未知错误',
       blockedElectron: '目标网站返回了反爬质询页（Electron 直连）',
       blockedProxy: '目标网站返回了反爬质询页（{url}）',
+      siteRefused:
+        '目标网站拒绝了请求（{status}），可能是在对代理出口 IP 限流。请稍后重试，或改用桌面版直连，或在网站映射中为该站点启用 Firecrawl',
+      siteRefusedDesktop:
+        '目标网站拒绝了请求（{status}），可能触发了访问频率限制。请稍后重试，或在网站映射中为该站点启用 Firecrawl',
+      siteRateLimited:
+        '{host} 连续拒绝请求（可能在对代理出口 IP 限流），已暂停访问该站点约 {minutes} 分钟。可改用桌面版直连，或在网站映射中为该站点启用 Firecrawl',
+      siteRateLimitedDesktop:
+        '{host} 连续拒绝请求（可能触发了访问频率限制），已暂停访问该站点约 {minutes} 分钟。可稍后重试，或在网站映射中为该站点启用 Firecrawl',
       firecrawlQuotaKeyless:
         'Firecrawl 免费额度（按 IP 每日限额）已用尽，可在设置 → API Keys 配置 Firecrawl Key',
       firecrawlQuota: 'Firecrawl 额度已用尽，请在设置 → API Keys 中检查额度',

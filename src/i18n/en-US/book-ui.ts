@@ -24,6 +24,14 @@ export default {
       unknown: 'An unknown error occurred while loading the page',
       blockedElectron: 'The site returned an anti-bot challenge page (Electron direct)',
       blockedProxy: 'The site returned an anti-bot challenge page ({url})',
+      siteRefused:
+        "The site refused the request ({status}), likely rate-limiting the proxy's IP. Try again later, use the desktop app, or enable Firecrawl for this site in site mappings",
+      siteRefusedDesktop:
+        'The site refused the request ({status}), possibly due to rate limiting. Try again later, or enable Firecrawl for this site in site mappings',
+      siteRateLimited:
+        "{host} keeps refusing requests (likely rate-limiting the proxy's IP), so requests to it are paused for about {minutes} min. Use the desktop app, or enable Firecrawl for this site in site mappings",
+      siteRateLimitedDesktop:
+        '{host} keeps refusing requests (possibly rate limiting), so requests to it are paused for about {minutes} min. Try again later, or enable Firecrawl for this site in site mappings',
       firecrawlQuotaKeyless:
         'The free Firecrawl quota (daily per-IP limit) is used up. You can set a Firecrawl key in Settings → API Keys',
       firecrawlQuota: 'The Firecrawl quota is used up. Check your quota in Settings → API Keys',

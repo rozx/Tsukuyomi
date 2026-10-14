@@ -39,11 +39,13 @@ export class FirecrawlError extends LocalizedError {
   }
 }
 
+export const FIRECRAWL_QUOTA_CODE = 'FIRECRAWL_QUOTA';
+
 /** 额度耗尽：402，或 keyless 按 IP 每日限额 */
 export class FirecrawlQuotaError extends FirecrawlError {
   constructor(readonly keyless: boolean) {
     super(
-      'FIRECRAWL_QUOTA',
+      FIRECRAWL_QUOTA_CODE,
       keyless ? 'bookUi.fetch.firecrawlQuotaKeyless' : 'bookUi.fetch.firecrawlQuota',
     );
     this.name = 'FirecrawlQuotaError';

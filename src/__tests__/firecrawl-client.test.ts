@@ -2,6 +2,7 @@ import './setup';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import axios from 'axios';
 import { GlobalConfig } from 'src/services/global-config-cache';
+import { networkQueue } from 'src/services/network/request-queue';
 import {
   FirecrawlClient,
   __resetFirecrawlClientForTesting,
@@ -482,5 +483,15 @@ describe('额度锁存', () => {
       FirecrawlClient.scrape('https://a.test/3', { format: 'rawHtml' }),
     ).resolves.toMatchObject({ statusCode: 200 });
     expect(post).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('__resetFirecrawlClientForTesting', () => {
+  it('只清空 Firecrawl 自己的 lane，不影响站点 lane', () => {
+    networkQueue.pause('site:kakuyomu.jp', 10_000);
+    networkQueue.pause('firecrawl', 10_000);
+    __resetFirecrawlClientForTesting();
+    expect(networkQueue.pauseRemainingMs('firecrawl')).toBe(0);
+    expect(networkQueue.pauseRemainingMs('site:kakuyomu.jp')).toBeGreaterThan(0);
   });
 });

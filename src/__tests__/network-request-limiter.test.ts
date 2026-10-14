@@ -1,6 +1,6 @@
 import './setup';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RequestLimiter } from 'src/services/firecrawl/firecrawl-limiter';
+import { RequestLimiter } from 'src/services/network/request-limiter';
 
 async function flush() {
   for (let i = 0; i < 5; i++) await Promise.resolve();

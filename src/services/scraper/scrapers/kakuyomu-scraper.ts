@@ -53,8 +53,6 @@ interface KakuyomuEpisode {
  * Kakuyomu 使用 Next.js，所有数据都嵌入在页面的 __NEXT_DATA__ JSON 中
  */
 export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
-  protected override useProxy: boolean = false; // Kakuyomu 不使用代理，直接请求
-
   private static readonly BASE_URL = 'https://kakuyomu.jp';
   private static readonly NOVEL_URL_PATTERN = /^https?:\/\/kakuyomu\.jp\/works\/(\d+)(?:\/.*)?$/;
 

@@ -1,6 +1,6 @@
 import { serializeImportError } from 'src/services/import/import-error';
 import type { ImportFailure } from 'src/models/import-feedback';
-import { LocalizedError } from 'src/utils/localized-error';
+import { LocalizedError, localizedErrorCode } from 'src/utils/localized-error';
 import { load } from 'cheerio';
 import type { BookUpdateRecipe, CatalogEntry, SyncCatalog } from 'src/models/book-sync';
 import { NovelScraperFactory } from 'src/services/scraper/novel-scraper-factory';
@@ -9,7 +9,7 @@ import { parseImportHtml } from 'src/services/import/import-html-parser';
 import { ImportParsingClient } from 'src/services/import/import-parsing-client';
 import { filterImportItems } from 'src/services/import/import-pattern-filter';
 import { normalizeChapterText } from './normalize';
-import { FirecrawlQuotaError } from 'src/services/firecrawl/firecrawl-errors';
+import { haltsFetchBatch } from 'src/services/proxy-fetch-plan';
 import { BookSyncError, cleanupError } from './errors';
 
 type Failure = ImportFailure & { ok: false };
@@ -130,19 +130,17 @@ export function parseChapter(html: string, url: string, recipe: BookUpdateRecipe
     : adapter(url).parseChapterSnapshot(html).text;
 }
 
-/** Firecrawl 额度耗尽：批次需停止，但不代表配方失效 */
-export const FIRECRAWL_QUOTA_CODE = 'FIRECRAWL_QUOTA';
-
 function failure(error: unknown, fallback: string): Failure {
   if (error instanceof Error && error.name === 'AbortError') throw error;
   return {
     ok: false,
     ...serializeImportError(error, fallback),
+    // 额度耗尽 / 站点熔断保留原错误码：批次据此停止，且不代表配方失效
     code:
       error instanceof BookSyncError
         ? error.code
-        : error instanceof FirecrawlQuotaError
-          ? FIRECRAWL_QUOTA_CODE
+        : haltsFetchBatch(localizedErrorCode(error, fallback))
+          ? localizedErrorCode(error, fallback)
           : fallback,
   };
 }

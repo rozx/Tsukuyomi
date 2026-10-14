@@ -50,18 +50,18 @@ function abortReason(signal: AbortSignal): unknown {
 
 /**
  * 依次执行首要尝试：瞬时错误重试同一地址一次；被拦截换下一个地址；致命错误直接抛出。
- * 全部被拦截时返回 { blocked: true, error }，由调用方决定是否回退 Firecrawl。
+ * 全部失败时抛出最后一个错误，由调用方按 classifyFetchFailure 决定是否回退 Firecrawl。
  */
 async function runPrimaryAttempts<T>(
   attempts: string[],
   requestFn: (proxiedUrl: string) => Promise<T>,
   signal: AbortSignal | undefined,
-): Promise<{ ok: true; value: T } | { ok: false; error: unknown }> {
+): Promise<T> {
   let lastError: unknown = new Error('Request failed');
   for (const url of attempts) {
     for (let retry = 0; retry < 2; retry++) {
       try {
-        return { ok: true, value: await runAbortable(signal, () => requestFn(url)) };
+        return await runAbortable(signal, () => requestFn(url));
       } catch (error) {
         if (signal?.aborted) throw abortReason(signal);
         lastError = error;
@@ -80,7 +80,7 @@ async function runPrimaryAttempts<T>(
       }
     }
   }
-  return { ok: false, error: lastError };
+  throw lastError;
 }
 
 /**
@@ -148,9 +148,11 @@ export class ProxyService {
    * 1. 映射首位为 firecrawl 且回退开启 → 直接 Firecrawl
    * 2. 否则首要尝试（Web 代理开启：映射的 CORS 代理按序，否则默认代理；Web 代理关闭：内部 /api/ 或直连；
    *    Electron：直连），瞬时错误重试一次
-   * 3. 首要尝试被拦截且回退开启 → Firecrawl，成功后按设置置顶映射
+   * 3. 首要尝试被拦截（含站点熔断）且回退开启 → Firecrawl，成功后按设置置顶映射
    * @param requestFn 首要尝试的请求函数，接受实际请求的 URL
    * @param options.firecrawl Firecrawl 抓取回调；未提供时不回退
+   * @param options.throttle 整条首要尝试链经它排队一次（站点节流 / 熔断），它看到的是整条链的最终结果，
+   *   重试与换代理不重复计数；Firecrawl 自有队列
    */
   static async executeWithAutoSwitch<T>(
     originalUrl: string,
@@ -158,9 +160,10 @@ export class ProxyService {
     options: ProxyUrlOptions & {
       firecrawl?: () => Promise<T>;
       signal?: AbortSignal;
+      throttle?: (request: () => Promise<T>) => Promise<T>;
     } = {},
   ): Promise<T> {
-    const { firecrawl, signal, ...urlOptions } = options;
+    const { firecrawl, signal, throttle, ...urlOptions } = options;
     await GlobalConfig.ensureInitialized({ ensureSettings: true, ensureBooks: false });
     const fallbackEnabled = !!firecrawl && GlobalConfig.getFirecrawlFallbackEnabled();
     const plan = buildPlan(originalUrl, urlOptions, fallbackEnabled);
@@ -169,12 +172,17 @@ export class ProxyService {
       return await runAbortable(signal, firecrawl);
     }
 
-    const primary = await runPrimaryAttempts(plan.attempts, requestFn, signal);
-    if (primary.ok) return primary.value;
-    if (!plan.firecrawlFallback || !firecrawl) throw primary.error;
-
-    const result = await runAbortable(signal, firecrawl);
-    await this.maybePromoteFirecrawl(originalUrl);
-    return result;
+    const primary = () => runPrimaryAttempts(plan.attempts, requestFn, signal);
+    try {
+      return await (throttle ? throttle(primary) : primary());
+    } catch (error) {
+      if (signal?.aborted) throw abortReason(signal);
+      const kind = classifyFetchFailure(error);
+      if (kind === 'abort' || kind === 'fatal' || !plan.firecrawlFallback || !firecrawl)
+        throw error;
+      const result = await runAbortable(signal, firecrawl);
+      await this.maybePromoteFirecrawl(originalUrl);
+      return result;
+    }
   }
 }
