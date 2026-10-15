@@ -187,6 +187,7 @@ declare module 'vue' {
     RecipeHeader: typeof import('./components/book-sync/fragments/RecipeHeader.vue')['default']
     RestoreDeletedItemsDialog: typeof import('./components/dialogs/RestoreDeletedItemsDialog.vue')['default']
     RightPanelRail: typeof import('./components/layout/RightPanelRail.vue')['default']
+    RouteLoadingIndicator: typeof import('./components/layout/RouteLoadingIndicator.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ScraperSettingsTab: typeof import('./components/settings/ScraperSettingsTab.vue')['default']
