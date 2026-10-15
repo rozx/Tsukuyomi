@@ -50,7 +50,7 @@ function createBooksPageContext() {
   const settingsStore = useSettingsStore();
   const contextStore = useContextStore();
   const toast = useToastWithHistory();
-  const updateCheck = useBookUpdateCheck();
+  const updateCheck = useBookUpdateCheck({ books: () => booksStore.books });
 
   // 对话框状态
   const showAddDialog = ref(false);

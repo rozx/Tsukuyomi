@@ -302,6 +302,31 @@ const actionMenuRef = t.actionMenuRef;
   font-size: 12px;
 }
 
+.tl-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 全部检查更新进行中：图标按钮展开为「进度 + 取消」 */
+.tl-icon-btn--progress {
+  width: auto;
+  padding: 0 8px;
+  gap: 5px;
+  border-color: var(--primary-opacity-50);
+  color: var(--primary-200);
+}
+
+.tl-check-all-count {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-icon-btn i.tl-check-all-cancel {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
 .tl-list-scroll {
   flex: 1;
   min-height: 0;

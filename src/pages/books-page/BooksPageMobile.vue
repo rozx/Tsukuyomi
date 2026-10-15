@@ -78,6 +78,20 @@ const pickImportFromJson = () => {
           <i class="pi pi-times" />
         </button>
       </div>
+      <button
+        class="ml-icon-btn"
+        :class="{ 'ml-icon-btn--progress': ctx.isCheckingAll.value }"
+        :title="ctx.checkAllTitle.value"
+        :aria-label="ctx.checkAllTitle.value"
+        :disabled="!ctx.canCheckAll.value"
+        @click="ctx.toggleCheckAll"
+      >
+        <i :class="ctx.checkAllIcon.value" aria-hidden="true" />
+        <template v-if="ctx.checkAllCount.value">
+          <span class="ml-check-all-count">{{ ctx.checkAllCount.value }}</span>
+          <i class="pi pi-times ml-check-all-cancel" aria-hidden="true" />
+        </template>
+      </button>
       <button class="ml-icon-btn" :title="i18nT('libraryUi.addBook')" @click="openAddPicker">
         <i class="pi pi-plus" aria-hidden="true" />
       </button>
@@ -346,6 +360,31 @@ const pickImportFromJson = () => {
 
 .ml-icon-btn i {
   font-size: 14px;
+}
+
+.ml-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 全部检查更新进行中：图标按钮展开为「进度 + 取消」 */
+.ml-icon-btn--progress {
+  width: auto;
+  padding: 0 10px;
+  gap: 6px;
+  border-color: var(--primary-opacity-50);
+  color: var(--primary-200);
+}
+
+.ml-check-all-count {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ml-icon-btn i.ml-check-all-cancel {
+  font-size: 11px;
+  opacity: 0.8;
 }
 
 .ml-scroll {

@@ -1,4 +1,4 @@
-import { onBeforeUnmount, shallowRef } from 'vue';
+import { computed, onBeforeUnmount, shallowRef } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import type { BookSyncChangeset } from 'src/models/book-sync';
@@ -15,6 +15,9 @@ import { useSettingsStore } from 'src/stores/settings';
  * 在书卡上用角标展示结果；应用更新仍到 /books/:id/settings/update 完成，
  * 检查完成的会话经 CheckedSessions 交给更新页复用。
  *
+ * 「全部检查更新」对所有可检查的书限并发执行同样的快速检查，静默收集结果，
+ * 跑完只弹一条汇总提示；各书角标照常更新。
+ *
  * 由 useBooksPage 在页面 dispatcher 中创建一次，检查状态跨设备变体保留。
  */
 
@@ -22,9 +25,24 @@ type CheckState =
   | { status: 'checking' }
   | { status: 'done'; newCount: number; changedCount: number };
 
+/** 单本检查的结果，由调用方决定如何提示 */
+type CheckOutcome =
+  | { kind: 'cancelled' }
+  | { kind: 'invalid' }
+  | { kind: 'error'; error: unknown }
+  | { kind: 'done'; newCount: number; changedCount: number };
+
+/** 全部检查的并发上限：避免同时向站点发起过多目录请求 */
+const CHECK_ALL_CONCURRENCY = 2;
+
+interface BookUpdateCheckOptions {
+  /** 「全部检查更新」的书籍来源（书架全部书籍，不受搜索过滤影响） */
+  books?: () => readonly Novel[];
+}
+
 export type BookUpdateCheck = ReturnType<typeof useBookUpdateCheck>;
 
-export function useBookUpdateCheck() {
+export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
   const { t } = useI18n();
   const settingsStore = useSettingsStore();
   const toast = useToastWithHistory();
@@ -32,6 +50,8 @@ export function useBookUpdateCheck() {
 
   const states = shallowRef(new Map<string, CheckState>());
   const controllers = new Map<string, AbortController>();
+  const checkAllProgress = shallowRef<{ checked: number; total: number } | null>(null);
+  let checkAllController: AbortController | null = null;
 
   function setState(bookId: string, state: CheckState | undefined): void {
     const next = new Map(states.value);
@@ -73,24 +93,76 @@ export function useBookUpdateCheck() {
     return null;
   }
 
-  function report(book: Novel, result: BookSyncChangeset): void {
-    if (result.status === 'cancelled') {
-      setState(book.id, undefined);
-      return;
+  function toOutcome(result: BookSyncChangeset): CheckOutcome {
+    if (result.status === 'cancelled') return { kind: 'cancelled' };
+    if (result.status === 'invalid') return { kind: 'invalid' };
+    return { kind: 'done', newCount: result.new.length, changedCount: result.dateNewer.length };
+  }
+
+  /**
+   * 只检查不提示：更新检查中 / 角标状态并返回结果。同一本书已在检查中时返回 null。
+   * `parent` 中止（全部检查被取消）时一并中止本书检查。
+   */
+  async function runCheck(book: Novel, parent?: AbortSignal): Promise<CheckOutcome | null> {
+    if (controllers.has(book.id)) return null;
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    parent?.addEventListener('abort', abort);
+    controllers.set(book.id, controller);
+    CheckedSessions.drop(book.id);
+    setState(book.id, { status: 'checking' });
+    let outcome: CheckOutcome = { kind: 'cancelled' };
+    try {
+      const session = await BookSyncService.openSession({ target: { bookId: book.id } });
+      if (!controller.signal.aborted) {
+        const result = await session.quickCheck(controller.signal);
+        // 目录已回放：交给更新页复用，点角标进入时不必再等一次检查
+        if (result.status === 'ready' && !controller.signal.aborted)
+          CheckedSessions.put(book.id, session);
+        outcome = toOutcome(result);
+      }
+    } catch (error) {
+      outcome = { kind: 'error', error };
+    } finally {
+      parent?.removeEventListener('abort', abort);
+      if (controllers.get(book.id) === controller) controllers.delete(book.id);
     }
-    if (result.status === 'invalid') {
-      setState(book.id, undefined);
-      toast.add({
-        severity: 'warn',
-        summary: t('libraryUi.updateCheckFailed'),
-        detail: t('libraryUi.updateInvalid', { title: book.title }),
-        life: 6000,
-      });
-      return;
+    if (controller.signal.aborted) outcome = { kind: 'cancelled' };
+    setState(
+      book.id,
+      outcome.kind === 'done'
+        ? { status: 'done', newCount: outcome.newCount, changedCount: outcome.changedCount }
+        : undefined,
+    );
+    return outcome;
+  }
+
+  /** 单本检查的提示 */
+  function notify(book: Novel, outcome: CheckOutcome): void {
+    switch (outcome.kind) {
+      case 'cancelled':
+        return;
+      case 'invalid':
+        toast.add({
+          severity: 'warn',
+          summary: t('libraryUi.updateCheckFailed'),
+          detail: t('libraryUi.updateInvalid', { title: book.title }),
+          life: 6000,
+        });
+        return;
+      case 'error':
+        toast.add({
+          severity: 'error',
+          summary: t('libraryUi.updateCheckFailed'),
+          detail: t('libraryUi.updateCheckFailedDetail', {
+            title: book.title,
+            reason: errorText(outcome.error, settingsStore.uiLocale),
+          }),
+          life: 6000,
+        });
+        return;
     }
-    const newCount = result.new.length;
-    const changedCount = result.dateNewer.length;
-    setState(book.id, { status: 'done', newCount, changedCount });
+    const { newCount, changedCount } = outcome;
     if (!newCount && !changedCount) {
       toast.add({
         severity: 'success',
@@ -111,41 +183,117 @@ export function useBookUpdateCheck() {
   }
 
   async function checkBookUpdate(book: Novel): Promise<void> {
-    if (controllers.has(book.id)) return;
-    const controller = new AbortController();
-    controllers.set(book.id, controller);
-    CheckedSessions.drop(book.id);
-    setState(book.id, { status: 'checking' });
-    try {
-      const session = await BookSyncService.openSession({ target: { bookId: book.id } });
-      if (controller.signal.aborted) return;
-      const result = await session.quickCheck(controller.signal);
-      if (controller.signal.aborted) return;
-      // 目录已回放：交给更新页复用，点角标进入时不必再等一次检查
-      if (result.status === 'ready') CheckedSessions.put(book.id, session);
-      report(book, result);
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      setState(book.id, undefined);
+    const outcome = await runCheck(book);
+    if (outcome) notify(book, outcome);
+  }
+
+  const checkableBooks = computed(() => (options.books?.() ?? []).filter(canCheckUpdate));
+  const canCheckAll = computed(() => checkableBooks.value.length > 0);
+  const isCheckingAll = computed(() => checkAllProgress.value !== null);
+  const checkAllLabel = computed(() => {
+    const progress = checkAllProgress.value;
+    return progress ? t('libraryUi.checkAllProgress', progress) : t('libraryUi.checkAllUpdates');
+  });
+
+  /** 全部检查的汇总提示：有更新 > 有失败 > 全部最新 */
+  function notifyCheckAll(outcomes: CheckOutcome[]): void {
+    const total = outcomes.length;
+    const updated = outcomes.filter(
+      (o) => o.kind === 'done' && (o.newCount > 0 || o.changedCount > 0),
+    ).length;
+    const failed = outcomes.filter((o) => o.kind === 'invalid' || o.kind === 'error').length;
+    if (updated) {
       toast.add({
-        severity: 'error',
-        summary: t('libraryUi.updateCheckFailed'),
-        detail: t('libraryUi.updateCheckFailedDetail', {
-          title: book.title,
-          reason: errorText(error, settingsStore.uiLocale),
-        }),
+        severity: 'info',
+        summary: t('libraryUi.updateFound'),
+        detail: failed
+          ? t('libraryUi.checkAllUpdatedWithFailed', { count: updated, failed })
+          : t('libraryUi.checkAllUpdated', { count: updated }),
         life: 6000,
       });
-    } finally {
-      if (controllers.get(book.id) === controller) controllers.delete(book.id);
+    } else if (failed) {
+      toast.add({
+        severity: 'warn',
+        summary: t('libraryUi.checkAllDone'),
+        detail: t('libraryUi.checkAllFailed', { total, failed }),
+        life: 6000,
+      });
+    } else {
+      toast.add({
+        severity: 'success',
+        summary: t('libraryUi.upToDate'),
+        detail: t('libraryUi.checkAllUpToDate', { count: total }),
+        life: 3000,
+      });
     }
   }
+
+  /** 对所有可检查的书限并发执行快速检查，结束后合并为一条汇总提示；取消则不提示 */
+  async function checkAllUpdates(): Promise<void> {
+    if (checkAllController) return;
+    const queue = [...checkableBooks.value];
+    if (!queue.length) return;
+    const controller = new AbortController();
+    checkAllController = controller;
+    const total = queue.length;
+    const outcomes: CheckOutcome[] = [];
+    checkAllProgress.value = { checked: 0, total };
+
+    let checked = 0;
+    const worker = async () => {
+      for (let book = queue.shift(); book; book = queue.shift()) {
+        if (controller.signal.aborted) return;
+        const outcome = await runCheck(book, controller.signal);
+        // 已在单独检查中的书（返回 null）由它自己的流程提示，这里只计入进度
+        if (outcome) outcomes.push(outcome);
+        if (controller.signal.aborted) return;
+        checked++;
+        checkAllProgress.value = { checked, total };
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: CHECK_ALL_CONCURRENCY }, worker));
+    } finally {
+      if (checkAllController === controller) checkAllController = null;
+      checkAllProgress.value = null;
+    }
+    if (!controller.signal.aborted && outcomes.length) notifyCheckAll(outcomes);
+  }
+
+  function cancelCheckAll(): void {
+    checkAllController?.abort();
+  }
+
+  /** 工具栏按钮：空闲时开始全部检查，进行中再点则取消 */
+  function toggleCheckAll(): Promise<void> {
+    if (checkAllController) {
+      cancelCheckAll();
+      return Promise.resolve();
+    }
+    return checkAllUpdates();
+  }
+
+  const checkAllIcon = computed(() =>
+    checkAllProgress.value ? 'pi pi-sync pi-spin' : 'pi pi-sync',
+  );
+  /** 紧凑进度（手机 / 平板图标按钮用），如 `1/4`；未在检查时为 null */
+  const checkAllCount = computed(() => {
+    const progress = checkAllProgress.value;
+    return progress ? `${progress.checked}/${progress.total}` : null;
+  });
+
+  const checkAllTitle = computed(() => {
+    const progress = checkAllProgress.value;
+    if (progress) return t('libraryUi.cancelCheckAll', progress);
+    return canCheckAll.value ? t('libraryUi.checkAllUpdates') : t('libraryUi.checkAllNone');
+  });
 
   function openBookUpdate(book: Novel) {
     return router.push(`/books/${book.id}/settings/update`);
   }
 
   onBeforeUnmount(() => {
+    checkAllController?.abort();
     for (const controller of controllers.values()) controller.abort();
     controllers.clear();
   });
@@ -158,5 +306,14 @@ export function useBookUpdateCheck() {
     updateBadge,
     checkBookUpdate,
     openBookUpdate,
+    canCheckAll,
+    isCheckingAll,
+    checkAllProgress,
+    checkAllLabel,
+    checkAllIcon,
+    checkAllCount,
+    checkAllTitle,
+    checkAllUpdates,
+    toggleCheckAll,
   };
 }

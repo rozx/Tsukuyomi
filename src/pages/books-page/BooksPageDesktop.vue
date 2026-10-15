@@ -91,6 +91,22 @@ const onCoverError = (e: Event, book: Novel) => {
           </InputGroup>
           <div class="books-toolbar-actions">
             <Button
+              class="books-check-all-button p-button-outlined icon-button-hover"
+              :class="{ 'books-check-all-button--running': ctx.isCheckingAll.value }"
+              :title="ctx.checkAllTitle.value"
+              :aria-label="ctx.checkAllTitle.value"
+              :disabled="!ctx.canCheckAll.value"
+              @click="ctx.toggleCheckAll"
+            >
+              <i :class="ctx.checkAllIcon.value" aria-hidden="true" />
+              <span>{{ ctx.checkAllLabel.value }}</span>
+              <i
+                v-if="ctx.isCheckingAll.value"
+                class="pi pi-times books-check-all-cancel"
+                aria-hidden="true"
+              />
+            </Button>
+            <Button
               :label="sortButtonLabel"
               icon="pi pi-sort-alt"
               icon-pos="right"
@@ -297,6 +313,22 @@ const onCoverError = (e: Event, book: Novel) => {
   display: flex;
   align-items: stretch;
   gap: 0.7rem;
+}
+
+.books-check-all-button {
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.books-check-all-button--running {
+  font-variant-numeric: tabular-nums;
+}
+
+.books-check-all-cancel {
+  margin-left: 0.15rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--primary-opacity-30);
+  font-size: 0.75rem;
 }
 
 .library-canvas {

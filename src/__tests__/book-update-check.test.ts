@@ -61,7 +61,7 @@ let app: App | undefined;
 let check: BookUpdateCheck;
 let router: Router;
 
-async function mount() {
+async function mount(books: Novel[] = []) {
   router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/:p(.*)*', component: { render: () => null } }],
@@ -69,7 +69,7 @@ async function mount() {
   await router.push('/books');
   const Host = defineComponent({
     setup() {
-      check = useBookUpdateCheck();
+      check = useBookUpdateCheck({ books: () => books });
       return () => h('div');
     },
   });
@@ -314,5 +314,255 @@ describe('书架检查更新', () => {
 
     expect(signal?.aborted).toBe(true);
     expect(toastAdd).not.toHaveBeenCalled();
+  });
+});
+
+/** 可逐本控制结果的快速检查：记录每次 openSession 的书与收到的中止信号 */
+function controllableSessions() {
+  const calls: {
+    bookId: string;
+    signal?: AbortSignal | undefined;
+    resolve: (value: BookSyncChangeset) => void;
+    reject: (error: unknown) => void;
+  }[] = [];
+  vi.spyOn(BookSyncService, 'openSession').mockImplementation(((options: {
+    target: { bookId: string };
+  }) => {
+    const call = {
+      bookId: options.target.bookId,
+    } as (typeof calls)[number];
+    calls.push(call);
+    return Promise.resolve({
+      quickCheck: (signal?: AbortSignal) => {
+        call.signal = signal;
+        return new Promise<BookSyncChangeset>((resolve, reject) => {
+          call.resolve = resolve;
+          call.reject = reject;
+        });
+      },
+    });
+  }) as never);
+  return calls;
+}
+
+function shelf(count: number): Novel[] {
+  return Array.from({ length: count }, (_, i) => book({ id: `b${i + 1}`, title: `书${i + 1}` }));
+}
+
+describe('书架全部检查更新', () => {
+  it('没有可检查的书时禁用全部检查', async () => {
+    await mount([book({ webUrl: [] }), book({ id: 'b2', webUrl: ['https://example.com/x'] })]);
+
+    expect(check.canCheckAll.value).toBe(false);
+    await check.checkAllUpdates();
+    expect(check.isCheckingAll.value).toBe(false);
+    expect(toastAdd).not.toHaveBeenCalled();
+  });
+
+  it('全部检查完成的会话同样交给更新页复用', async () => {
+    const first = fakeSession(changeset({ new: [added(1)] }));
+    const second = fakeSession(changeset());
+    vi.spyOn(BookSyncService, 'openSession').mockImplementation(({ target }) =>
+      Promise.resolve(('bookId' in target && target.bookId === 'b1' ? first : second) as never),
+    );
+    await mount([book(), book({ id: 'b2', title: '第二本' })]);
+
+    await check.checkAllUpdates();
+
+    expect(CheckedSessions.take('b1')).toBe(first);
+    expect(CheckedSessions.take('b2')).toBe(second);
+  });
+
+  it('只检查可检查的书，并发不超过 2，进度随完成递增', async () => {
+    const calls = controllableSessions();
+    await mount([...shelf(4), book({ id: 'x', webUrl: [] })]);
+    expect(check.canCheckAll.value).toBe(true);
+
+    const running = check.checkAllUpdates();
+    await flush();
+    expect(check.isCheckingAll.value).toBe(true);
+    expect(calls.map((c) => c.bookId)).toEqual(['b1', 'b2']);
+    expect(check.checkAllProgress.value).toEqual({ checked: 0, total: 4 });
+    expect(check.checkAllLabel.value).toBe('已检查 0 / 共 4');
+    expect(check.checkAllCount.value).toBe('0/4');
+    expect(check.checkAllIcon.value).toBe('pi pi-sync pi-spin');
+
+    calls[0]!.resolve(changeset());
+    await flush();
+    expect(calls.map((c) => c.bookId)).toEqual(['b1', 'b2', 'b3']);
+    expect(check.checkAllProgress.value).toEqual({ checked: 1, total: 4 });
+
+    calls[1]!.resolve(changeset());
+    calls[2]!.resolve(changeset());
+    await flush();
+    expect(calls).toHaveLength(4);
+    calls[3]!.resolve(changeset());
+    await running;
+
+    expect(check.isCheckingAll.value).toBe(false);
+    expect(check.checkAllProgress.value).toBeNull();
+    expect(check.checkAllLabel.value).toBe('全部检查更新');
+    expect(check.checkAllCount.value).toBeNull();
+    expect(check.checkAllIcon.value).toBe('pi pi-sync');
+  });
+
+  it('跑完后只弹一条汇总提示，各书角标照常显示', async () => {
+    const calls = controllableSessions();
+    await mount(shelf(4));
+
+    const running = check.checkAllUpdates();
+    await flush();
+    calls[0]!.resolve(changeset({ new: [added(1), added(2)] }));
+    calls[1]!.resolve(changeset());
+    await flush();
+    calls[2]!.resolve(changeset({ dateNewer: ['x1'] }));
+    calls[3]!.resolve(changeset({ new: [added(1)] }));
+    await running;
+
+    expect(toastAdd).toHaveBeenCalledTimes(1);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'info', summary: '发现更新', detail: '3 本书有更新' }),
+    );
+    const [b1, b2, b3, b4] = shelf(4);
+    expect(check.updateBadge(b1!)).toBe('2 新章');
+    expect(check.updateBadge(b2!)).toBeNull();
+    expect(check.updateBadge(b3!)).toBe('1 章待比对');
+    expect(check.updateBadge(b4!)).toBe('1 新章');
+  });
+
+  it('全部已是最新时汇总为已是最新', async () => {
+    const calls = controllableSessions();
+    await mount(shelf(2));
+
+    const running = check.checkAllUpdates();
+    await flush();
+    calls.forEach((c) => c.resolve(changeset()));
+    await running;
+
+    expect(toastAdd).toHaveBeenCalledTimes(1);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'success',
+        summary: '已是最新',
+        detail: '已检查 2 本书，均没有新章节',
+      }),
+    );
+  });
+
+  it('部分失败时不逐本报错，汇总里带上失败数', async () => {
+    const calls = controllableSessions();
+    await mount(shelf(3));
+
+    const running = check.checkAllUpdates();
+    await flush();
+    calls[0]!.reject(new Error('网络错误'));
+    calls[1]!.resolve(changeset({ status: 'invalid' }));
+    await flush();
+    calls[2]!.resolve(changeset({ new: [added(1)] }));
+    await running;
+
+    expect(toastAdd).toHaveBeenCalledTimes(1);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'info',
+        summary: '发现更新',
+        detail: '1 本书有更新，2 本检查失败',
+      }),
+    );
+    expect(check.isCheckingUpdate(shelf(3)[0]!)).toBe(false);
+  });
+
+  it('没有更新但有失败时以警告汇总', async () => {
+    const calls = controllableSessions();
+    await mount(shelf(2));
+
+    const running = check.checkAllUpdates();
+    await flush();
+    calls[0]!.reject(new Error('网络错误'));
+    calls[1]!.resolve(changeset());
+    await running;
+
+    expect(toastAdd).toHaveBeenCalledTimes(1);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'warn',
+        summary: '检查更新完成',
+        detail: '2 本书中有 1 本检查失败，其余没有新章节',
+      }),
+    );
+  });
+
+  it('取消后中止进行中的检查、不再开始剩余的书、不弹汇总', async () => {
+    const calls = controllableSessions();
+    await mount(shelf(4));
+
+    const running = check.checkAllUpdates();
+    await flush();
+    calls[0]!.resolve(changeset({ new: [added(1)] }));
+    await flush();
+    expect(calls).toHaveLength(3);
+
+    void check.toggleCheckAll();
+    calls[1]!.resolve(changeset({ status: 'cancelled' }));
+    calls[2]!.resolve(changeset({ status: 'cancelled' }));
+    await running;
+
+    expect(calls).toHaveLength(3);
+    expect(calls[1]!.signal?.aborted).toBe(true);
+    expect(calls[2]!.signal?.aborted).toBe(true);
+    expect(toastAdd).not.toHaveBeenCalled();
+    expect(check.isCheckingAll.value).toBe(false);
+    expect(check.isCheckingUpdate(shelf(4)[1]!)).toBe(false);
+    // 取消前已完成的书角标保留
+    expect(check.updateBadge(shelf(4)[0]!)).toBe('1 新章');
+  });
+
+  it('全部检查进行中再次调用不会重复开始', async () => {
+    const calls = controllableSessions();
+    await mount(shelf(2));
+
+    void check.checkAllUpdates();
+    await flush();
+    void check.checkAllUpdates();
+    await flush();
+
+    expect(calls).toHaveLength(2);
+  });
+
+  it('全部检查中单本按钮不会对同一本书重复开会话', async () => {
+    const calls = controllableSessions();
+    await mount(shelf(1));
+
+    void check.checkAllUpdates();
+    await flush();
+    void check.checkBookUpdate(shelf(1)[0]!);
+    await flush();
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it('工具栏按钮：空闲时开始、进行中再点取消，提示文字随状态切换', async () => {
+    const calls = controllableSessions();
+    await mount(shelf(3));
+    expect(check.checkAllTitle.value).toBe('全部检查更新');
+
+    const running = check.toggleCheckAll();
+    await flush();
+    expect(check.checkAllTitle.value).toBe('取消全部检查（已检查 0 / 共 3）');
+
+    void check.toggleCheckAll();
+    calls.forEach((c) => c.resolve(changeset({ status: 'cancelled' })));
+    await running;
+
+    expect(calls.every((c) => c.signal?.aborted)).toBe(true);
+    expect(check.isCheckingAll.value).toBe(false);
+    expect(toastAdd).not.toHaveBeenCalled();
+  });
+
+  it('没有可检查的书时按钮提示原因', async () => {
+    await mount([book({ webUrl: [] })]);
+    expect(check.checkAllTitle.value).toBe(
+      '没有可检查更新的书（需要来自支持站点或已录制更新规则）',
+    );
   });
 });

@@ -229,5 +229,15 @@ export default {
     updateCheckFailedDetail: '“{title}”: {reason}',
     updateInvalid:
       'The catalog of “{title}” could not be read with its saved rules. Open the update page to fix it.',
+    checkAllUpdates: 'Check all for updates',
+    checkAllProgress: 'Checked {checked} / {total}',
+    cancelCheckAll: 'Cancel checking all (checked {checked} / {total})',
+    checkAllNone:
+      'No books can be checked for updates (they need a supported site or recorded update rules)',
+    checkAllDone: 'Update check finished',
+    checkAllUpdated: 'Updates found in {count} book(s)',
+    checkAllUpdatedWithFailed: 'Updates found in {count} book(s); {failed} failed to check',
+    checkAllUpToDate: 'Checked {count} book(s), no new chapters',
+    checkAllFailed: '{failed} of {total} book(s) failed to check; the rest have no new chapters',
   },
 };
