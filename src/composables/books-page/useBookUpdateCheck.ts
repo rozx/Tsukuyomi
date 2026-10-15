@@ -5,13 +5,15 @@ import type { BookSyncChangeset } from 'src/models/book-sync';
 import type { Novel } from 'src/models/novel';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { builtinSite } from 'src/services/book-sync/recipe';
+import { CheckedSessions } from 'src/services/book-sync/checked-sessions';
 import { errorText } from 'src/composables/book-sync/useBookSync';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useSettingsStore } from 'src/stores/settings';
 
 /**
  * 书架上的「检查更新」：不进入书籍详情，直接对单本书执行快速检查（只回放目录，不抓正文），
- * 在书卡上用角标展示结果；应用更新仍到 /books/:id/settings/update 完成。
+ * 在书卡上用角标展示结果；应用更新仍到 /books/:id/settings/update 完成，
+ * 检查完成的会话经 CheckedSessions 交给更新页复用。
  *
  * 由 useBooksPage 在页面 dispatcher 中创建一次，检查状态跨设备变体保留。
  */
@@ -112,12 +114,15 @@ export function useBookUpdateCheck() {
     if (controllers.has(book.id)) return;
     const controller = new AbortController();
     controllers.set(book.id, controller);
+    CheckedSessions.drop(book.id);
     setState(book.id, { status: 'checking' });
     try {
       const session = await BookSyncService.openSession({ target: { bookId: book.id } });
       if (controller.signal.aborted) return;
       const result = await session.quickCheck(controller.signal);
       if (controller.signal.aborted) return;
+      // 目录已回放：交给更新页复用，点角标进入时不必再等一次检查
+      if (result.status === 'ready') CheckedSessions.put(book.id, session);
       report(book, result);
     } catch (error) {
       if (controller.signal.aborted) return;

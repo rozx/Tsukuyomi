@@ -8,6 +8,7 @@ import messages from '../i18n';
 import type { BookSyncChangeset, BookUpdateRecipe, SyncNewChapter } from 'src/models/book-sync';
 import type { Novel } from 'src/models/novel';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
+import { CheckedSessions } from 'src/services/book-sync/checked-sessions';
 import { CodedLocalizedError } from 'src/utils/coded-localized-error';
 import { useSettingsStore } from 'src/stores/settings';
 import {
@@ -91,6 +92,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  CheckedSessions.take('b1');
   app?.unmount();
   app = undefined;
   vi.restoreAllMocks();
@@ -230,6 +232,57 @@ describe('书架检查更新', () => {
 
     expect(open).toHaveBeenCalledTimes(2);
     expect(check.updateBadge(book())).toBeNull();
+  });
+
+  it('检查完成的会话交给更新页复用，避免重新请求目录', async () => {
+    const session = fakeSession(changeset({ new: [added(1)] }));
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(session as never);
+    await mount();
+
+    await check.checkBookUpdate(book());
+
+    expect(CheckedSessions.take('b1')).toBe(session);
+  });
+
+  it('已是最新的会话同样交接，从详情进入更新页也不必重新检查', async () => {
+    const session = fakeSession(changeset());
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(session as never);
+    await mount();
+
+    await check.checkBookUpdate(book());
+
+    expect(CheckedSessions.take('b1')).toBe(session);
+  });
+
+  it('配方回放失败或出错时不交接会话', async () => {
+    vi.spyOn(BookSyncService, 'openSession')
+      .mockResolvedValueOnce(fakeSession(changeset({ status: 'invalid' })) as never)
+      .mockRejectedValueOnce(new Error('NETWORK: 断网'));
+    await mount();
+
+    await check.checkBookUpdate(book());
+    expect(CheckedSessions.take('b1')).toBeUndefined();
+    await check.checkBookUpdate(book());
+    expect(CheckedSessions.take('b1')).toBeUndefined();
+  });
+
+  it('重新检查时先丢弃上一次交接的会话', async () => {
+    const first = fakeSession(changeset({ new: [added(1)] }));
+    let resolve!: (value: BookSyncChangeset) => void;
+    const second = fakeSession(new Promise<BookSyncChangeset>((r) => (resolve = r)));
+    vi.spyOn(BookSyncService, 'openSession')
+      .mockResolvedValueOnce(first as never)
+      .mockResolvedValueOnce(second as never);
+    await mount();
+
+    await check.checkBookUpdate(book());
+    const running = check.checkBookUpdate(book());
+    await flush();
+    expect(CheckedSessions.take('b1')).toBeUndefined();
+
+    resolve(changeset());
+    await running;
+    expect(CheckedSessions.take('b1')).toBe(second);
   });
 
   it('打开更新页跳转到该书的检查更新设置', async () => {
