@@ -24,8 +24,9 @@ function chapters(book: Novel): Chapter[] {
   return (book.volumes ?? []).flatMap((volume) => volume.chapters ?? []);
 }
 
+/** 与 ChapterService.shouldUpdateChapter 一致：lastUpdated 为假值（含空字符串）时回退 createdAt */
 function localStamp(chapter: Chapter): number {
-  return new Date(chapter.lastUpdated ?? chapter.createdAt).getTime();
+  return new Date(chapter.lastUpdated || chapter.createdAt).getTime();
 }
 
 export function buildUpdateCheckRecord(

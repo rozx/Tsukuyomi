@@ -77,6 +77,15 @@ describe('检查结果记录', () => {
     });
   });
 
+  it('lastUpdated 为空字符串等假值时按 createdAt 记录，与快速检查的判定一致', () => {
+    const current = book([chapter('c1', { lastUpdated: '' as unknown as Date })]);
+
+    const record = buildUpdateCheckRecord(current, changeset({ dateNewer: ['c1'] }), 1);
+
+    expect(record.changed).toEqual([{ url: 'c1', stamp: Date.parse('2026-01-01T00:00:00Z') }]);
+    expect(pendingUpdateCounts(current, record).changedCount).toBe(1);
+  });
+
   it('按当前书籍计算待处理数：未变化时与检查结果一致', () => {
     const current = book([chapter('c1')]);
     const record = buildUpdateCheckRecord(

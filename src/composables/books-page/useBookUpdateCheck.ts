@@ -242,9 +242,11 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
     return progress ? t('libraryUi.checkAllProgress', progress) : t('libraryUi.checkAllUpdates');
   });
 
-  /** 全部检查的汇总提示：有更新 > 有失败 > 全部最新 */
-  function notifyCheckAll(outcomes: CheckOutcome[]): void {
-    const total = outcomes.length;
+  /**
+   * 全部检查的汇总提示：有更新 > 有失败 > 全部最新。
+   * `total` 沿用进度的总数：正在单独检查而被跳过的书也计入，与用户刚看到的进度一致。
+   */
+  function notifyCheckAll(outcomes: CheckOutcome[], total: number): void {
     const updated = outcomes.filter(
       (o) => o.kind === 'done' && (o.newCount > 0 || o.changedCount > 0),
     ).length;
@@ -305,7 +307,7 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
       if (checkAllController === controller) checkAllController = null;
       checkAllProgress.value = null;
     }
-    if (!controller.signal.aborted && outcomes.length) notifyCheckAll(outcomes);
+    if (!controller.signal.aborted && outcomes.length) notifyCheckAll(outcomes, total);
   }
 
   function cancelCheckAll(): void {

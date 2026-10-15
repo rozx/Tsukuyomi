@@ -593,6 +593,26 @@ describe('书架全部检查更新', () => {
     expect(check.updateBadge(b4!)).toBe('1 新章');
   });
 
+  it('汇总的书本数与进度一致：正在单独检查而被跳过的书也计入', async () => {
+    const calls = controllableSessions();
+    const books = shelf(2);
+    await mount(books);
+    const single = check.checkBookUpdate(books[0]!);
+    await flush();
+
+    const running = check.checkAllUpdates();
+    await flush();
+    expect(calls.map((c) => c.bookId)).toEqual(['b1', 'b2']);
+    calls[1]!.resolve(changeset());
+    await running;
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: '已是最新', detail: '已检查 2 本书，均没有新章节' }),
+    );
+    calls[0]!.resolve(changeset());
+    await single;
+  });
+
   it('全部已是最新时汇总为已是最新', async () => {
     const calls = controllableSessions();
     await mount(shelf(2));
