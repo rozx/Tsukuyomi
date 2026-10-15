@@ -9,6 +9,7 @@ import { useContextStore } from 'src/stores/context';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
 import { createSaveNewBookHandler } from 'src/composables/shared/useBookImportActions';
+import { useBookUpdateCheck } from 'src/composables/books-page/useBookUpdateCheck';
 import { CoverService } from 'src/services/cover-service';
 import { MemoryService } from 'src/services/memory-service';
 import type { Memory } from 'src/models/memory';
@@ -49,6 +50,7 @@ function createBooksPageContext() {
   const settingsStore = useSettingsStore();
   const contextStore = useContextStore();
   const toast = useToastWithHistory();
+  const updateCheck = useBookUpdateCheck();
 
   // 对话框状态
   const showAddDialog = ref(false);
@@ -571,5 +573,7 @@ function createBooksPageContext() {
     toggleStar,
     navigateToBookDetails,
     handleSave,
+    // 书架检查更新
+    ...updateCheck,
   };
 }

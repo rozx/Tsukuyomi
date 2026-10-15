@@ -214,5 +214,20 @@ export default {
     weekAgo: '1 week ago',
     monthAgo: '1 month ago',
     unnamedChapter: 'Untitled chapter',
+    checkUpdate: 'Check for updates',
+    checkingUpdate: 'Checking for updates…',
+    viewUpdate: 'View updates',
+    updateBadgeNew: '+{count} new',
+    updateBadgeChanged: '{count} changed',
+    updateFound: 'Updates found',
+    updateFoundNew: 'New chapters in “{title}”: {count}',
+    updateFoundChanged:
+      'Chapters updated on the site for “{title}”: {count}. Compare them on the update page.',
+    upToDate: 'Up to date',
+    upToDateDetail: 'No new chapters in “{title}”',
+    updateCheckFailed: 'Update check failed',
+    updateCheckFailedDetail: '“{title}”: {reason}',
+    updateInvalid:
+      'The catalog of “{title}” could not be read with its saved rules. Open the update page to fix it.',
   },
 };

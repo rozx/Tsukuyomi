@@ -28,6 +28,11 @@ const starButtonClass = computed(() => [
 const starTitle = computed(() =>
   book.value?.starred ? i18nT('libraryUi.unstar') : i18nT('libraryUi.star'),
 );
+const updateBadge = computed(() => (book.value ? t.ctx.updateBadge(book.value) : null));
+const canCheckUpdate = computed(() => !!book.value && t.ctx.canCheckUpdate(book.value));
+const isCheckingUpdate = computed(() => !!book.value && t.ctx.isCheckingUpdate(book.value));
+const checkUpdate = () => book.value && t.ctx.checkBookUpdate(book.value);
+const openUpdate = () => book.value && t.ctx.openBookUpdate(book.value);
 const continueReading = () => book.value && t.ctx.navigateToBookDetails(book.value);
 const editBook = () => book.value && t.ctx.editBook(book.value);
 const toggleStar = () => book.value && t.ctx.toggleStar(book.value);
@@ -51,6 +56,15 @@ const deleteBook = () => book.value && t.ctx.deleteBook(book.value);
         <span v-if="book.starred" class="tl-badge tl-badge--star">
           <i class="pi pi-star-fill" /> {{ i18nT('libraryUi.favorites') }}
         </span>
+        <button
+          v-if="updateBadge"
+          type="button"
+          class="tl-badge tl-badge--update"
+          :title="i18nT('libraryUi.viewUpdate')"
+          @click="openUpdate"
+        >
+          <i class="pi pi-arrow-circle-down" /> {{ updateBadge }}
+        </button>
       </div>
 
       <p v-if="book.description" class="tl-desc">{{ book.description }}</p>
@@ -67,6 +81,14 @@ const deleteBook = () => book.value && t.ctx.deleteBook(book.value);
           icon="pi pi-pencil"
           class="p-button-outlined"
           @click="editBook"
+        />
+        <Button
+          v-if="canCheckUpdate"
+          :label="t.ctx.updateCheckLabel(book)"
+          icon="pi pi-sync"
+          class="p-button-outlined"
+          :loading="isCheckingUpdate"
+          @click="checkUpdate"
         />
         <Button :icon="starIcon" :class="starButtonClass" :title="starTitle" @click="toggleStar" />
         <Button

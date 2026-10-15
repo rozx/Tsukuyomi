@@ -394,6 +394,17 @@ const actionMenuRef = t.actionMenuRef;
   flex-shrink: 0;
 }
 
+.tl-list-update {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--primary-opacity-50);
+  color: var(--primary-200);
+  font-size: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .tl-dot {
   opacity: 0.5;
 }
@@ -568,6 +579,17 @@ const actionMenuRef = t.actionMenuRef;
   border-color: var(--color-warning-opacity-30);
   /* token: warning */
   color: var(--color-warning);
+}
+
+.tl-badge--update {
+  background: var(--primary-opacity-20);
+  border-color: var(--primary-opacity-50);
+  color: var(--primary-200);
+  cursor: pointer;
+}
+
+.tl-badge--update:hover {
+  background: var(--primary-opacity-30);
 }
 
 .tl-hero-actions {

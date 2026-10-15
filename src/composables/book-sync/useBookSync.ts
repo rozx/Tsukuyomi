@@ -155,7 +155,7 @@ function errorCode(error: unknown): string {
 }
 
 /** 自有错误按界面语言渲染；外部诊断保持原文，只去掉 `CODE: ` 前缀 */
-function errorText(error: unknown, locale: AppLocale): string {
+export function errorText(error: unknown, locale: AppLocale): string {
   return localizedErrorMessage(error, locale, 'bookUi.sync.unknownError').replace(
     /^[A-Z_]+:\s*/,
     '',

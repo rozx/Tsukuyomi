@@ -122,6 +122,15 @@ const pickImportFromJson = () => {
           <div class="ml-cover">
             <img :src="ctx.getCoverUrl(book)" :alt="book.title" loading="lazy" />
             <i v-if="book.starred" class="pi pi-star-fill ml-cover-star" aria-hidden="true" />
+            <button
+              v-if="ctx.updateBadge(book)"
+              type="button"
+              class="ml-cover-update"
+              :aria-label="i18nT('libraryUi.viewUpdate')"
+              @click.stop="ctx.openBookUpdate(book)"
+            >
+              {{ ctx.updateBadge(book) }}
+            </button>
           </div>
           <div class="ml-card-title">{{ book.title }}</div>
           <div v-if="book.author" class="ml-card-author">{{ book.author }}</div>
@@ -138,6 +147,17 @@ const pickImportFromJson = () => {
             <span>{{
               i18nT('libraryUi.chapterCount', { count: ctx.getTotalChapters(book) })
             }}</span>
+            <button
+              v-if="ctx.canCheckUpdate(book)"
+              type="button"
+              class="ml-card-sync"
+              :title="ctx.updateCheckLabel(book)"
+              :aria-label="ctx.updateCheckLabel(book)"
+              :disabled="ctx.isCheckingUpdate(book)"
+              @click.stop="ctx.checkBookUpdate(book)"
+            >
+              <i :class="ctx.updateCheckIcon(book)" aria-hidden="true" />
+            </button>
           </div>
         </div>
       </div>
@@ -375,6 +395,48 @@ const pickImportFromJson = () => {
   color: var(--color-warning);
   font-size: 12px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.ml-cover-update {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--primary-opacity-50);
+  background: rgba(14, 18, 24, 0.78); /* token: near night-300 @ 78% */
+  color: var(--primary-200);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.ml-card-sync {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* 触控目标：图标小，点击区域放大到 28px */
+  width: 28px;
+  height: 28px;
+  margin-top: -8px;
+  margin-bottom: -8px;
+  margin-right: -6px;
+  border-radius: 999px;
+  color: var(--moon-50-opacity-55);
+  background: transparent;
+}
+
+.ml-card-sync:active {
+  background: var(--white-opacity-8);
+}
+
+.ml-card-sync:disabled {
+  opacity: 0.7;
+}
+
+.ml-card-sync .pi {
+  font-size: 11px;
 }
 
 .ml-card-title {

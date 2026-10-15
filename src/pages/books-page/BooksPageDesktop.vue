@@ -167,6 +167,15 @@ const onCoverError = (e: Event, book: Novel) => {
                 <div v-if="book.starred" class="library-book-flag">
                   <i class="pi pi-star-fill" /> {{ i18nT('libraryUi.favorites') }}
                 </div>
+                <button
+                  v-if="ctx.updateBadge(book)"
+                  type="button"
+                  class="library-book-update-flag"
+                  :title="i18nT('libraryUi.viewUpdate')"
+                  @click.stop="ctx.openBookUpdate(book)"
+                >
+                  <i class="pi pi-arrow-circle-down" /> {{ ctx.updateBadge(book) }}
+                </button>
               </div>
               <div class="library-book-content">
                 <div class="library-book-heading-row">
@@ -211,6 +220,15 @@ const onCoverError = (e: Event, book: Novel) => {
                     :class="starButtonClass(book)"
                     :title="starTitle(book)"
                     @click.stop="ctx.toggleStar(book)"
+                  />
+                  <Button
+                    v-if="ctx.canCheckUpdate(book)"
+                    :icon="ctx.updateCheckIcon(book)"
+                    class="p-button-text p-button-sm flex-1 !text-xs !py-1 !px-1"
+                    :title="ctx.updateCheckLabel(book)"
+                    :aria-label="ctx.updateCheckLabel(book)"
+                    :disabled="ctx.isCheckingUpdate(book)"
+                    @click.stop="ctx.checkBookUpdate(book)"
                   />
                   <Button
                     icon="pi pi-pencil"
@@ -457,6 +475,32 @@ const onCoverError = (e: Event, book: Novel) => {
   font-weight: 600;
   /* token: moon-50 @ 82% */
   color: var(--moon-50-opacity-82);
+}
+
+.library-book-update-flag {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.22rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(14, 18, 24, 0.74); /* token: near night-300 @ 74% */
+  border: 1px solid var(--primary-opacity-50);
+  color: var(--primary-200);
+  font-size: 0.66rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.library-book-update-flag:hover {
+  background: var(--primary-opacity-30);
+}
+
+.library-book-update-flag .pi {
+  font-size: 0.7rem;
 }
 
 .library-book-actions {
