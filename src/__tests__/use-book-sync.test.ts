@@ -11,6 +11,7 @@ import type {
   SyncNewChapter,
 } from 'src/models/book-sync';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
+import { CheckedSessions } from 'src/services/book-sync/checked-sessions';
 import { BookSyncError } from 'src/services/book-sync/errors';
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import { ImportRecipeRepair } from 'src/services/import/import-recipe-repair';
@@ -164,6 +165,43 @@ describe('useBookSync 会话生命周期', () => {
     expect(session.quickCheck).toHaveBeenCalledTimes(1);
     expect(ctx.phase.value).toBe('ready');
     expect([...ctx.selected.value].sort()).toEqual(['u1', 'u2']);
+  });
+
+  it('复用书架上已检查的会话：不重新打开会话、不重复快速检查', async () => {
+    const session = fakeSession();
+    CheckedSessions.put('b1', session as never);
+    const open = vi.spyOn(BookSyncService, 'openSession');
+
+    await mount(ref({ bookId: 'b1' }), shallowRef(VariantA));
+
+    expect(open).not.toHaveBeenCalled();
+    expect(session.quickCheck).not.toHaveBeenCalled();
+    expect(ctx.phase.value).toBe('ready');
+    expect([...ctx.selected.value].sort()).toEqual(['u1', 'u2']);
+    expect(CheckedSessions.take('b1')).toBeUndefined();
+  });
+
+  it('复用的会话只用一次：手动重新检查会重新打开会话', async () => {
+    const handed = fakeSession();
+    CheckedSessions.put('b1', handed as never);
+    const fresh = fakeSession(changeset({ new: [] }));
+    const open = vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(fresh as never);
+    await mount(ref({ bookId: 'b1' }), shallowRef(VariantA));
+
+    await ctx.recheck();
+
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(fresh.quickCheck).toHaveBeenCalledTimes(1);
+  });
+
+  it('别的书交接的会话不会被拿来用', async () => {
+    CheckedSessions.put('b2', fakeSession() as never);
+    const open = vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(fakeSession() as never);
+
+    await mount(ref({ bookId: 'b1' }), shallowRef(VariantA));
+
+    expect(open).toHaveBeenCalledTimes(1);
+    CheckedSessions.take('b2');
   });
 
   it('逐章比对进行中每秒暴露 Firecrawl 限速剩余等待秒数，结束后清零', async () => {

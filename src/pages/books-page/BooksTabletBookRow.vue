@@ -21,6 +21,7 @@ const wordCountText = computed(() =>
         count: t.ctx.formatWordCount(t.ctx.getTotalWords(props.book)),
       }),
 );
+const updateBadge = computed(() => t.ctx.updateBadge(props.book));
 const onClick = () => t.selectBook(props.book);
 const onDblClick = () => t.ctx.navigateToBookDetails(props.book);
 </script>
@@ -46,6 +47,7 @@ const onDblClick = () => t.ctx.navigateToBookDetails(props.book);
         <span>{{ i18nT('libraryUi.chapterCount', { count: t.ctx.getTotalChapters(book) }) }}</span>
       </div>
     </div>
+    <span v-if="updateBadge" class="tl-list-update">{{ updateBadge }}</span>
     <i v-if="book.starred" class="pi pi-star-fill tl-list-star" aria-hidden="true" />
   </button>
 </template>

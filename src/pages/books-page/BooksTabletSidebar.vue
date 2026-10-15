@@ -57,6 +57,20 @@ const sortButtonTitle = computed(() =>
         </div>
         <button
           class="tl-icon-btn"
+          :class="{ 'tl-icon-btn--progress': t.ctx.isCheckingAll.value }"
+          :title="t.ctx.checkAllTitle.value"
+          :aria-label="t.ctx.checkAllTitle.value"
+          :disabled="!t.ctx.canCheckAll.value"
+          @click="t.ctx.toggleCheckAll"
+        >
+          <i :class="t.ctx.checkAllIcon.value" aria-hidden="true" />
+          <template v-if="t.ctx.checkAllCount.value">
+            <span class="tl-check-all-count">{{ t.ctx.checkAllCount.value }}</span>
+            <i class="pi pi-times tl-check-all-cancel" aria-hidden="true" />
+          </template>
+        </button>
+        <button
+          class="tl-icon-btn"
           :title="sortButtonTitle"
           aria-haspopup="true"
           @click="t.toggleSortMenu"

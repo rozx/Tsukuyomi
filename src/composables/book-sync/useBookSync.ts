@@ -22,6 +22,7 @@ import type {
 } from 'src/models/book-sync';
 import type { Novel, Volume } from 'src/models/novel';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
+import { CheckedSessions } from 'src/services/book-sync/checked-sessions';
 import { FirecrawlClient } from 'src/services/firecrawl/firecrawl-client';
 import { resolveRecipe } from 'src/services/book-sync/recipe';
 import { FEATURES } from 'src/constants/features';
@@ -155,7 +156,7 @@ function errorCode(error: unknown): string {
 }
 
 /** 自有错误按界面语言渲染；外部诊断保持原文，只去掉 `CODE: ` 前缀 */
-function errorText(error: unknown, locale: AppLocale): string {
+export function errorText(error: unknown, locale: AppLocale): string {
   return localizedErrorMessage(error, locale, 'bookUi.sync.unknownError').replace(
     /^[A-Z_]+:\s*/,
     '',
@@ -286,6 +287,13 @@ function createBookSyncContext(
     reset();
     if (!value) {
       phase.value = 'idle';
+      return;
+    }
+    // 书架刚检查过这本书：直接复用其会话，不再重复回放目录
+    const handed = 'bookId' in value ? CheckedSessions.take(value.bookId) : undefined;
+    if (handed) {
+      session.value = handed;
+      setChangeset(handed.changeset);
       return;
     }
     phase.value = 'checking';

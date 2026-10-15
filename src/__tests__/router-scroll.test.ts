@@ -3,9 +3,6 @@ import './setup';
 import { nextTick } from 'vue';
 import createAppRouter from '../router';
 
-vi.mock('quasar', () => ({
-  LoadingBar: { setDefaults: vi.fn(), start: vi.fn(), stop: vi.fn() },
-}));
 vi.mock('../router/routes', () => ({
   default: [
     { path: '/help/:docId?', component: { render: () => null } },

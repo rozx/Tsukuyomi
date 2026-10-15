@@ -302,6 +302,31 @@ const actionMenuRef = t.actionMenuRef;
   font-size: 12px;
 }
 
+.tl-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 全部检查更新进行中：图标按钮展开为「进度 + 取消」 */
+.tl-icon-btn--progress {
+  width: auto;
+  padding: 0 8px;
+  gap: 5px;
+  border-color: var(--primary-opacity-50);
+  color: var(--primary-200);
+}
+
+.tl-check-all-count {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-icon-btn i.tl-check-all-cancel {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
 .tl-list-scroll {
   flex: 1;
   min-height: 0;
@@ -392,6 +417,17 @@ const actionMenuRef = t.actionMenuRef;
   color: var(--color-warning);
   font-size: 10px;
   flex-shrink: 0;
+}
+
+.tl-list-update {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--primary-opacity-50);
+  color: var(--primary-200);
+  font-size: 9px;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .tl-dot {
@@ -568,6 +604,17 @@ const actionMenuRef = t.actionMenuRef;
   border-color: var(--color-warning-opacity-30);
   /* token: warning */
   color: var(--color-warning);
+}
+
+.tl-badge--update {
+  background: var(--primary-opacity-20);
+  border-color: var(--primary-opacity-50);
+  color: var(--primary-200);
+  cursor: pointer;
+}
+
+.tl-badge--update:hover {
+  background: var(--primary-opacity-30);
 }
 
 .tl-hero-actions {

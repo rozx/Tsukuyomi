@@ -15,6 +15,7 @@ import { GlobalConfig } from 'src/services/global-config-cache';
 import { useImportNotifications } from 'src/composables/import-page/useImportNotifications';
 import { useDatabaseBlockedNotice } from 'src/composables/useDatabaseBlockedNotice';
 import { initializeDesktopUpdates } from 'src/composables/useDesktopUpdates';
+import RouteLoadingIndicator from 'src/components/layout/RouteLoadingIndicator.vue';
 
 const booksStore = useBooksStore();
 const aiModelsStore = useAIModelsStore();
@@ -81,4 +82,6 @@ onMounted(async () => {
 
 <template>
   <router-view />
+  <!-- 常驻外壳：首屏懒加载布局解析前也能显示切换提示 -->
+  <RouteLoadingIndicator />
 </template>
