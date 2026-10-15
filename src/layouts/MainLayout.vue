@@ -22,7 +22,6 @@ import QuickStartGuideDialog from 'src/components/dialogs/QuickStartGuideDialog.
 import Toast from 'primevue/toast';
 import ConfirmDialog from 'primevue/confirmdialog';
 import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
-import RouteLoadingIndicator from 'src/components/layout/RouteLoadingIndicator.vue';
 import { useBatchEmbeddingsPanel } from 'src/composables/useBatchEmbeddingsPanel';
 
 const { variant } = useDeviceVariant();
@@ -53,7 +52,6 @@ const variantComponent = computed(() => {
   <component :is="variantComponent" />
   <Teleport :to="`#route-outlet-${variant}`" defer>
     <RouterView />
-    <RouteLoadingIndicator />
   </Teleport>
 
   <!-- Global chrome — same across every variant, rendered once by the dispatcher -->

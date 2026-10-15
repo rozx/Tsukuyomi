@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import './setup';
 import { CheckedSessions } from 'src/services/book-sync/checked-sessions';
 
 type Session = Parameters<typeof CheckedSessions.put>[1];
@@ -37,13 +38,34 @@ describe('已检查会话交接', () => {
     expect(CheckedSessions.take('b1')).toBeUndefined();
   });
 
+  it('到期未领取的会话主动释放，不必等下一次放入或取出', () => {
+    vi.useFakeTimers();
+    CheckedSessions.put('b1', session('s1'));
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(10 * 60_000);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(CheckedSessions.take('b1')).toBeUndefined();
+  });
+
+  it('取出、丢弃或替换时清掉旧的到期计时', () => {
+    vi.useFakeTimers();
+    CheckedSessions.put('b1', session('s1'));
+    CheckedSessions.put('b1', session('s2'));
+    expect(vi.getTimerCount()).toBe(1);
+    CheckedSessions.take('b1');
+    expect(vi.getTimerCount()).toBe(0);
+    CheckedSessions.put('b2', session('s3'));
+    CheckedSessions.drop('b2');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('超过有效期的会话不再交接', () => {
     vi.useFakeTimers();
     CheckedSessions.put('b1', session('s1'));
-    vi.advanceTimersByTime(10 * 60_000);
+    vi.advanceTimersByTime(10 * 60_000 - 1);
     expect(CheckedSessions.take('b1')).toBeDefined();
     CheckedSessions.put('b1', session('s1'));
-    vi.advanceTimersByTime(10 * 60_000 + 1);
+    vi.advanceTimersByTime(10 * 60_000);
     expect(CheckedSessions.take('b1')).toBeUndefined();
   });
 });

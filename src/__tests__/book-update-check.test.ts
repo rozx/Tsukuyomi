@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import './setup';
-import { createApp, defineComponent, h, nextTick } from 'vue';
-import type { App } from 'vue';
+import { createApp, defineComponent, h, nextTick, ref } from 'vue';
+import type { App, Ref } from 'vue';
 import { createI18n } from 'vue-i18n';
 import { createMemoryHistory, createRouter, type Router } from 'vue-router';
 import messages from '../i18n';
@@ -11,6 +11,7 @@ import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { CheckedSessions } from 'src/services/book-sync/checked-sessions';
 import { CodedLocalizedError } from 'src/utils/coded-localized-error';
 import { useSettingsStore } from 'src/stores/settings';
+import { useBooksStore } from 'src/stores/books';
 import {
   useBookUpdateCheck,
   type BookUpdateCheck,
@@ -66,7 +67,7 @@ let app: App | undefined;
 let check: BookUpdateCheck;
 let router: Router;
 
-async function mount(books: Novel[] = []) {
+async function mount(books: Novel[] | Ref<Novel[]> = []) {
   router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/:p(.*)*', component: { render: () => null } }],
@@ -74,7 +75,7 @@ async function mount(books: Novel[] = []) {
   await router.push('/books');
   const Host = defineComponent({
     setup() {
-      check = useBookUpdateCheck({ books: () => books });
+      check = useBookUpdateCheck({ books: () => (Array.isArray(books) ? books : books.value) });
       return () => h('div');
     },
   });
@@ -426,6 +427,27 @@ describe('书架检查更新', () => {
     expect(open).toHaveBeenCalledTimes(2);
   });
 
+  it('用检查后 store 里的最新书籍生成记录（检查期间写回的章节网址不丢）', async () => {
+    const booksStore = useBooksStore();
+    const before = book({
+      volumes: [{ id: 'v1', title: '卷一', chapters: [{ ...imported('x1'), webUrl: undefined }] }],
+    } as Partial<Novel>);
+    booksStore.books = [before];
+    const linked = book();
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue({
+      quickCheck: vi.fn(() => {
+        // 会话给手动章节写回网址后刷新了书籍
+        booksStore.books = [linked];
+        return Promise.resolve(changeset({ dateNewer: ['x1'] }));
+      }),
+    } as never);
+    await mount();
+
+    await check.checkBookUpdate(before);
+
+    expect(check.updateBadge(linked)).toBe('1 章待比对');
+  });
+
   it('打开更新页跳转到该书的检查更新设置', async () => {
     await mount();
 
@@ -758,6 +780,20 @@ describe('书架全部检查更新', () => {
     calls.forEach((c) => c.resolve(changeset()));
     await running;
     expect(toastAdd).toHaveBeenCalledTimes(1);
+  });
+
+  it('全部检查进行中即使已没有可检查的书，取消按钮仍可用', async () => {
+    controllableSessions();
+    const books = ref(shelf(1));
+    await mount(books);
+
+    void check.checkAllUpdates();
+    await flush();
+    books.value = [];
+    await nextTick();
+
+    expect(check.isCheckingAll.value).toBe(true);
+    expect(check.canCheckAll.value).toBe(true);
   });
 
   it('没有可检查的书时按钮提示原因', async () => {

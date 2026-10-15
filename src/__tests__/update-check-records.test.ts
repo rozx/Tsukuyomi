@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import './setup';
 import type { BookSyncChangeset, BookUpdateRecipe, SyncNewChapter } from 'src/models/book-sync';
 import type { Chapter, Novel } from 'src/models/novel';
 import {

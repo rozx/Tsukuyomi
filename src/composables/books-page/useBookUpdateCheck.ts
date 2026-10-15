@@ -16,6 +16,7 @@ import {
 import { errorText } from 'src/composables/book-sync/useBookSync';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useSettingsStore } from 'src/stores/settings';
+import { useBooksStore } from 'src/stores/books';
 
 /**
  * 书架上的「检查更新」：不进入书籍详情，直接对单本书执行快速检查（只回放目录，不抓正文），
@@ -60,6 +61,7 @@ export type BookUpdateCheck = ReturnType<typeof useBookUpdateCheck>;
 export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
   const { t } = useI18n();
   const settingsStore = useSettingsStore();
+  const booksStore = useBooksStore();
   const toast = useToastWithHistory();
   const router = useRouter();
 
@@ -161,7 +163,13 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
         if (result.status === 'ready' && !controller.signal.aborted)
           CheckedSessions.put(book.id, session);
         outcome = toOutcome(result);
-        if (outcome.kind === 'done') record = buildUpdateCheckRecord(book, result, Date.now());
+        // 检查期间会话可能给手动章节写回网址：用 store 里的最新书籍生成记录
+        if (outcome.kind === 'done')
+          record = buildUpdateCheckRecord(
+            booksStore.getBookById(book.id) ?? book,
+            result,
+            Date.now(),
+          );
       }
     } catch (error) {
       outcome = { kind: 'error', error };
@@ -226,8 +234,9 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
   }
 
   const checkableBooks = computed(() => (options.books?.() ?? []).filter(canCheckUpdate));
-  const canCheckAll = computed(() => checkableBooks.value.length > 0);
   const isCheckingAll = computed(() => checkAllProgress.value !== null);
+  // 进行中按钮是取消入口：即使期间书架已没有可检查的书也要保持可用
+  const canCheckAll = computed(() => isCheckingAll.value || checkableBooks.value.length > 0);
   const checkAllLabel = computed(() => {
     const progress = checkAllProgress.value;
     return progress ? t('libraryUi.checkAllProgress', progress) : t('libraryUi.checkAllUpdates');

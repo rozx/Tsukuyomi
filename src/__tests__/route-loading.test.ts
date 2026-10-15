@@ -25,13 +25,14 @@ function deferredPage() {
 let router: Router;
 let app: App | undefined;
 
-async function setup(slow: () => Promise<Component>) {
+async function setup(slow: () => Promise<Component>, slow2: () => Promise<Component> = slow) {
   router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: Page },
       { path: '/fast', component: Page },
       { path: '/slow', component: slow },
+      { path: '/slow2', component: slow2 },
     ],
   });
   trackRouteLoading(router);
@@ -98,6 +99,23 @@ describe('路由加载状态', () => {
     expect(routeLoading.value).toBe(false);
   });
 
+  it('慢切换被另一个慢切换取代时，旧导航结束不会隐藏新导航的指示', async () => {
+    const first = deferredPage();
+    const second = deferredPage();
+    await setup(first.load, second.load);
+
+    void router.push('/slow').catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(400);
+    const navigating = router.push('/slow2');
+    first.resolve();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(routeLoading.value).toBe(true);
+
+    second.resolve();
+    await navigating;
+    expect(routeLoading.value).toBe(false);
+  });
+
   it('慢切换被新的快速切换取代时立即隐藏', async () => {
     const page = deferredPage();
     await setup(page.load);
@@ -113,9 +131,13 @@ describe('路由加载状态', () => {
 });
 
 describe('内容区加载指示', () => {
-  async function mountIndicator() {
+  /** 指示器挂在常驻的 App 外壳；`withLayout` 时页面布局已渲染出带 route outlet 的 main */
+  async function mountIndicator(withLayout = true) {
     const main = document.createElement('main');
-    document.body.appendChild(main);
+    const outlet = document.createElement('div');
+    outlet.id = 'route-outlet-desktop';
+    main.appendChild(outlet);
+    if (withLayout) document.body.appendChild(main);
     vi.spyOn(main, 'getBoundingClientRect').mockReturnValue({
       top: 40,
       left: 220,
@@ -125,9 +147,9 @@ describe('内容区加载指示', () => {
     const Host = defineComponent({ setup: () => () => h(RouteLoadingIndicator) });
     app = createApp(Host);
     app.use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
-    app.mount(main.appendChild(document.createElement('div')));
+    app.mount(document.body.appendChild(document.createElement('div')));
     await nextTick();
-    return main;
+    return document.body;
   }
 
   it('慢切换时在内容区中央显示「正在加载…」，完成后移除', async () => {
@@ -153,5 +175,20 @@ describe('内容区加载指示', () => {
     await vi.advanceTimersByTimeAsync(500);
     await flush();
     expect(main.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('首屏布局尚未加载时也能显示，铺满视口居中', async () => {
+    const page = deferredPage();
+    await setup(page.load);
+    const body = await mountIndicator(false);
+
+    void router.push('/slow');
+    await vi.advanceTimersByTimeAsync(300);
+    await flush();
+
+    const status = body.querySelector<HTMLElement>('[role="status"]');
+    expect(status?.textContent).toContain('正在加载…');
+    expect(status?.getAttribute('style') ?? '').toBe('');
+    page.resolve();
   });
 });

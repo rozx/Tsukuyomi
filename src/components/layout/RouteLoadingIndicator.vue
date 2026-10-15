@@ -3,20 +3,23 @@
  * 路由切换较慢时的内容区加载指示：在 `<main>` 中央淡入一枚「正在加载…」胶囊。
  * 旧页面在新页面加载完成前保持显示，胶囊浮在其上方，不遮挡交互。
  *
- * 由 MainLayout 与页面一起 Teleport 进当前变体的 route outlet。`<main>` 是滚动容器，
- * 绝对定位会随内容滚走，因此出现时按 `<main>` 的位置换算成固定定位。
+ * 挂在常驻的 App 外壳上：首屏懒加载布局尚未解析时也能显示（此时铺满视口居中）。
+ * 布局已渲染时按当前变体 route outlet 所在的 `<main>` 定位；`<main>` 是滚动容器，
+ * 绝对定位会随内容滚走，因此出现时按其位置换算成固定定位。
  */
 import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { routeLoading } from 'src/router/route-loading';
 
 const { t } = useI18n();
-const anchor = ref<HTMLElement | null>(null);
 const area = ref<Record<string, string>>({});
 
 watch(routeLoading, (loading) => {
   if (!loading) return;
-  const rect = anchor.value?.closest('main')?.getBoundingClientRect();
+  const rect = document
+    .querySelector('[id^="route-outlet-"]')
+    ?.closest('main')
+    ?.getBoundingClientRect();
   area.value = rect
     ? {
         top: `${rect.top}px`,
@@ -29,7 +32,6 @@ watch(routeLoading, (loading) => {
 </script>
 
 <template>
-  <span ref="anchor" hidden />
   <Transition name="route-loading">
     <div v-if="routeLoading" class="route-loading" :style="area" role="status" aria-live="polite">
       <div class="route-loading-pill">

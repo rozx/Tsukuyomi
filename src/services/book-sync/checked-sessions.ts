@@ -5,7 +5,18 @@ type Session = Awaited<ReturnType<typeof BookSyncService.openSession>>;
 /** 交接有效期：超过后目录可能已变化，更新页重新检查 */
 const TTL_MS = 10 * 60_000;
 
-const entries = new Map<string, { session: Session; at: number }>();
+const entries = new Map<
+  string,
+  { session: Session; at: number; expiry: ReturnType<typeof setTimeout> }
+>();
+
+function remove(bookId: string): { session: Session; at: number } | undefined {
+  const entry = entries.get(bookId);
+  if (!entry) return undefined;
+  clearTimeout(entry.expiry);
+  entries.delete(bookId);
+  return entry;
+}
 
 /**
  * 书架快速检查完成后的会话交接：进入该书的检查更新页时直接复用，不再重复回放目录。
@@ -15,18 +26,18 @@ const entries = new Map<string, { session: Session; at: number }>();
  */
 export const CheckedSessions = {
   put(bookId: string, session: Session): void {
-    const now = Date.now();
-    for (const [id, entry] of entries) if (now - entry.at > TTL_MS) entries.delete(id);
-    entries.set(bookId, { session, at: now });
+    remove(bookId);
+    // 会话持有书籍快照与完整目录：到期主动释放，不等下一次放入或取出
+    const expiry = setTimeout(() => remove(bookId), TTL_MS);
+    entries.set(bookId, { session, at: Date.now(), expiry });
   },
 
   take(bookId: string): Session | undefined {
-    const entry = entries.get(bookId);
-    entries.delete(bookId);
-    return entry && Date.now() - entry.at <= TTL_MS ? entry.session : undefined;
+    const entry = remove(bookId);
+    return entry && Date.now() - entry.at < TTL_MS ? entry.session : undefined;
   },
 
   drop(bookId: string): void {
-    entries.delete(bookId);
+    remove(bookId);
   },
 };
