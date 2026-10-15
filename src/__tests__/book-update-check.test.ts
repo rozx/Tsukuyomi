@@ -41,12 +41,17 @@ function changeset(partial: Partial<BookSyncChangeset> = {}): BookSyncChangeset 
   };
 }
 
+/** 已导入章节 x1、x2：快速检查的「待比对」只会出现在已导入章节上 */
+function imported(url: string) {
+  return { id: url, title: url, webUrl: url, createdAt: new Date('2026-01-01T00:00:00Z') };
+}
+
 function book(partial: Partial<Novel> = {}): Novel {
   return {
     id: 'b1',
     title: '测试书',
     webUrl: ['https://kakuyomu.jp/works/123'],
-    volumes: [],
+    volumes: [{ id: 'v1', title: '卷一', chapters: [imported('x1'), imported('x2')] }],
     createdAt: new Date(0),
     lastEdited: new Date(0),
     ...partial,
@@ -283,6 +288,69 @@ describe('书架检查更新', () => {
     resolve(changeset());
     await running;
     expect(CheckedSessions.take('b1')).toBe(second);
+  });
+
+  it('刷新页面后（重新创建）检查结果仍在', async () => {
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(
+      fakeSession(changeset({ new: [added(1)] })) as never,
+    );
+    await mount();
+    await check.checkBookUpdate(book());
+    app!.unmount();
+    app = undefined;
+
+    await mount();
+
+    expect(check.updateBadge(book())).toBe('1 新章');
+  });
+
+  it('新章节导入书籍后角标自动消失', async () => {
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(
+      fakeSession(changeset({ new: [added(1)] })) as never,
+    );
+    await mount();
+    await check.checkBookUpdate(book());
+
+    const imported = book({
+      volumes: [{ id: 'v1', title: '卷一', chapters: [{ id: 'c1', webUrl: 'u1' }] }],
+    } as Partial<Novel>);
+    expect(check.updateBadge(imported)).toBeNull();
+  });
+
+  it('检查失败时清除之前保存的结果', async () => {
+    vi.spyOn(BookSyncService, 'openSession')
+      .mockResolvedValueOnce(fakeSession(changeset({ new: [added(1)] })) as never)
+      .mockRejectedValueOnce(new Error('NETWORK: 断网'));
+    await mount();
+    await check.checkBookUpdate(book());
+    await check.checkBookUpdate(book());
+    app!.unmount();
+    app = undefined;
+
+    await mount();
+
+    expect(check.updateBadge(book())).toBeNull();
+  });
+
+  it('检查被中止时保留上一次的结果', async () => {
+    let resolve!: (value: BookSyncChangeset) => void;
+    vi.spyOn(BookSyncService, 'openSession')
+      .mockResolvedValueOnce(fakeSession(changeset({ new: [added(1)] })) as never)
+      .mockResolvedValueOnce(
+        fakeSession(new Promise<BookSyncChangeset>((r) => (resolve = r))) as never,
+      );
+    await mount();
+    await check.checkBookUpdate(book());
+    const running = check.checkBookUpdate(book());
+    await flush();
+    app!.unmount();
+    app = undefined;
+    resolve(changeset({ status: 'cancelled' }));
+    await running;
+
+    await mount();
+
+    expect(check.updateBadge(book())).toBe('1 新章');
   });
 
   it('打开更新页跳转到该书的检查更新设置', async () => {

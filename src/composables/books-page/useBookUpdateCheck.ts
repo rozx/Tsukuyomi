@@ -6,6 +6,13 @@ import type { Novel } from 'src/models/novel';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { builtinSite } from 'src/services/book-sync/recipe';
 import { CheckedSessions } from 'src/services/book-sync/checked-sessions';
+import {
+  buildUpdateCheckRecord,
+  loadUpdateCheckRecords,
+  pendingUpdateCounts,
+  saveUpdateCheckRecords,
+  type UpdateCheckRecord,
+} from 'src/services/book-sync/update-check-records';
 import { errorText } from 'src/composables/book-sync/useBookSync';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useSettingsStore } from 'src/stores/settings';
@@ -18,12 +25,9 @@ import { useSettingsStore } from 'src/stores/settings';
  * 「全部检查更新」对所有可检查的书限并发执行同样的快速检查，静默收集结果，
  * 跑完只弹一条汇总提示；各书角标照常更新。
  *
- * 由 useBooksPage 在页面 dispatcher 中创建一次，检查状态跨设备变体保留。
+ * 由 useBooksPage 在页面 dispatcher 中创建一次，检查状态跨设备变体保留；检查结果另存本机，
+ * 刷新页面后角标仍在，并按当前书籍重新计算（见 update-check-records）。
  */
-
-type CheckState =
-  | { status: 'checking' }
-  | { status: 'done'; newCount: number; changedCount: number };
 
 /** 单本检查的结果，由调用方决定如何提示 */
 type CheckOutcome =
@@ -48,16 +52,31 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
   const toast = useToastWithHistory();
   const router = useRouter();
 
-  const states = shallowRef(new Map<string, CheckState>());
+  const checking = shallowRef(new Set<string>());
+  const records = shallowRef(loadUpdateCheckRecords());
   const controllers = new Map<string, AbortController>();
   const checkAllProgress = shallowRef<{ checked: number; total: number } | null>(null);
   let checkAllController: AbortController | null = null;
 
-  function setState(bookId: string, state: CheckState | undefined): void {
-    const next = new Map(states.value);
-    if (state) next.set(bookId, state);
+  function setChecking(bookId: string, on: boolean): void {
+    const next = new Set(checking.value);
+    if (on) next.add(bookId);
     else next.delete(bookId);
-    states.value = next;
+    checking.value = next;
+  }
+
+  /** 写入或删除一本书的检查结果并持久化；顺带清掉已不在书架上的书 */
+  function setRecord(bookId: string, record: UpdateCheckRecord | undefined): void {
+    const next = { ...records.value };
+    if (record) next[bookId] = record;
+    else delete next[bookId];
+    const shelf = options.books?.();
+    if (shelf?.length) {
+      const ids = new Set(shelf.map((book) => book.id));
+      for (const id of Object.keys(next)) if (id !== bookId && !ids.has(id)) delete next[id];
+    }
+    records.value = next;
+    saveUpdateCheckRecords(next);
   }
 
   /** 已录制配方，或首个网址属于内置站点（与 resolveRecipe 的判定一致） */
@@ -73,7 +92,7 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
   }
 
   function isCheckingUpdate(book: Novel): boolean {
-    return states.value.get(book.id)?.status === 'checking';
+    return checking.value.has(book.id);
   }
 
   function updateCheckIcon(book: Novel): string {
@@ -86,10 +105,11 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
 
   /** 有待处理更新时的角标文字；未检查、检查中或已是最新时为 null */
   function updateBadge(book: Novel): string | null {
-    const state = states.value.get(book.id);
-    if (state?.status !== 'done') return null;
-    if (state.newCount) return t('libraryUi.updateBadgeNew', { count: state.newCount });
-    if (state.changedCount) return t('libraryUi.updateBadgeChanged', { count: state.changedCount });
+    const record = records.value[book.id];
+    if (!record || isCheckingUpdate(book)) return null;
+    const { newCount, changedCount } = pendingUpdateCounts(book, record);
+    if (newCount) return t('libraryUi.updateBadgeNew', { count: newCount });
+    if (changedCount) return t('libraryUi.updateBadgeChanged', { count: changedCount });
     return null;
   }
 
@@ -100,7 +120,7 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
   }
 
   /**
-   * 只检查不提示：更新检查中 / 角标状态并返回结果。同一本书已在检查中时返回 null。
+   * 只检查不提示：更新检查中状态与保存的检查结果并返回结果（取消时保留上一次结果）。同一本书已在检查中时返回 null。
    * `parent` 中止（全部检查被取消）时一并中止本书检查。
    */
   async function runCheck(book: Novel, parent?: AbortSignal): Promise<CheckOutcome | null> {
@@ -110,8 +130,9 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
     parent?.addEventListener('abort', abort);
     controllers.set(book.id, controller);
     CheckedSessions.drop(book.id);
-    setState(book.id, { status: 'checking' });
+    setChecking(book.id, true);
     let outcome: CheckOutcome = { kind: 'cancelled' };
+    let record: UpdateCheckRecord | undefined;
     try {
       const session = await BookSyncService.openSession({ target: { bookId: book.id } });
       if (!controller.signal.aborted) {
@@ -120,6 +141,7 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
         if (result.status === 'ready' && !controller.signal.aborted)
           CheckedSessions.put(book.id, session);
         outcome = toOutcome(result);
+        if (outcome.kind === 'done') record = buildUpdateCheckRecord(book, result, Date.now());
       }
     } catch (error) {
       outcome = { kind: 'error', error };
@@ -128,12 +150,8 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
       if (controllers.get(book.id) === controller) controllers.delete(book.id);
     }
     if (controller.signal.aborted) outcome = { kind: 'cancelled' };
-    setState(
-      book.id,
-      outcome.kind === 'done'
-        ? { status: 'done', newCount: outcome.newCount, changedCount: outcome.changedCount }
-        : undefined,
-    );
+    setChecking(book.id, false);
+    if (outcome.kind !== 'cancelled') setRecord(book.id, record);
     return outcome;
   }
 
