@@ -91,7 +91,14 @@ async function flush() {
   }
 }
 
+/** 推进假时钟（只假造 Date，Promise 与定时器照常） */
+function later(ms: number) {
+  vi.setSystemTime(Date.now() + ms);
+}
+
 beforeEach(async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date('2026-10-14T12:00:00Z'));
   toastAdd.mockClear();
   await useSettingsStore().setUiLocale('zh-CN');
 });
@@ -101,6 +108,7 @@ afterEach(() => {
   app?.unmount();
   app = undefined;
   vi.restoreAllMocks();
+  vi.useRealTimers();
   document.body.innerHTML = '';
 });
 
@@ -233,6 +241,7 @@ describe('书架检查更新', () => {
 
     await check.checkBookUpdate(book());
     expect(check.updateBadge(book())).toBe('1 新章');
+    later(61_000);
     await check.checkBookUpdate(book());
 
     expect(open).toHaveBeenCalledTimes(2);
@@ -281,6 +290,7 @@ describe('书架检查更新', () => {
     await mount();
 
     await check.checkBookUpdate(book());
+    later(61_000);
     const running = check.checkBookUpdate(book());
     await flush();
     expect(CheckedSessions.take('b1')).toBeUndefined();
@@ -323,6 +333,7 @@ describe('书架检查更新', () => {
       .mockRejectedValueOnce(new Error('NETWORK: 断网'));
     await mount();
     await check.checkBookUpdate(book());
+    later(61_000);
     await check.checkBookUpdate(book());
     app!.unmount();
     app = undefined;
@@ -341,6 +352,7 @@ describe('书架检查更新', () => {
       );
     await mount();
     await check.checkBookUpdate(book());
+    later(61_000);
     const running = check.checkBookUpdate(book());
     await flush();
     app!.unmount();
@@ -351,6 +363,67 @@ describe('书架检查更新', () => {
     await mount();
 
     expect(check.updateBadge(book())).toBe('1 新章');
+  });
+
+  it('60 秒内再次检查同一本书不发请求，重新提示上次结果', async () => {
+    const open = vi
+      .spyOn(BookSyncService, 'openSession')
+      .mockResolvedValue(fakeSession(changeset({ new: [added(1)] })) as never);
+    await mount();
+    await check.checkBookUpdate(book());
+    toastAdd.mockClear();
+
+    later(59_000);
+    await check.checkBookUpdate(book());
+
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(check.updateBadge(book())).toBe('1 新章');
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: '发现更新', detail: '《测试书》有 1 个新章节' }),
+    );
+  });
+
+  it('冷却期内重新提示的结果按当前书籍计算', async () => {
+    vi.spyOn(BookSyncService, 'openSession').mockResolvedValue(
+      fakeSession(changeset({ new: [added(1)] })) as never,
+    );
+    await mount();
+    await check.checkBookUpdate(book());
+    toastAdd.mockClear();
+
+    const imported = book({
+      volumes: [{ id: 'v1', title: '卷一', chapters: [{ id: 'c1', webUrl: 'u1' }] }],
+    } as Partial<Novel>);
+    await check.checkBookUpdate(imported);
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: '已是最新' }),
+    );
+  });
+
+  it('超过 60 秒再次检查会重新请求', async () => {
+    const open = vi
+      .spyOn(BookSyncService, 'openSession')
+      .mockResolvedValue(fakeSession(changeset()) as never);
+    await mount();
+    await check.checkBookUpdate(book());
+
+    later(60_001);
+    await check.checkBookUpdate(book());
+
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  it('上次检查失败的书没有冷却，可以立即重试', async () => {
+    const open = vi
+      .spyOn(BookSyncService, 'openSession')
+      .mockRejectedValueOnce(new Error('NETWORK: 断网'))
+      .mockResolvedValueOnce(fakeSession(changeset()) as never);
+    await mount();
+    await check.checkBookUpdate(book());
+    await check.checkBookUpdate(book());
+
+    expect(open).toHaveBeenCalledTimes(2);
   });
 
   it('打开更新页跳转到该书的检查更新设置', async () => {
@@ -570,6 +643,7 @@ describe('书架全部检查更新', () => {
     await flush();
     expect(calls).toHaveLength(3);
 
+    later(1_001);
     void check.toggleCheckAll();
     calls[1]!.resolve(changeset({ status: 'cancelled' }));
     calls[2]!.resolve(changeset({ status: 'cancelled' }));
@@ -618,6 +692,7 @@ describe('书架全部检查更新', () => {
     await flush();
     expect(check.checkAllTitle.value).toBe('取消全部检查（已检查 0 / 共 3）');
 
+    later(1_001);
     void check.toggleCheckAll();
     calls.forEach((c) => c.resolve(changeset({ status: 'cancelled' })));
     await running;
@@ -625,6 +700,64 @@ describe('书架全部检查更新', () => {
     expect(calls.every((c) => c.signal?.aborted)).toBe(true);
     expect(check.isCheckingAll.value).toBe(false);
     expect(toastAdd).not.toHaveBeenCalled();
+  });
+
+  it('全部检查跳过 10 分钟内检查过的书：不发请求，但计入进度与汇总', async () => {
+    const calls = controllableSessions();
+    const books = shelf(2);
+    await mount(books);
+    const single = check.checkBookUpdate(books[0]!);
+    await flush();
+    calls[0]!.resolve(changeset({ new: [added(1)] }));
+    await single;
+    toastAdd.mockClear();
+
+    later(9 * 60_000);
+    const running = check.checkAllUpdates();
+    await flush();
+    expect(calls.map((c) => c.bookId)).toEqual(['b1', 'b2']);
+    calls[1]!.resolve(changeset());
+    await running;
+
+    expect(toastAdd).toHaveBeenCalledTimes(1);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: '发现更新', detail: '1 本书有更新' }),
+    );
+  });
+
+  it('超过 10 分钟的书全部检查会重新请求', async () => {
+    const calls = controllableSessions();
+    const books = shelf(1);
+    await mount(books);
+    const single = check.checkBookUpdate(books[0]!);
+    await flush();
+    calls[0]!.resolve(changeset());
+    await single;
+
+    later(10 * 60_000 + 1);
+    const running = check.checkAllUpdates();
+    await flush();
+    calls[1]!.resolve(changeset());
+    await running;
+
+    expect(calls).toHaveLength(2);
+  });
+
+  it('开始全部检查后 1 秒内再点不会取消（防双击）', async () => {
+    const calls = controllableSessions();
+    await mount(shelf(2));
+
+    const running = check.toggleCheckAll();
+    await flush();
+    later(500);
+    void check.toggleCheckAll();
+    await flush();
+
+    expect(check.isCheckingAll.value).toBe(true);
+    expect(calls.every((c) => !c.signal?.aborted)).toBe(true);
+    calls.forEach((c) => c.resolve(changeset()));
+    await running;
+    expect(toastAdd).toHaveBeenCalledTimes(1);
   });
 
   it('没有可检查的书时按钮提示原因', async () => {

@@ -39,6 +39,17 @@ type CheckOutcome =
 /** 全部检查的并发上限：避免同时向站点发起过多目录请求 */
 const CHECK_ALL_CONCURRENCY = 2;
 
+/**
+ * 冷却：最近检查过的书直接沿用上次结果、不再请求目录，避免连点触发站点限流
+ * （连续被拒会让该站点熔断数分钟，连带导入与更新页也无法请求）。
+ * 单本按钮冷却较短；全部检查沿用与更新页会话交接相同的有效期。强制刷新走更新页的「重新检查」。
+ */
+const SINGLE_CHECK_COOLDOWN_MS = 60_000;
+const CHECK_ALL_FRESH_MS = 10 * 60_000;
+
+/** 开始全部检查后这段时间内的点击不当作取消，避免双击刚开始就被取消 */
+const CANCEL_GRACE_MS = 1_000;
+
 interface BookUpdateCheckOptions {
   /** 「全部检查更新」的书籍来源（书架全部书籍，不受搜索过滤影响） */
   books?: () => readonly Novel[];
@@ -57,6 +68,7 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
   const controllers = new Map<string, AbortController>();
   const checkAllProgress = shallowRef<{ checked: number; total: number } | null>(null);
   let checkAllController: AbortController | null = null;
+  let checkAllStartedAt = 0;
 
   function setChecking(bookId: string, on: boolean): void {
     const next = new Set(checking.value);
@@ -122,9 +134,17 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
   /**
    * 只检查不提示：更新检查中状态与保存的检查结果并返回结果（取消时保留上一次结果）。同一本书已在检查中时返回 null。
    * `parent` 中止（全部检查被取消）时一并中止本书检查。
+   * `freshForMs` 内检查过的书不发请求，按当前书籍重算上次结果返回。
    */
-  async function runCheck(book: Novel, parent?: AbortSignal): Promise<CheckOutcome | null> {
+  async function runCheck(
+    book: Novel,
+    freshForMs: number,
+    parent?: AbortSignal,
+  ): Promise<CheckOutcome | null> {
     if (controllers.has(book.id)) return null;
+    const previous = records.value[book.id];
+    if (previous && Date.now() - previous.checkedAt < freshForMs)
+      return { kind: 'done', ...pendingUpdateCounts(book, previous) };
     const controller = new AbortController();
     const abort = () => controller.abort();
     parent?.addEventListener('abort', abort);
@@ -201,7 +221,7 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
   }
 
   async function checkBookUpdate(book: Novel): Promise<void> {
-    const outcome = await runCheck(book);
+    const outcome = await runCheck(book, SINGLE_CHECK_COOLDOWN_MS);
     if (outcome) notify(book, outcome);
   }
 
@@ -253,6 +273,7 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
     if (!queue.length) return;
     const controller = new AbortController();
     checkAllController = controller;
+    checkAllStartedAt = Date.now();
     const total = queue.length;
     const outcomes: CheckOutcome[] = [];
     checkAllProgress.value = { checked: 0, total };
@@ -261,7 +282,7 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
     const worker = async () => {
       for (let book = queue.shift(); book; book = queue.shift()) {
         if (controller.signal.aborted) return;
-        const outcome = await runCheck(book, controller.signal);
+        const outcome = await runCheck(book, CHECK_ALL_FRESH_MS, controller.signal);
         // 已在单独检查中的书（返回 null）由它自己的流程提示，这里只计入进度
         if (outcome) outcomes.push(outcome);
         if (controller.signal.aborted) return;
@@ -282,10 +303,10 @@ export function useBookUpdateCheck(options: BookUpdateCheckOptions = {}) {
     checkAllController?.abort();
   }
 
-  /** 工具栏按钮：空闲时开始全部检查，进行中再点则取消 */
+  /** 工具栏按钮：空闲时开始全部检查，进行中再点则取消（刚开始的 1 秒内不响应，防双击） */
   function toggleCheckAll(): Promise<void> {
     if (checkAllController) {
-      cancelCheckAll();
+      if (Date.now() - checkAllStartedAt >= CANCEL_GRACE_MS) cancelCheckAll();
       return Promise.resolve();
     }
     return checkAllUpdates();
