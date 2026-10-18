@@ -39,7 +39,8 @@ export class AiSdkAIService implements AIService {
     const model = createModel(this.provider, config, request);
     const messages = toModelMessages(request, this.provider);
     const limit = request.maxOutputTokens ?? config.maxOutputTokens;
-    const temperature = request.temperature ?? config.temperature;
+    const temperature =
+      config.temperatureEnabled === false ? undefined : (request.temperature ?? config.temperature);
     const result = streamText({
       ...model,
       instructions: messages.filter((message) => message.role === 'system'),

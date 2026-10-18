@@ -12,13 +12,13 @@
         <label :for="checkboxId" class="ml-2 text-sm cursor-pointer">{{ label }}</label>
       </div>
       <span
-        v-if="enabled"
+        v-if="enabled && showTemperature"
         class="text-sm font-medium text-accent-400 px-2 py-0.5 bg-accent-400/10 rounded"
       >
         {{ temperature }}
       </span>
     </div>
-    <div v-if="enabled" class="mt-2">
+    <div v-if="enabled && showTemperature" class="mt-2">
       <Slider
         :id="sliderId"
         :model-value="temperature"
@@ -37,11 +37,16 @@ import { computed } from 'vue';
 import Checkbox from 'primevue/checkbox';
 import Slider from 'primevue/slider';
 
-const props = defineProps<{
-  label: string;
-  idPrefix: string;
-  idSuffix: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    label: string;
+    idPrefix: string;
+    idSuffix: string;
+    /** 模型关闭温度时隐藏任务温度滑块 */
+    showTemperature?: boolean;
+  }>(),
+  { showTemperature: true },
+);
 
 // 双向绑定：任务启用状态与温度（通过 defineModel 避免 prop 突变）
 const enabled = defineModel<boolean>('enabled', { required: true });

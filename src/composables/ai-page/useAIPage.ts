@@ -315,6 +315,7 @@ function createAIPageContext() {
     provider: formData.provider as AIProvider,
     model: formData.model!,
     temperature: formData.temperature!,
+    temperatureEnabled: formData.temperatureEnabled ?? true,
     maxInputTokens: formData.maxInputTokens!,
     maxOutputTokens: formData.maxOutputTokens!,
     ...(formData.thinkingLevel !== undefined ? { thinkingLevel: formData.thinkingLevel } : {}),

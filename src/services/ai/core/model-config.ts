@@ -18,5 +18,9 @@ export function buildModelServiceConfig(
     useCorsProxy: model.useCorsProxy,
     ...(model.customHeaders ? { customHeaders: model.customHeaders } : {}),
     ...overrides,
+    // 模型关闭温度时，任务覆盖的温度也一并丢弃
+    ...(model.temperatureEnabled === false
+      ? { temperature: undefined, temperatureEnabled: false }
+      : {}),
   };
 }

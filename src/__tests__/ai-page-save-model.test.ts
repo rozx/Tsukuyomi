@@ -119,6 +119,20 @@ describe('useAIPage 保存模型', () => {
       expect((await aiModelService.getModel(saved.id))?.thinkingLevel).toBe('provider-default'),
     );
   });
+  it('温度开关经新增和编辑后完整落盘', async () => {
+    const store = mountPage();
+    await store.loadModels();
+    ctx.addModel();
+    ctx.handleSave(makeFormData({ temperatureEnabled: false }));
+    const saved = store.models.find((m) => m.name === '测试模型')!;
+    expect((await persisted(saved.id))?.temperatureEnabled).toBe(false);
+    ctx.editModel(store.getModelById(saved.id)!);
+    ctx.handleSave(makeFormData({ temperatureEnabled: true }));
+    await vi.waitFor(async () =>
+      expect((await aiModelService.getModel(saved.id))?.temperatureEnabled).toBe(true),
+    );
+  });
+
   it('新增模型时保存 customHeaders', async () => {
     const store = mountPage();
     ctx.addModel();
