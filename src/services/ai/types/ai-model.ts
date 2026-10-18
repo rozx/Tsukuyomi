@@ -40,6 +40,11 @@ export interface AIModel {
   provider: AIProvider;
   model: string;
   temperature: number;
+  /**
+   * 是否向厂商发送温度参数（部分新模型已不支持温度）
+   * undefined 或 true 表示发送（默认行为），false 表示所有任务都不发送温度
+   */
+  temperatureEnabled?: boolean | undefined;
   thinkingLevel?: AIThinkingLevel | undefined;
   /**
    * 最大输入 token 数（上下文窗口大小）

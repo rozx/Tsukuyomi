@@ -65,6 +65,7 @@ const createEmptyAIModelForm = (): AIModelFormData => ({
   provider: 'openai',
   model: '',
   temperature: 0.7,
+  temperatureEnabled: true,
   thinkingLevel: 'provider-default',
   maxInputTokens: 0, // 0 表示无限制
   maxOutputTokens: 0, // 0 表示无限制
@@ -195,12 +196,13 @@ const resolveTempIdentity = (): Pick<AIModel, 'id' | 'name' | 'model' | 'apiKey'
   apiKey: formData.value.apiKey || '',
 });
 
-// 解析临时模型的数值限制（temperature / maxInputTokens / maxOutputTokens）
+// 解析临时模型的数值限制（temperature / temperatureEnabled / maxInputTokens / maxOutputTokens）
 const resolveTempLimits = (): Pick<
   AIModel,
-  'temperature' | 'maxInputTokens' | 'maxOutputTokens'
+  'temperature' | 'temperatureEnabled' | 'maxInputTokens' | 'maxOutputTokens'
 > => ({
   temperature: formData.value.temperature ?? 0.7,
+  temperatureEnabled: formData.value.temperatureEnabled ?? true,
   maxInputTokens: formData.value.maxInputTokens ?? 0,
   maxOutputTokens: formData.value.maxOutputTokens ?? 0,
 });
@@ -370,6 +372,7 @@ const buildEditFormData = (model: AIModel): AIModelFormData => {
   return {
     ...model,
     thinkingLevel: model.thinkingLevel ?? 'provider-default',
+    temperatureEnabled: model.temperatureEnabled ?? true,
     useCorsProxy: model.useCorsProxy ?? true,
     isDefault: {
       ...defaultTasks,
@@ -600,6 +603,7 @@ watch(
             :key="task.key"
             v-model:enabled="formData.isDefault[task.key].enabled"
             v-model:temperature="formData.isDefault[task.key].temperature"
+            :show-temperature="formData.temperatureEnabled !== false"
             :label="task.label"
             :id-prefix="idPrefix"
             :id-suffix="task.key"

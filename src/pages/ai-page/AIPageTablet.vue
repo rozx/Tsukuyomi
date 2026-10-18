@@ -183,7 +183,13 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
                 <div class="ait-params">
                   <div class="ait-param">
                     <div class="ait-param-label">{{ t('aiUi.temperature') }}</div>
-                    <div class="ait-param-value">{{ model.temperature }}</div>
+                    <div class="ait-param-value">
+                      {{
+                        model.temperatureEnabled === false
+                          ? t('aiUi.temperatureOff')
+                          : model.temperature
+                      }}
+                    </div>
                   </div>
                   <div class="ait-param">
                     <div class="ait-param-label">{{ t('aiUi.contextShort') }}</div>

@@ -39,8 +39,27 @@
       <small v-if="formErrors.name" class="p-error block mt-1">{{ t(formErrors.name) }}</small>
     </div>
 
+    <!-- 温度开关：部分新模型已不支持温度参数 -->
+    <div
+      class="flex items-center justify-between py-3 px-3 bg-white/5 rounded-lg border border-white/10"
+    >
+      <div>
+        <label
+          :for="`${idPrefix}-temperatureEnabled`"
+          class="block text-sm font-medium text-moon/90"
+          >{{ t('aiUi.sendTemperature') }}</label
+        >
+        <small class="text-xs text-moon/60">{{ t('aiUi.sendTemperatureHint') }}</small>
+      </div>
+      <ToggleSwitch
+        :id="`${idPrefix}-temperatureEnabled`"
+        :model-value="formData.temperatureEnabled !== false"
+        @update:model-value="formData.temperatureEnabled = $event"
+      />
+    </div>
+
     <!-- 温度 -->
-    <div class="space-y-2">
+    <div v-if="formData.temperatureEnabled !== false" class="space-y-2">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <label :for="`${idPrefix}-temperature`" class="block text-sm font-medium text-moon/90">{{
           t('aiUi.temperatureRequired')

@@ -66,6 +66,7 @@ export default {
     edit: 'Edit',
     delete: 'Delete',
     temperature: 'Temperature',
+    temperatureOff: 'Not sent',
     contextWindow: 'Context window',
     contextShort: 'Context',
     maxOutput: 'Max output',
@@ -93,6 +94,9 @@ export default {
     modelName: 'Model name *',
     modelNamePlaceholder: 'For example: GPT-4 translation model',
     temperatureRequired: 'Temperature (0–2) *',
+    sendTemperature: 'Send temperature',
+    sendTemperatureHint:
+      'Some newer models no longer support temperature. When off, no task sends it.',
     provider: 'Provider *',
     providerPlaceholder: 'Select provider',
     apiKeyPlaceholder: 'Enter API key',

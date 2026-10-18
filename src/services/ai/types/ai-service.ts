@@ -8,6 +8,7 @@ export interface AIServiceConfig {
   baseUrl?: string | undefined;
   model: string;
   temperature?: number | undefined;
+  temperatureEnabled?: boolean | undefined; // false 时忽略配置与请求中的温度
   thinkingLevel?: AIThinkingLevel | undefined;
   maxInputTokens?: number | undefined; // 最大输入 token 数（上下文窗口）
   maxOutputTokens?: number | undefined; // 最大输出 token 数

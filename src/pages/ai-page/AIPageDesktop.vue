@@ -201,7 +201,11 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
                     <div class="ai-model-meta-grid">
                       <div class="ai-model-meta-item">
                         <span>{{ t('aiUi.temperature') }}</span>
-                        <strong>{{ model.temperature }}</strong>
+                        <strong>{{
+                          model.temperatureEnabled === false
+                            ? t('aiUi.temperatureOff')
+                            : model.temperature
+                        }}</strong>
                       </div>
                       <div class="ai-model-meta-item">
                         <span>{{ t('aiUi.contextWindow') }}</span>
