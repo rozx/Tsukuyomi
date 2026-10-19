@@ -11,7 +11,7 @@ interface ModelList {
 
 export async function listModels(
   provider: AIProvider,
-  config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
+  config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy' | 'signal'>,
 ): Promise<ModelInfo[]> {
   try {
     const base = (config.baseUrl?.trim() || 'https://generativelanguage.googleapis.com').replace(
@@ -28,6 +28,7 @@ export async function listModels(
         ...(provider === 'openai' ? { Authorization: `Bearer ${config.apiKey}` } : {}),
         ...config.customHeaders,
       },
+      ...(config.signal ? { signal: config.signal } : {}),
     });
     if (!response.ok)
       throw new LocalizedError('AI_MODEL_LIST_FAILED', 'settingsUi.models.errors.modelListFailed', {

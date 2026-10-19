@@ -192,6 +192,24 @@ describe.each([
     expect(transport.requests[0]?.headers.get('x-fixture')).toBe('models');
   });
 
+  it('模型列表请求把取消信号传给 fetch，取消后不返回结果', async () => {
+    const controller = new AbortController();
+    transport.fetch.mockImplementationOnce(
+      (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
+        }),
+    );
+    const pending = service.getAvailableModels({ ...config, signal: controller.signal });
+    await vi.waitFor(() => expect(transport.fetch).toHaveBeenCalled());
+    expect(transport.fetch.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+    controller.abort();
+    const result = await pending;
+    expect(result.models ?? []).toEqual([]);
+  });
+
   it('模型列表失败遵守各提供商的退化契约', async () => {
     transport.responses.push(
       Response.json({ error: { message: 'listing denied' } }, { status: 401 }),

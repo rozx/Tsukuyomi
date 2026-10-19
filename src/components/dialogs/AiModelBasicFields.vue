@@ -7,7 +7,7 @@
       <label :for="`${idPrefix}-enabled`" class="block text-sm font-medium text-moon/90">{{
         t('aiUi.enableModel')
       }}</label>
-      <ToggleSwitch :id="`${idPrefix}-enabled`" v-model="formData.enabled" />
+      <ToggleSwitch :input-id="`${idPrefix}-enabled`" v-model="formData.enabled" />
     </div>
 
     <!-- CORS 代理（仅浏览器模式显示） -->
@@ -21,7 +21,7 @@
         }}</label>
         <small class="text-xs text-moon/60">{{ t('aiUi.corsHint') }}</small>
       </div>
-      <ToggleSwitch :id="`${idPrefix}-useCorsProxy`" v-model="formData.useCorsProxy" />
+      <ToggleSwitch :input-id="`${idPrefix}-useCorsProxy`" v-model="formData.useCorsProxy" />
     </div>
 
     <!-- 模型名称 -->
@@ -52,7 +52,7 @@
         <small class="text-xs text-moon/60">{{ t('aiUi.sendTemperatureHint') }}</small>
       </div>
       <ToggleSwitch
-        :id="`${idPrefix}-temperatureEnabled`"
+        :input-id="`${idPrefix}-temperatureEnabled`"
         :model-value="formData.temperatureEnabled !== false"
         @update:model-value="formData.temperatureEnabled = $event"
       />

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 
-import { ref, computed, watch, provide } from 'vue';
+import { ref, computed, watch, provide, onBeforeUnmount } from 'vue';
 import { cloneDeep, isEqual } from 'lodash';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
@@ -281,15 +281,16 @@ const canFetchModels = (): boolean => {
 };
 
 // 构建 getAvailableModels 的请求配置
-const buildModelsRequestConfig = (): Parameters<
-  (typeof AIServiceFactory)['getAvailableModels']
->[1] => {
+const buildModelsRequestConfig = (
+  signal: AbortSignal,
+): Parameters<(typeof AIServiceFactory)['getAvailableModels']>[1] => {
   const baseUrl = formData.value.baseUrl;
   const config: Parameters<(typeof AIServiceFactory)['getAvailableModels']>[1] = {
     // apiKey 由 canFetchModels() 保证非空
     apiKey: formData.value.apiKey!,
     baseUrl,
     useCorsProxy: formData.value.useCorsProxy,
+    signal,
   };
   if (formData.value.customHeaders && Object.keys(formData.value.customHeaders).length > 0) {
     config.customHeaders = formData.value.customHeaders;
@@ -297,25 +298,42 @@ const buildModelsRequestConfig = (): Parameters<
   return config;
 };
 
+// 进行中的模型列表请求；新请求或关闭对话框时中止，避免旧配置（如旧代理开关）的结果覆盖列表
+let modelsController: AbortController | undefined;
+const abortModelsRequest = () => {
+  modelsController?.abort();
+  modelsController = undefined;
+  isLoadingModels.value = false;
+};
+onBeforeUnmount(abortModelsRequest);
+
 // 获取可用模型列表
 const fetchAvailableModels = async () => {
+  abortModelsRequest();
   if (!canFetchModels()) {
     availableModels.value = [];
     return;
   }
 
+  const controller = new AbortController();
+  modelsController = controller;
   isLoadingModels.value = true;
   try {
     const result = await AIServiceFactory.getAvailableModels(
       formData.value.provider as AIProvider,
-      buildModelsRequestConfig(),
+      buildModelsRequestConfig(controller.signal),
     );
+    if (controller.signal.aborted) return;
     availableModels.value = result.success && result.models ? result.models : [];
   } catch (error) {
+    if (controller.signal.aborted) return;
     console.error('获取可用模型列表失败:', error);
     availableModels.value = [];
   } finally {
-    isLoadingModels.value = false;
+    if (modelsController === controller) {
+      modelsController = undefined;
+      isLoadingModels.value = false;
+    }
   }
 };
 
@@ -339,9 +357,9 @@ watch(
   { flush: 'sync' },
 );
 
-// 监听 apiKey 和 baseUrl 变化，自动获取模型列表
+// 监听 apiKey、baseUrl 与 CORS 代理开关变化，自动获取模型列表
 watch(
-  [() => formData.value.apiKey, () => formData.value.baseUrl],
+  [() => formData.value.apiKey, () => formData.value.baseUrl, () => formData.value.useCorsProxy],
   (_value, _previous, onCleanup) => {
     // 延迟获取，避免频繁请求
     const timeoutId = setTimeout(() => {
@@ -451,7 +469,8 @@ watch(
       captureSnapshot();
       syncHeadersToList();
     } else {
-      // 关闭时重置
+      // 关闭时中止进行中的模型列表请求并重置
+      abortModelsRequest();
       resetForm();
       showUnsavedCloseConfirm.value = false;
       initialFormSnapshot.value = null;

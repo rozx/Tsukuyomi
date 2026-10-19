@@ -172,6 +172,9 @@ export interface AIService {
    * @returns 可用模型列表
    */
   getAvailableModels(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
+    config: Pick<
+      AIServiceConfig,
+      'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy' | 'signal'
+    >,
   ): Promise<AvailableModelsResult>;
 }

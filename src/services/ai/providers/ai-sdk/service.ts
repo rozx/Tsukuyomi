@@ -81,7 +81,10 @@ export class AiSdkAIService implements AIService {
   }
 
   async getAvailableModels(
-    config: Pick<AIServiceConfig, 'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy'>,
+    config: Pick<
+      AIServiceConfig,
+      'apiKey' | 'baseUrl' | 'customHeaders' | 'useCorsProxy' | 'signal'
+    >,
   ) {
     try {
       if (!config.apiKey?.trim()) throw apiKeyRequired();
