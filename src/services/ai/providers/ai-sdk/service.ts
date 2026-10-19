@@ -13,6 +13,7 @@ import { collectStream } from 'src/services/ai/providers/ai-sdk/stream';
 import { listModels } from 'src/services/ai/providers/ai-sdk/models';
 import { providerError } from 'src/services/ai/providers/ai-sdk/errors';
 import { ANTHROPIC_CACHE_BREAKPOINT } from 'src/services/ai/providers/ai-sdk/anthropic';
+import { modelRejectsTemperature } from 'src/services/ai/core/temperature-support';
 import { LocalizedError } from 'src/utils/localized-error';
 
 function validateConfig(config: AIServiceConfig) {
@@ -40,9 +41,12 @@ export class AiSdkAIService implements AIService {
     const model = createModel(this.provider, config, request);
     const messages = toModelMessages(request, this.provider);
     const limit = request.maxOutputTokens ?? config.maxOutputTokens;
-    const temperature =
-      config.temperatureEnabled === false ? undefined : (request.temperature ?? config.temperature);
     const anthropic = this.provider === 'anthropic';
+    // 原生接口上 SDK 只认识已收录的型号，未收录的新 Claude 仍按标识判断，避免 400
+    const temperature =
+      config.temperatureEnabled === false || (anthropic && modelRejectsTemperature(config.model))
+        ? undefined
+        : (request.temperature ?? config.temperature);
     const instructions = messages.filter((message) => message.role === 'system');
     const tools = request.tools ?? [];
     const result = streamText({

@@ -128,6 +128,14 @@ describe('Anthropic 原生提供商：请求约束', () => {
     expect(body).not.toHaveProperty('top_p');
   });
 
+  it('SDK 型号表未收录但按标识拒绝温度的模型也不发送温度', async () => {
+    const { body } = await send(
+      { model: 'claude-opus-4-9', temperature: 0.7 },
+      { prompt: '问题', temperature: 0.3 },
+    );
+    expect(body).not.toHaveProperty('temperature');
+  });
+
   it('未开启思考且允许采样的旧模型照常发送温度', async () => {
     const { body } = await send(
       { model: 'claude-sonnet-4-6', temperature: 0.7 },
