@@ -363,7 +363,8 @@ class TaskLoopSession {
 
     if (newStatus && newStatus !== previousStatus) {
       if (!this.isValidTransition(previousStatus, newStatus)) {
-        this.handleInvalidTransition(previousStatus, newStatus, responseText);
+        this.config.history.push({ role: 'assistant', content: responseText });
+        this.config.history.push(this.buildInvalidTransitionMessage(previousStatus, newStatus));
         return { shouldContinue: true };
       }
 
@@ -539,14 +540,14 @@ class TaskLoopSession {
     const newStatus = this.pendingStatusUpdate;
     this.pendingStatusUpdate = undefined;
 
+    // 工具路径中 assistantText 已随 tool_calls 消息入栈；此时 tool 结果尚未写入历史，
+    // 不能再插入 assistant 文本，否则 tool 结果不再紧跟 tool_calls。拒绝说明以 user 消息排在 tool 结果之后。
     if (!this.isValidTransition(previousStatus, newStatus)) {
-      this.handleInvalidTransition(previousStatus, newStatus, assistantText);
-      return undefined;
+      return this.buildInvalidTransitionMessage(previousStatus, newStatus);
     }
 
     const gateMsg = this.buildGateRejectionMessage(previousStatus, newStatus);
     if (gateMsg) {
-      this.config.history.push({ role: 'assistant', content: assistantText });
       return { role: 'user', content: gateMsg };
     }
 
@@ -731,13 +732,18 @@ class TaskLoopSession {
     return this.stateMachine.isValidTransition(next);
   }
 
-  private handleInvalidTransition(prev: TaskStatus, next: TaskStatus, responseText: string) {
+  /**
+   * 状态转换不合法时告知模型的 user 消息；调用方负责放到历史末尾，避免请求以 assistant 结尾（prefill）。
+   */
+  private buildInvalidTransitionMessage(prev: TaskStatus, next: TaskStatus): ChatMessage {
     const { taskType, logLabel } = this.config;
     console.warn(
       `[${logLabel}] ⚠️ 检测到无效的状态转换：${getStatusLabel(prev, taskType)} → ${getStatusLabel(next, taskType)}`,
     );
-
-    this.config.history.push({ role: 'assistant', content: responseText });
+    return {
+      role: 'user',
+      content: agentText('aiState.invalidTransition', { previous: prev, next }),
+    };
   }
 
   private trackStatusDuration(prev: TaskStatus, next: TaskStatus) {
