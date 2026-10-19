@@ -1,0 +1,10 @@
+# Prettier 3 同时读取 .gitignore 与本文件；这里只列不能被格式化改写的已跟踪文件。
+
+# 测试 fixture：爬虫等测试按原始字节断言，重排会让测试失真
+src/__tests__/examplePages/
+src/__tests__/exampleChapterData/
+src/__tests__/__snapshots__/
+
+# 脚本生成的产物：保持生成脚本写出的格式，避免与重新生成的结果互相打架
+src/services/ai/model-limits/catalog.json
+.fallow-baseline.json
