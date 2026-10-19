@@ -71,6 +71,7 @@ export function geminiStream(parts: Record<string, unknown>[], extra: unknown[] 
 type AnthropicBlock =
   | { text: string }
   | { thinking: string; signature?: string }
+  | { redacted: string }
   | { toolUse: { id: string; name: string; input: unknown } };
 
 /** Anthropic Messages SSE：每个内容块按 start → delta → stop 发出；官方流总会报告用量。 */
@@ -117,6 +118,12 @@ export function anthropicStream(
           delta: { type: 'signature_delta', signature: block.signature ?? 'sig-fixture' },
         },
       );
+    } else if ('redacted' in block) {
+      events.push({
+        type: 'content_block_start',
+        index,
+        content_block: { type: 'redacted_thinking', data: block.redacted },
+      });
     } else {
       events.push(
         {

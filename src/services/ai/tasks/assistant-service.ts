@@ -10,7 +10,9 @@ import type {
   ChatMessage,
   AITool,
   AIToolCall,
+  TextGenerationResult,
 } from 'src/services/ai/types/ai-service';
+import { assistantReasoningFields } from './utils/reasoning-history';
 import { AIServiceFactory } from '../ai-service-factory';
 import { ToolRegistry } from '../tools/tool-registry';
 import type { ActionInfo } from '../tools/types';
@@ -358,14 +360,22 @@ export class AssistantService {
   }
 
   private static async processGenerateTextResult(params: {
-    result: { text: string; toolCalls?: AIToolCall[]; reasoningContent?: string };
+    result: Pick<
+      TextGenerationResult,
+      'text' | 'toolCalls' | 'reasoningContent' | 'reasoningParts'
+    >;
     accumulatedText: string;
     accumulatedToolCalls: AIToolCall[];
     streamedReasoning?: string;
     aiProcessingStore?: AssistantServiceOptions['aiProcessingStore'] | undefined;
     taskId?: string | undefined;
     onThinkingChunk?: ((text: string) => void | Promise<void>) | undefined;
-  }): Promise<{ text: string; toolCalls: AIToolCall[]; reasoningContent: string | undefined }> {
+  }): Promise<{
+    text: string;
+    toolCalls: AIToolCall[];
+    reasoningContent: string | undefined;
+    reasoningParts: TextGenerationResult['reasoningParts'];
+  }> {
     const {
       result,
       accumulatedText,
@@ -387,21 +397,26 @@ export class AssistantService {
       await aiProcessingStore.appendThinkingMessage(taskId, rest);
     if (onThinkingChunk && rest) await onThinkingChunk(rest);
 
-    return { text: finalText, toolCalls: finalToolCalls, reasoningContent };
+    return {
+      text: finalText,
+      toolCalls: finalToolCalls,
+      reasoningContent,
+      reasoningParts: result.reasoningParts,
+    };
   }
 
   private static pushAssistantMessage(
     messages: ChatMessage[],
     text: string,
     toolCalls: AIToolCall[],
-    reasoningContent: string | undefined,
+    reasoning: Parameters<typeof assistantReasoningFields>[0],
   ): void {
     if (toolCalls.length > 0) {
       messages.push({
         role: 'assistant',
         content: text && text.trim() ? text : TOOL_CALL_PLACEHOLDER,
         tool_calls: toolCalls,
-        reasoning_content: reasoningContent || null,
+        ...assistantReasoningFields(reasoning),
       });
     } else if (text && text.trim()) {
       messages.push({
@@ -621,12 +636,7 @@ export class AssistantService {
     });
     if (options.execution)
       processed.toolCalls = options.execution.normalizeCalls(processed.toolCalls);
-    this.pushAssistantMessage(
-      messages,
-      processed.text,
-      processed.toolCalls,
-      processed.reasoningContent,
-    );
+    this.pushAssistantMessage(messages, processed.text, processed.toolCalls, processed);
     await options.execution?.recordReply(messages, processed.toolCalls);
     return processed;
   }

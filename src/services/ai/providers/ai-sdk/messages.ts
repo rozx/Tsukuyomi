@@ -1,6 +1,10 @@
-import type { ModelMessage, ToolCallPart } from 'ai';
+import type { AssistantContent, ModelMessage, ToolCallPart } from 'ai';
 import type { AIProvider } from 'src/services/ai/types/ai-model';
-import type { AIToolCall, TextGenerationRequest } from 'src/services/ai/types/ai-service';
+import type {
+  AIToolCall,
+  ChatMessage,
+  TextGenerationRequest,
+} from 'src/services/ai/types/ai-service';
 import { TOOL_CALL_PLACEHOLDER } from 'src/services/ai/tasks/utils/stream-handler';
 import { ANTHROPIC_CONTINUE_PROMPT } from 'src/services/ai/providers/ai-sdk/anthropic';
 
@@ -42,6 +46,25 @@ function toolPart(call: AIToolCall, index: number, provider: AIProvider): ToolCa
   };
 }
 
+type ReasoningPart = Extract<Exclude<AssistantContent, string>[number], { type: 'reasoning' }>;
+
+/** Anthropic 只认带签名或 redacted 数据的思考块；按原顺序回放，其它厂商的元数据丢弃。 */
+function anthropicReasoning(message: ChatMessage, provider: AIProvider): ReasoningPart[] {
+  if (provider !== 'anthropic') return [];
+  return (message.reasoning_parts ?? [])
+    .filter(({ providerMetadata }) => {
+      const metadata = providerMetadata?.anthropic;
+      return !!metadata && (!!metadata.signature || !!metadata.redactedData);
+    })
+    .map(({ text, providerMetadata }) => ({
+      type: 'reasoning',
+      text,
+      providerOptions: { anthropic: providerMetadata!.anthropic! } as NonNullable<
+        ReasoningPart['providerOptions']
+      >,
+    }));
+}
+
 export function toModelMessages(
   request: TextGenerationRequest,
   provider: AIProvider,
@@ -75,8 +98,18 @@ export function toModelMessages(
       result.push({
         role: 'assistant',
         content: [
+          // 开启思考时带 tool_use 的 assistant 消息必须以原样的 thinking 块开头
+          ...anthropicReasoning(message, provider),
           { type: 'text', text: message.content?.trim() ? message.content : TOOL_CALL_PLACEHOLDER },
           ...message.tool_calls.map((call, index) => toolPart(call, index, provider)),
+        ],
+      });
+    } else if (message.role === 'assistant' && anthropicReasoning(message, provider).length) {
+      result.push({
+        role: 'assistant',
+        content: [
+          ...anthropicReasoning(message, provider),
+          ...(message.content?.trim() ? [{ type: 'text' as const, text: message.content }] : []),
         ],
       });
     } else if (message.content?.trim()) {

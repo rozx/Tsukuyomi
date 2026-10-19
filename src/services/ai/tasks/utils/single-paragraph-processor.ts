@@ -12,7 +12,9 @@ import type {
   ChatMessage,
   AITool,
   AIToolCall,
+  TextGenerationResult,
 } from 'src/services/ai/types/ai-service';
+import { assistantReasoningFields } from './reasoning-history';
 import type { Paragraph } from 'src/models/novel';
 import type { ActionInfo } from 'src/services/ai/tools/types';
 import type { ToastCallback } from 'src/services/ai/tools/toast-helper';
@@ -252,7 +254,10 @@ async function runSingleParagraphRound(
 }
 
 async function runToolCallsForSingleParagraph(
-  result: { text?: string; toolCalls?: AIToolCall[]; reasoningContent?: string | null },
+  result: Pick<TextGenerationResult, 'toolCalls' | 'reasoningParts'> & {
+    text?: string;
+    reasoningContent?: string | null;
+  },
   history: ChatMessage[],
   paragraphId: string,
   bookId: string | undefined,
@@ -271,7 +276,7 @@ async function runToolCallsForSingleParagraph(
     role: 'assistant',
     content: result.text || TOOL_CALL_PLACEHOLDER,
     tool_calls: result.toolCalls,
-    reasoning_content: result.reasoningContent || null,
+    ...assistantReasoningFields(result),
   });
 
   for (const toolCall of result.toolCalls) {

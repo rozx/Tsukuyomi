@@ -81,6 +81,14 @@ export interface AIToolCallResult {
 }
 
 /**
+ * 一段思考内容及厂商回传所需的不透明元数据（如 Anthropic thinking 块的签名、redacted 数据）。
+ */
+export interface AIReasoningPart {
+  text: string;
+  providerMetadata?: Record<string, Record<string, unknown>>;
+}
+
+/**
  * 聊天消息接口
  */
 export interface ChatMessage {
@@ -93,6 +101,10 @@ export interface ChatMessage {
    * 思考内容（reasoning_content）- DeepSeek 等模型在使用工具时需要此字段
    */
   reasoning_content?: string | null;
+  /**
+   * 带厂商元数据的思考片段；Anthropic 开启思考调用工具时，后续轮次必须原样回传 thinking 块
+   */
+  reasoning_parts?: AIReasoningPart[];
 }
 
 /**
@@ -115,6 +127,8 @@ export interface TextGenerationResult {
   toolCalls?: AIToolCall[]; // 如果有工具调用
   finishReason?: string; // stop, length, tool_calls, content_filter, etc.
   reasoningContent?: string; // 思考内容（reasoning_content）- DeepSeek 等模型在使用工具时返回
+  /** 带厂商元数据（签名等）的思考片段，仅在厂商返回元数据时提供 */
+  reasoningParts?: AIReasoningPart[];
   /** 仅包含厂商实际报告的用量；缺失不代表零。 */
   usage?: {
     inputTokens?: number;

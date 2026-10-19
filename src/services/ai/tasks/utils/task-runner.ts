@@ -23,6 +23,7 @@ import type {
   AIToolCall,
   AIToolCallResult,
 } from 'src/services/ai/types/ai-service';
+import { assistantReasoningFields } from './reasoning-history';
 import {
   createInitialMetrics,
   finalizeMetrics as finalizeInstrumentationMetrics,
@@ -388,7 +389,10 @@ class TaskLoopSession {
    * 处理工具调用逻辑
    */
   private async processToolCalls(
-    result: { toolCalls?: AIToolCall[]; reasoningContent?: string; text: string },
+    result: Pick<
+      TextGenerationResult,
+      'toolCalls' | 'reasoningContent' | 'reasoningParts' | 'text'
+    >,
     assistantText: string,
   ) {
     this.appendAssistantToolCallMessage(result, assistantText);
@@ -412,7 +416,10 @@ class TaskLoopSession {
   }
 
   private appendAssistantToolCallMessage(
-    result: { toolCalls?: AIToolCall[]; reasoningContent?: string; text: string },
+    result: Pick<
+      TextGenerationResult,
+      'toolCalls' | 'reasoningContent' | 'reasoningParts' | 'text'
+    >,
     assistantText: string,
   ) {
     const { history } = this.config;
@@ -420,7 +427,7 @@ class TaskLoopSession {
       role: 'assistant',
       content: assistantText && assistantText.trim() ? assistantText : TOOL_CALL_PLACEHOLDER,
       ...(result.toolCalls ? { tool_calls: result.toolCalls } : {}),
-      reasoning_content: result.reasoningContent || null,
+      ...assistantReasoningFields(result),
     });
   }
 

@@ -188,6 +188,70 @@ describe('Anthropic 原生提供商：请求约束', () => {
     expect(messages.map((message) => message.role)).toEqual(['user', 'assistant', 'user']);
   });
 
+  it('带签名的思考片段在工具历史中回放为 thinking / redacted_thinking 块并排在最前', async () => {
+    const { body } = await send(
+      {},
+      {
+        tools,
+        messages: [
+          { role: 'user', content: '读取' },
+          {
+            role: 'assistant',
+            content: '',
+            reasoning_content: '先查书',
+            reasoning_parts: [
+              { text: '先查书', providerMetadata: { anthropic: { signature: 'sig-1' } } },
+              { text: '', providerMetadata: { anthropic: { redactedData: 'opaque-data' } } },
+            ],
+            tool_calls: [
+              {
+                id: 'toolu_a',
+                type: 'function',
+                function: { name: 'read_book', arguments: '{"id":"a"}' },
+              },
+            ],
+          },
+          { role: 'tool', content: '内容', tool_call_id: 'toolu_a', name: 'read_book' },
+        ],
+      },
+    );
+    const messages = body.messages as { role: string; content: Record<string, unknown>[] }[];
+    expect(messages[1]?.content[0]).toEqual({
+      type: 'thinking',
+      thinking: '先查书',
+      signature: 'sig-1',
+    });
+    expect(messages[1]?.content[1]).toEqual({ type: 'redacted_thinking', data: 'opaque-data' });
+    expect(messages[1]?.content.at(-1)).toMatchObject({ type: 'tool_use', id: 'toolu_a' });
+  });
+
+  it('非 Anthropic 签名的思考片段不回放', async () => {
+    const { body } = await send(
+      {},
+      {
+        tools,
+        messages: [
+          { role: 'user', content: '读取' },
+          {
+            role: 'assistant',
+            content: '',
+            reasoning_parts: [{ text: '别家的思考', providerMetadata: { google: { x: 1 } } }],
+            tool_calls: [
+              {
+                id: 'toolu_a',
+                type: 'function',
+                function: { name: 'read_book', arguments: '{"id":"a"}' },
+              },
+            ],
+          },
+          { role: 'tool', content: '内容', tool_call_id: 'toolu_a', name: 'read_book' },
+        ],
+      },
+    );
+    const messages = body.messages as { role: string; content: { type: string }[] }[];
+    expect(messages[1]?.content.map((block) => block.type)).toEqual(['text', 'tool_use']);
+  });
+
   it('工具历史只回传文本与工具调用，不重放思考块', async () => {
     const { body } = await send(
       {},
@@ -232,6 +296,21 @@ describe('Anthropic 原生提供商：响应', () => {
         id: 'toolu_a',
         function: { name: 'read_book', arguments: '{"id":"a"}' },
       }),
+    ]);
+  });
+
+  it('思考块连同签名保存为 reasoningParts，供后续工具轮次原样回传', async () => {
+    transport.responses.push(
+      anthropicStream([
+        { thinking: '先查书', signature: 'sig-1' },
+        { redacted: 'opaque-data' },
+        { toolUse: { id: 'toolu_a', name: 'read_book', input: { id: 'a' } } },
+      ]),
+    );
+    const result = await service.generateText(claude, { prompt: '读取', tools });
+    expect(result.reasoningParts).toEqual([
+      { text: '先查书', providerMetadata: { anthropic: { signature: 'sig-1' } } },
+      { text: '', providerMetadata: { anthropic: { redactedData: 'opaque-data' } } },
     ]);
   });
 
