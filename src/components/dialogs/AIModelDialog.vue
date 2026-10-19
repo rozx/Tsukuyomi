@@ -19,6 +19,7 @@ import type { AIModelFormData, TaskDefaultsKey } from './ai-model-form-types';
 import { AI_MODEL_FORM_KEY } from './ai-model-form-types';
 import { AIServiceFactory } from 'src/services/ai';
 import { useModelConfiguration } from 'src/composables/ai-page/useModelConfiguration';
+import { modelRejectsTemperature } from 'src/services/ai/core/temperature-support';
 const { t } = useI18n();
 
 const props = withDefaults(
@@ -353,6 +354,18 @@ watch(
     // 切换提供商时，清空模型列表并重新获取
     availableModels.value = [];
     void fetchAvailableModels();
+  },
+  { flush: 'sync' },
+);
+
+// 模型标识切换到拒绝温度的模型（Claude 4.7+ 等）时自动关闭发送温度；打开已保存模型时不改动
+watch(
+  () => formData.value.model,
+  (newModel, oldModel) => {
+    if (initializingForm) return;
+    if (modelRejectsTemperature(newModel ?? '') && !modelRejectsTemperature(oldModel ?? '')) {
+      formData.value.temperatureEnabled = false;
+    }
   },
   { flush: 'sync' },
 );

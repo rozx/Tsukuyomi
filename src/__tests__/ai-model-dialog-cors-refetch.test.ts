@@ -157,3 +157,39 @@ describe('开关标签', () => {
     expect(save.mock.calls[0]?.[0]?.[field]).toBe(false);
   });
 });
+
+describe('Claude 新模型的温度默认值', () => {
+  function fillModelId(value: string) {
+    const input = document.querySelector<HTMLInputElement>('#edit-model input')!;
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('blur', { bubbles: true }));
+  }
+
+  it('模型标识改成拒绝温度的 Claude 模型时自动关闭发送温度', async () => {
+    const { save } = await mountDialog({ model: 'gpt-6-luna', temperatureEnabled: true });
+    fillModelId('claude-opus-5-5');
+    await nextTick();
+    clickButton('保存');
+    expect(save.mock.calls[0]?.[0]).toMatchObject({
+      model: 'claude-opus-5-5',
+      temperatureEnabled: false,
+    });
+  });
+
+  it('打开已保存的模型时不改动用户的温度设置', async () => {
+    const { save } = await mountDialog({ model: 'claude-opus-5-5', temperatureEnabled: true });
+    clickButton('保存');
+    expect(save.mock.calls[0]?.[0]?.temperatureEnabled).toBe(true);
+  });
+
+  it('改回其他模型时不会自动重新开启温度', async () => {
+    const { save } = await mountDialog({ model: 'gpt-6-luna', temperatureEnabled: true });
+    fillModelId('claude-opus-5-5');
+    await nextTick();
+    fillModelId('claude-sonnet-4-6');
+    await nextTick();
+    clickButton('保存');
+    expect(save.mock.calls[0]?.[0]?.temperatureEnabled).toBe(false);
+  });
+});
