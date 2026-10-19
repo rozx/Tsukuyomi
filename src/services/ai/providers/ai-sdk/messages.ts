@@ -2,9 +2,10 @@ import type { ModelMessage, ToolCallPart } from 'ai';
 import type { AIProvider } from 'src/services/ai/types/ai-model';
 import type { AIToolCall, TextGenerationRequest } from 'src/services/ai/types/ai-service';
 import { TOOL_CALL_PLACEHOLDER } from 'src/services/ai/tasks/utils/stream-handler';
+import { ANTHROPIC_CONTINUE_PROMPT } from 'src/services/ai/providers/ai-sdk/anthropic';
 
-export function normalizeBaseUrl(baseUrl?: string): string {
-  const value = baseUrl?.trim() || 'https://api.openai.com/v1';
+export function normalizeBaseUrl(baseUrl?: string, fallback = 'https://api.openai.com/v1'): string {
+  const value = baseUrl?.trim() || fallback;
   if (value.startsWith('/api/ai/')) {
     const origin = typeof window === 'undefined' ? 'http://localhost:9000' : window.location.origin;
     return `${origin}${value}`.replace(/\/+$/, '');
@@ -82,5 +83,7 @@ export function toModelMessages(
       result.push({ role: message.role, content: message.content });
     }
   }
+  if (provider === 'anthropic' && result.at(-1)?.role === 'assistant')
+    result.push({ role: 'user', content: ANTHROPIC_CONTINUE_PROMPT });
   return result;
 }

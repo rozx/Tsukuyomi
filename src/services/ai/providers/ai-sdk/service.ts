@@ -12,6 +12,7 @@ import { toModelMessages } from 'src/services/ai/providers/ai-sdk/messages';
 import { collectStream } from 'src/services/ai/providers/ai-sdk/stream';
 import { listModels } from 'src/services/ai/providers/ai-sdk/models';
 import { providerError } from 'src/services/ai/providers/ai-sdk/errors';
+import { ANTHROPIC_CACHE_BREAKPOINT } from 'src/services/ai/providers/ai-sdk/anthropic';
 import { LocalizedError } from 'src/utils/localized-error';
 
 function validateConfig(config: AIServiceConfig) {
@@ -41,22 +42,34 @@ export class AiSdkAIService implements AIService {
     const limit = request.maxOutputTokens ?? config.maxOutputTokens;
     const temperature =
       config.temperatureEnabled === false ? undefined : (request.temperature ?? config.temperature);
+    const anthropic = this.provider === 'anthropic';
+    const instructions = messages.filter((message) => message.role === 'system');
+    const tools = request.tools ?? [];
     const result = streamText({
       ...model,
-      instructions: messages.filter((message) => message.role === 'system'),
+      // 稳定前缀（工具定义 → system）各放一个缓存断点，变化的 system 不拖累工具缓存
+      instructions: instructions.map((message, index) =>
+        anthropic && index === instructions.length - 1
+          ? { ...message, providerOptions: ANTHROPIC_CACHE_BREAKPOINT }
+          : message,
+      ),
       messages: messages.filter((message) => message.role !== 'system'),
       tools: Object.fromEntries(
-        (request.tools ?? []).map(({ function: fn }) => [
+        tools.map(({ function: fn }, index) => [
           fn.name,
           tool({
             description: fn.description,
             inputSchema: jsonSchema(fn.parameters as Parameters<typeof jsonSchema>[0]),
+            ...(anthropic && index === tools.length - 1
+              ? { providerOptions: ANTHROPIC_CACHE_BREAKPOINT }
+              : {}),
           }),
         ]),
       ),
       toolChoice: 'auto',
       maxRetries: 2,
-      ...(config.thinkingLevel && config.thinkingLevel !== 'provider-default'
+      // Anthropic 的思考配置已在 providerOptions 中按型号映射，避免 SDK 再按等级改写
+      ...(!anthropic && config.thinkingLevel && config.thinkingLevel !== 'provider-default'
         ? { reasoning: config.thinkingLevel }
         : {}),
       ...(typeof temperature === 'number' ? { temperature } : {}),

@@ -77,11 +77,15 @@ function createAIPageContext() {
   const providerPalette: Record<AIProvider, { label: string; letter: string; color: string }> = {
     openai: { label: 'OpenAI', letter: 'O', color: '#10A37F' },
     gemini: { label: 'Google Gemini', letter: 'G', color: '#4A8FE7' },
+    anthropic: { label: 'Anthropic Claude', letter: 'A', color: '#D97757' },
   };
 
-  const getProviderLabel = (provider: string) => {
-    return provider === 'openai' ? 'OpenAI' : 'Gemini';
+  const providerLabels: Record<string, string> = {
+    openai: 'OpenAI',
+    gemini: 'Gemini',
+    anthropic: 'Anthropic',
   };
+  const getProviderLabel = (provider: string) => providerLabels[provider] ?? provider;
 
   const DEFAULT_TASK_LABELS = computed<Array<{ key: keyof AIModel['isDefault']; label: string }>>(
     () => [

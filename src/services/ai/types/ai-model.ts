@@ -1,7 +1,12 @@
 /**
  * AI 模型提供者类型
  */
-export type AIProvider = 'openai' | 'gemini';
+export type AIProvider = 'openai' | 'gemini' | 'anthropic';
+
+/** Gemini / Anthropic 有官方默认地址；OpenAI 兼容接口（及未选择时）必须由用户填写。 */
+export function requiresBaseUrl(provider: AIProvider | undefined): boolean {
+  return provider !== 'gemini' && provider !== 'anthropic';
+}
 
 /** SDK 统一思考等级；未设置时沿用厂商默认值。 */
 export type AIThinkingLevel =

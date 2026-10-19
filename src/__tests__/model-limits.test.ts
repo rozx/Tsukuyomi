@@ -6,6 +6,7 @@ const catalog = {
   deepseek: { 'deepseek-v4-flash': [1_000_000, 64_000], shared: [128_000, 8192, 100_000] },
   openrouter: { shared: [64_000, 4096] },
   google: { 'gemini-test': [128_000, 8192] },
+  anthropic: { shared: [1_000_000, 128_000] },
   other: { shared: [32_000, 2048], empty: [0, 1000] },
 } as const;
 
@@ -25,6 +26,22 @@ describe('模型上限目录', () => {
       });
     },
   );
+
+  it.each([
+    ['anthropic', ''],
+    ['anthropic', 'https://api.anthropic.com/v1'],
+    ['openai', 'https://api.anthropic.com/v1/'],
+  ] as const)('%s 提供商连到 %s 时定位 anthropic 目录', async (provider, baseUrl) => {
+    expect(await lookupModelLimits({ model: 'shared', provider, baseUrl }, catalog)).toEqual({
+      contextWindow: 1_000_000,
+      maxOutput: 128_000,
+    });
+  });
+
+  it('Anthropic 打包目录覆盖 Claude 模型', async () => {
+    const result = await lookupModelLimits({ provider: 'anthropic', model: 'claude-opus-4-7' });
+    expect(result?.contextWindow).toBeGreaterThan(0);
+  });
 
   it('Gemini 类型定位 google，未知或零窗口条目不算命中', async () => {
     expect(

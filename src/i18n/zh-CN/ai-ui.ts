@@ -98,6 +98,8 @@ export default {
     apiKeyPlaceholder: '输入 API Key',
     baseUrlRequired: '基础地址 *',
     baseUrlPlaceholder: '例如: https://api.openai.com/v1',
+    baseUrlOptional: '基础地址',
+    anthropicBaseUrlPlaceholder: '留空使用官方地址 https://api.anthropic.com/v1',
     modelIdentifier: '模型标识 *',
     refreshList: '刷新列表',
     modelPlaceholder: '例如: gpt-4, gemini-pro',

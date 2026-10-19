@@ -113,15 +113,19 @@
       <small v-if="formErrors.apiKey" class="p-error block mt-1">{{ t(formErrors.apiKey) }}</small>
     </div>
 
-    <!-- 基础地址（Gemini 不需要） -->
+    <!-- 基础地址（Gemini 不需要；Anthropic 可选，留空用官方地址） -->
     <div v-if="formData.provider !== 'gemini'" class="space-y-2">
       <label :for="`${idPrefix}-baseUrl`" class="block text-sm font-medium text-moon/90">{{
-        t('aiUi.baseUrlRequired')
+        requiresBaseUrl(formData.provider) ? t('aiUi.baseUrlRequired') : t('aiUi.baseUrlOptional')
       }}</label>
       <InputText
         :id="`${idPrefix}-baseUrl`"
         v-model="formData.baseUrl"
-        :placeholder="t('aiUi.baseUrlPlaceholder')"
+        :placeholder="
+          requiresBaseUrl(formData.provider)
+            ? t('aiUi.baseUrlPlaceholder')
+            : t('aiUi.anthropicBaseUrlPlaceholder')
+        "
         class="w-full"
         :class="{ 'p-invalid': formErrors.baseUrl }"
       />
@@ -141,6 +145,7 @@ import Select from 'primevue/select';
 import ToggleSwitch from 'primevue/toggleswitch';
 import Slider from 'primevue/slider';
 import type { AIProvider } from 'src/services/ai/types/ai-model';
+import { requiresBaseUrl } from 'src/services/ai/types/ai-model';
 import { AI_MODEL_FORM_KEY } from './ai-model-form-types';
 const { t } = useI18n();
 
@@ -155,5 +160,6 @@ const { formData, formErrors, idPrefix } = inject(AI_MODEL_FORM_KEY)!;
 const providerOptions = [
   { label: 'OpenAI', value: 'openai' as AIProvider },
   { label: 'Gemini', value: 'gemini' as AIProvider },
+  { label: 'Anthropic (Claude)', value: 'anthropic' as AIProvider },
 ];
 </script>

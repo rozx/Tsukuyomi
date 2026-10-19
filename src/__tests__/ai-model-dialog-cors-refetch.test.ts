@@ -157,3 +157,18 @@ describe('开关标签', () => {
     expect(save.mock.calls[0]?.[0]?.[field]).toBe(false);
   });
 });
+
+describe('Anthropic 提供商', () => {
+  it('地址可留空：标为可选、提示官方默认值，仍可拉取模型列表并保存', async () => {
+    const { save } = await mountDialog({ provider: 'anthropic', baseUrl: '' });
+    await vi.waitFor(() => expect(listModels).toHaveBeenCalledTimes(1));
+    expect(listModels.mock.calls[0]?.[0]).toBe('anthropic');
+    const input = document.querySelector<HTMLInputElement>('#edit-baseUrl');
+    expect(input?.placeholder).toContain('https://api.anthropic.com/v1');
+    const label = document.querySelector<HTMLLabelElement>('label[for="edit-baseUrl"]');
+    expect(label?.textContent).not.toContain('*');
+
+    clickButton('保存');
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+});

@@ -2,23 +2,121 @@ import '../setup';
 import { afterEach, beforeEach, describe } from 'bun:test';
 import { expect, it, vi } from 'vitest';
 import { AiSdkAIService } from '../../services/ai/providers/ai-sdk/service';
+import type { AIProvider } from '../../services/ai/types/ai-model';
 import { AIEmptyResponseError } from '../../services/ai/core/errors';
 import { TOOL_CALL_PLACEHOLDER } from '../../services/ai/tasks/utils/stream-handler';
 import type { TextGenerationChunk } from '../../services/ai/types/ai-service';
-import { config, geminiStream, openAIStream, stubTransport, tools } from './fixtures';
+import {
+  anthropicStream,
+  config,
+  geminiStream,
+  openAIStream,
+  stubTransport,
+  tools,
+} from './fixtures';
 
-describe.each([
+interface Call {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+}
+
+interface ProviderFixture {
+  provider: AIProvider;
+  service: AiSdkAIService;
+  text: (parts: string[]) => Response;
+  reasoned: (thought: string, text: string) => Response;
+  calls: (calls: Call[]) => Response;
+  modelList: () => Response;
+  owner: string;
+  instructions: (body: Record<string, unknown>) => string[];
+}
+
+/** 各厂商把同一语义（正文、思考、工具调用、模型列表、指令）翻译成自己的线上格式。 */
+const providers: ProviderFixture[] = [
   {
     provider: 'openai',
     service: new AiSdkAIService('openai'),
-    stream: openAIStream,
+    text: (parts: string[]) => openAIStream(parts.map((content) => ({ content }))),
+    reasoned: (thought: string, text: string) =>
+      openAIStream([{ reasoning_content: thought }, { content: text }]),
+    calls: (calls: Call[]) =>
+      openAIStream([
+        {
+          tool_calls: calls.map((call, index) => ({
+            index,
+            id: call.id,
+            type: 'function',
+            function: { name: call.name, arguments: JSON.stringify(call.args) },
+          })),
+        },
+      ]),
+    modelList: () =>
+      Response.json({
+        object: 'list',
+        data: [{ id: 'test-model', owned_by: 'Fixture' }],
+        has_more: false,
+      }),
+    owner: 'Fixture',
+    instructions: (body: Record<string, unknown>) =>
+      (body.messages as { role: string; content: string }[])
+        .filter((message) => message.role === 'system')
+        .map((message) => message.content),
   },
   {
     provider: 'gemini',
     service: new AiSdkAIService('gemini'),
-    stream: geminiStream,
+    text: (parts: string[]) => geminiStream(parts.map((text) => ({ text }))),
+    reasoned: (thought: string, text: string) =>
+      geminiStream([{ text: thought, thought: true }, { text }]),
+    calls: (calls: Call[]) =>
+      geminiStream(calls.map((call) => ({ functionCall: { name: call.name, args: call.args } }))),
+    modelList: () =>
+      Response.json({
+        models: [
+          {
+            name: 'models/test-model',
+            displayName: 'Test Model',
+            supportedGenerationMethods: ['generateContent'],
+          },
+          { name: 'models/embed', supportedGenerationMethods: ['embedContent'] },
+        ],
+      }),
+    owner: 'Google',
+    instructions: (body: Record<string, unknown>) =>
+      (body.systemInstruction as { parts: { text: string }[] }).parts.map((part) => part.text),
   },
-])('$provider 契约', ({ provider, service, stream }) => {
+  {
+    provider: 'anthropic',
+    service: new AiSdkAIService('anthropic'),
+    text: (parts: string[]) => anthropicStream(parts.map((text) => ({ text }))),
+    reasoned: (thought: string, text: string) => anthropicStream([{ thinking: thought }, { text }]),
+    calls: (calls: Call[]) =>
+      anthropicStream(
+        calls.map((call) => ({ toolUse: { id: call.id, name: call.name, input: call.args } })),
+      ),
+    modelList: () =>
+      Response.json({
+        data: [
+          {
+            type: 'model',
+            id: 'test-model',
+            display_name: 'Test Model',
+            created_at: '2026-01-01T00:00:00Z',
+          },
+        ],
+        has_more: false,
+        first_id: 'test-model',
+        last_id: 'test-model',
+      }),
+    owner: 'Anthropic',
+    instructions: (body: Record<string, unknown>) =>
+      (body.system as { text: string }[]).map((block) => block.text),
+  },
+];
+
+describe.each(providers)('$provider 契约', (fixture) => {
+  const { provider, service } = fixture;
   let transport: ReturnType<typeof stubTransport>;
   beforeEach(() => {
     transport = stubTransport();
@@ -29,13 +127,7 @@ describe.each([
   });
 
   it('通过真实 SDK 消费 SSE，并恰好发出一次完成通知', async () => {
-    transport.responses.push(
-      stream(
-        provider === 'openai'
-          ? [{ content: '你' }, { content: '好' }]
-          : [{ text: '你' }, { text: '好' }],
-      ),
-    );
+    transport.responses.push(fixture.text(['你', '好']));
     const chunks: TextGenerationChunk[] = [];
     const result = await service.generateText(config, { prompt: '问候' }, (chunk) => {
       chunks.push(chunk);
@@ -47,13 +139,7 @@ describe.each([
   });
 
   it('思考与正文分离，最终正文去除首尾空白', async () => {
-    transport.responses.push(
-      stream(
-        provider === 'openai'
-          ? [{ reasoning_content: '先思考' }, { content: '  回答  ' }]
-          : [{ text: '先思考', thought: true }, { text: '  回答  ' }],
-      ),
-    );
+    transport.responses.push(fixture.reasoned('先思考', '  回答  '));
     const chunks: TextGenerationChunk[] = [];
     const result = await service.generateText(config, { prompt: '问题' }, (chunk) => {
       chunks.push(chunk);
@@ -65,9 +151,7 @@ describe.each([
   });
 
   it('助手和翻译任务的非空 system 消息通过独立指令入口传给厂商', async () => {
-    transport.responses.push(
-      stream(provider === 'openai' ? [{ content: '你好' }] : [{ text: '你好' }]),
-    );
+    transport.responses.push(fixture.text(['你好']));
     const result = await service.generateText(config, {
       messages: [
         { role: 'system', content: '用简体中文回答。不要修改任何数据。' },
@@ -75,24 +159,13 @@ describe.each([
       ],
     });
     expect(result.text).toBe('你好');
-    const body = transport.requests[0]!.body;
-    if (provider === 'openai') {
-      expect(body.messages).toEqual([
-        { role: 'system', content: '用简体中文回答。不要修改任何数据。' },
-        { role: 'user', content: '问候' },
-      ]);
-    } else {
-      const instruction = body.systemInstruction as { parts: { text: string }[] };
-      expect(instruction.parts.map((part) => part.text).join('\n')).toBe(
-        '用简体中文回答。不要修改任何数据。',
-      );
-    }
+    expect(fixture.instructions(transport.requests[0]!.body)).toEqual([
+      '用简体中文回答。不要修改任何数据。',
+    ]);
   });
 
   it('提取指令时保留全部 system 消息的顺序', async () => {
-    transport.responses.push(
-      stream(provider === 'openai' ? [{ content: '你好' }] : [{ text: '你好' }]),
-    );
+    transport.responses.push(fixture.text(['你好']));
     await service.generateText(config, {
       messages: [
         { role: 'system', content: '第一条规则' },
@@ -100,46 +173,15 @@ describe.each([
         { role: 'user', content: '问候' },
       ],
     });
-    const body = transport.requests[0]!.body;
-    if (provider === 'openai') {
-      expect(body.messages).toEqual([
-        { role: 'system', content: '第一条规则' },
-        { role: 'system', content: '第二条规则' },
-        { role: 'user', content: '问候' },
-      ]);
-    } else {
-      const instruction = body.systemInstruction as { parts: { text: string }[] };
-      expect(instruction.parts.map((part) => part.text).join('\n')).toBe('第一条规则\n第二条规则');
-    }
+    expect(fixture.instructions(transport.requests[0]!.body)).toEqual(['第一条规则', '第二条规则']);
   });
 
   it('只有工具调用也成功，多个调用保持顺序并具有不同 ID', async () => {
     transport.responses.push(
-      stream(
-        provider === 'openai'
-          ? [
-              {
-                tool_calls: [
-                  {
-                    index: 0,
-                    id: 'call-a',
-                    type: 'function',
-                    function: { name: 'read_book', arguments: '{"id":"a"}' },
-                  },
-                  {
-                    index: 1,
-                    id: 'call-b',
-                    type: 'function',
-                    function: { name: 'read_book', arguments: '{"id":"b"}' },
-                  },
-                ],
-              },
-            ]
-          : [
-              { functionCall: { name: 'read_book', args: { id: 'a' } } },
-              { functionCall: { name: 'read_book', args: { id: 'b' } } },
-            ],
-      ),
+      fixture.calls([
+        { id: 'call-a', name: 'read_book', args: { id: 'a' } },
+        { id: 'call-b', name: 'read_book', args: { id: 'b' } },
+      ]),
     );
     const result = await service.generateText(config, { prompt: '读取两本书', tools });
     expect(result.text).toBe('');
@@ -152,43 +194,23 @@ describe.each([
   });
 
   it('空响应抛出专用错误', async () => {
-    transport.responses.push(stream([]));
+    transport.responses.push(fixture.text([]));
     await expect(service.generateText(config, { prompt: '问题' })).rejects.toBeInstanceOf(
       AIEmptyResponseError,
     );
   });
 
   it('模型列表保留名称与 owner，排除 Gemini 非生成模型', async () => {
-    transport.responses.push(
-      Response.json(
-        provider === 'openai'
-          ? { object: 'list', data: [{ id: 'test-model', owned_by: 'Fixture' }], has_more: false }
-          : {
-              models: [
-                {
-                  name: 'models/test-model',
-                  displayName: 'Test Model',
-                  supportedGenerationMethods: ['generateContent'],
-                },
-                { name: 'models/embed', supportedGenerationMethods: ['embedContent'] },
-              ],
-            },
-      ),
-    );
+    transport.responses.push(fixture.modelList());
     const result = await service.getAvailableModels({
       ...config,
       customHeaders: { 'X-Fixture': 'models' },
     });
     expect(result).toMatchObject({
       success: true,
-      models: [
-        {
-          id: 'test-model',
-          name: 'test-model',
-          ownedBy: provider === 'openai' ? 'Fixture' : 'Google',
-        },
-      ],
+      models: [{ id: 'test-model', name: 'test-model', ownedBy: fixture.owner }],
     });
+    expect(result.models).toHaveLength(1);
     expect(transport.requests[0]?.headers.get('x-fixture')).toBe('models');
   });
 

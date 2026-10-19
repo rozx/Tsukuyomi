@@ -14,6 +14,7 @@ import AiTaskDefaultItem from './AiTaskDefaultItem.vue';
 import { useElectron } from 'src/composables/useElectron';
 import { useFormDialogCloseGuard } from 'src/composables/dialogs/useUnsavedChangesDialog';
 import type { AIModel, AIProvider } from 'src/services/ai/types/ai-model';
+import { requiresBaseUrl } from 'src/services/ai/types/ai-model';
 import type { ModelInfo } from 'src/services/ai/types/ai-service';
 import type { AIModelFormData, TaskDefaultsKey } from './ai-model-form-types';
 import { AI_MODEL_FORM_KEY } from './ai-model-form-types';
@@ -152,8 +153,8 @@ const fieldValidations = (): ReadonlyArray<{
   {
     field: 'baseUrl',
     message: 'aiUi.urlRequired',
-    // Gemini 不需要 baseUrl，其他提供商需要
-    ok: () => formData.value.provider === 'gemini' || !!formData.value.baseUrl?.trim(),
+    // 只有 OpenAI 兼容接口必须填写；Gemini / Anthropic 留空使用官方地址
+    ok: () => !requiresBaseUrl(formData.value.provider) || !!formData.value.baseUrl?.trim(),
   },
   {
     field: 'temperature',
@@ -248,7 +249,7 @@ const canTestDisabled = computed(
     isFetchingConfig.value ||
     !formData.value.model?.trim() ||
     !formData.value.apiKey?.trim() ||
-    (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()),
+    (requiresBaseUrl(formData.value.provider) && !formData.value.baseUrl?.trim()),
 );
 const thinkingLevels = computed(() => [
   { label: t('aiUi.providerDefault'), value: 'provider-default' },
@@ -273,10 +274,10 @@ const captureSnapshot = () => {
   initialFormSnapshot.value = cloneDeep(formData.value);
 };
 
-// 获取可用模型列表的前置条件：必须有 API Key，且非 Gemini 提供商必须有 baseUrl
+// 获取可用模型列表的前置条件：必须有 API Key，且需要地址的提供商必须有 baseUrl
 const canFetchModels = (): boolean => {
   if (!formData.value.apiKey?.trim()) return false;
-  if (formData.value.provider !== 'gemini' && !formData.value.baseUrl?.trim()) return false;
+  if (requiresBaseUrl(formData.value.provider) && !formData.value.baseUrl?.trim()) return false;
   return true;
 };
 
@@ -337,13 +338,13 @@ const fetchAvailableModels = async () => {
   }
 };
 
-// 监听 provider 变化，当切换到 Gemini 时清空 baseUrl
+// 监听 provider 变化，切换到有官方默认地址的提供商时清空 baseUrl
 watch(
   () => formData.value.provider,
   (newProvider) => {
     if (initializingForm) return;
-    if (newProvider === 'gemini') {
-      // 切换到 Gemini 时，清空 baseUrl（服务会使用默认值）
+    if (!requiresBaseUrl(newProvider)) {
+      // 旧提供商的地址对新提供商无效，清空后服务使用官方默认值
       formData.value.baseUrl = '';
       // 清除 baseUrl 相关的错误
       if (formErrors.value.baseUrl) {

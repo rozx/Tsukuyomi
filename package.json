@@ -35,6 +35,7 @@
     "check:i18n": "bun scripts/check-i18n.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4",
     "@ai-sdk/google": "^4",
     "@ai-sdk/openai-compatible": "^3",
     "@huggingface/transformers": "^4.3",

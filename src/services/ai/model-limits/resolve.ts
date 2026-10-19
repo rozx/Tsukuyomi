@@ -21,6 +21,7 @@ function loadCatalog(): Promise<LimitsCatalog> {
 
 function providerFor(model: ModelIdentity): string | undefined {
   if (model.provider === 'gemini') return 'google';
+  if (model.provider === 'anthropic') return 'anthropic';
   let hostname: string;
   try {
     hostname = new URL(model.baseUrl || 'https://api.openai.com').hostname;
@@ -35,6 +36,7 @@ function providerFor(model: ModelIdentity): string | undefined {
     'openrouter.ai': 'openrouter',
     'api.openrouter.ai': 'openrouter',
     'generativelanguage.googleapis.com': 'google',
+    'api.anthropic.com': 'anthropic',
   };
   return providers[hostname];
 }

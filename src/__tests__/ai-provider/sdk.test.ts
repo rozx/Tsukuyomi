@@ -3,7 +3,14 @@ import { afterEach, beforeEach, describe } from 'bun:test';
 import { expect, it, vi } from 'vitest';
 import { AIServiceFactory } from '../../services/ai/ai-service-factory';
 import { AiSdkAIService } from '../../services/ai/providers/ai-sdk/service';
-import { config, geminiStream, openAIStream, stubTransport, tools } from './fixtures';
+import {
+  anthropicStream,
+  config,
+  geminiStream,
+  openAIStream,
+  stubTransport,
+  tools,
+} from './fixtures';
 import type { TextGenerationChunk } from '../../services/ai/types/ai-service';
 
 describe('AI SDK 唯一实现与厂商行为', () => {
@@ -149,54 +156,64 @@ describe('AI SDK 唯一实现与厂商行为', () => {
     expect(transport.requests[0]?.headers.get('x-fixture')).toBe('gemini');
   });
 
-  it.each(['openai', 'gemini'] as const)('%s 取消后不再发送流块或完成通知', async (provider) => {
-    transport.responses.push(
-      provider === 'openai'
-        ? openAIStream([{ content: '第一段' }, { content: '第二段' }])
-        : geminiStream([{ text: '第一段' }, { text: '第二段' }]),
-    );
-    const controller = new AbortController();
-    const chunks: TextGenerationChunk[] = [];
-    await expect(
-      AIServiceFactory.getService(provider).generateText(
-        { ...config, signal: controller.signal },
-        { prompt: '问题' },
-        (chunk) => {
-          chunks.push(chunk);
-          controller.abort();
-        },
-      ),
-    ).rejects.toSatisfy(
-      (error: Error) => error.name === 'AbortError' || error.message.includes('取消'),
-    );
-    expect(chunks).toHaveLength(1);
-    expect(chunks[0]?.done).toBe(false);
-  });
-
-  it.each(['openai', 'gemini'] as const)('%s 非瞬时错误不重试且保留超限原文', async (provider) => {
-    transport.responses.push(
-      Response.json(
+  it.each(['openai', 'gemini', 'anthropic'] as const)(
+    '%s 取消后不再发送流块或完成通知',
+    async (provider) => {
+      transport.responses.push(
         {
-          error: {
-            message: 'maximum context length exceeded',
-            code: 400,
-            status: 'INVALID_ARGUMENT',
+          openai: () => openAIStream([{ content: '第一段' }, { content: '第二段' }]),
+          gemini: () => geminiStream([{ text: '第一段' }, { text: '第二段' }]),
+          anthropic: () => anthropicStream([{ text: '第一段' }, { text: '第二段' }]),
+        }[provider](),
+      );
+      const controller = new AbortController();
+      const chunks: TextGenerationChunk[] = [];
+      await expect(
+        AIServiceFactory.getService(provider).generateText(
+          { ...config, signal: controller.signal },
+          { prompt: '问题' },
+          (chunk) => {
+            chunks.push(chunk);
+            controller.abort();
           },
-        },
-        { status: 400 },
-      ),
-    );
-    await expect(
-      AIServiceFactory.getService(provider).generateText(config, { prompt: '问题' }),
-    ).rejects.toThrow('maximum context length exceeded');
-    expect(transport.fetch).toHaveBeenCalledTimes(1);
-  });
+        ),
+      ).rejects.toSatisfy(
+        (error: Error) => error.name === 'AbortError' || error.message.includes('取消'),
+      );
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]?.done).toBe(false);
+    },
+  );
+
+  it.each(['openai', 'gemini', 'anthropic'] as const)(
+    '%s 非瞬时错误不重试且保留超限原文',
+    async (provider) => {
+      transport.responses.push(
+        Response.json(
+          {
+            error: {
+              message: 'maximum context length exceeded',
+              code: 400,
+              status: 'INVALID_ARGUMENT',
+            },
+          },
+          { status: 400 },
+        ),
+      );
+      await expect(
+        AIServiceFactory.getService(provider).generateText(config, { prompt: '问题' }),
+      ).rejects.toThrow('maximum context length exceeded');
+      expect(transport.fetch).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it.each([
     ['openai', 429],
     ['openai', 500],
     ['gemini', 429],
     ['gemini', 500],
+    ['anthropic', 429],
+    ['anthropic', 529],
   ] as const)('%s 瞬时错误 %s 最多重试两次', async (provider, status) => {
     vi.useFakeTimers({ toFake: ['setTimeout'] });
     for (let attempt = 0; attempt < 3; attempt++)

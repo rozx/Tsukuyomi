@@ -68,6 +68,90 @@ export function geminiStream(parts: Record<string, unknown>[], extra: unknown[] 
   ]);
 }
 
+type AnthropicBlock =
+  | { text: string }
+  | { thinking: string; signature?: string }
+  | { toolUse: { id: string; name: string; input: unknown } };
+
+/** Anthropic Messages SSE：每个内容块按 start → delta → stop 发出；官方流总会报告用量。 */
+export function anthropicStream(
+  blocks: AnthropicBlock[],
+  usage: { start?: Record<string, unknown>; end?: Record<string, unknown> } = {},
+): Response {
+  const events: unknown[] = [
+    {
+      type: 'message_start',
+      message: {
+        id: 'msg_fixture',
+        type: 'message',
+        role: 'assistant',
+        model: 'served-model',
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: usage.start ?? { input_tokens: 1, output_tokens: 1 },
+      },
+    },
+  ];
+  blocks.forEach((block, index) => {
+    if ('text' in block) {
+      events.push(
+        { type: 'content_block_start', index, content_block: { type: 'text', text: '' } },
+        { type: 'content_block_delta', index, delta: { type: 'text_delta', text: block.text } },
+      );
+    } else if ('thinking' in block) {
+      events.push(
+        {
+          type: 'content_block_start',
+          index,
+          content_block: { type: 'thinking', thinking: '', signature: '' },
+        },
+        {
+          type: 'content_block_delta',
+          index,
+          delta: { type: 'thinking_delta', thinking: block.thinking },
+        },
+        {
+          type: 'content_block_delta',
+          index,
+          delta: { type: 'signature_delta', signature: block.signature ?? 'sig-fixture' },
+        },
+      );
+    } else {
+      events.push(
+        {
+          type: 'content_block_start',
+          index,
+          content_block: {
+            type: 'tool_use',
+            id: block.toolUse.id,
+            name: block.toolUse.name,
+            input: {},
+          },
+        },
+        {
+          type: 'content_block_delta',
+          index,
+          delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.toolUse.input) },
+        },
+      );
+    }
+    events.push({ type: 'content_block_stop', index });
+  });
+  events.push(
+    {
+      type: 'message_delta',
+      delta: {
+        stop_reason: blocks.some((block) => 'toolUse' in block) ? 'tool_use' : 'end_turn',
+        stop_sequence: null,
+      },
+      usage: usage.end ?? { output_tokens: 1 },
+    },
+    { type: 'message_stop' },
+  );
+  return sse(events);
+}
+
 export function stubTransport() {
   const requests: { url: string; headers: Headers; body: Record<string, unknown> }[] = [];
   const responses: Response[] = [];

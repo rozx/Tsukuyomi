@@ -103,6 +103,13 @@ describe('models.dev 资料与独立可用性测试', () => {
     await ConfigService.testAvailability({ ...model, provider: 'gemini', enabled: false });
     expect(generate.mock.calls[0]?.[0].baseUrl).toBe(model.baseUrl);
   });
+  it('Anthropic 留空地址使用官方默认值，OpenAI 兼容接口仍要求地址', async () => {
+    await ConfigService.testAvailability({ ...model, provider: 'anthropic', baseUrl: '' });
+    expect(generate).toHaveBeenCalledTimes(1);
+    const result = await ConfigService.testAvailability({ ...model, baseUrl: '' });
+    expect(result.success).toBe(false);
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
   it('凭据缺失不发请求；厂商错误可见且隐藏密钥', async () => {
     expect(await ConfigService.testAvailability({ ...model, apiKey: '' })).toMatchObject({
       success: false,

@@ -15,6 +15,7 @@ export class AIServiceFactory {
   private static services: Map<AIProvider, AIService> = new Map([
     ['openai', new AiSdkAIService('openai')],
     ['gemini', new AiSdkAIService('gemini')],
+    ['anthropic', new AiSdkAIService('anthropic')],
   ]);
 
   /**

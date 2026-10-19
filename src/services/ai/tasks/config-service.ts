@@ -1,5 +1,6 @@
 import { buildModelServiceConfig } from '../core/model-config';
 import type { AIModel } from 'src/services/ai/types/ai-model';
+import { requiresBaseUrl } from 'src/services/ai/types/ai-model';
 import type { AIConfigResult } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from '../ai-service-factory';
 import { lookupModelLimits } from '../model-limits/resolve';
@@ -89,7 +90,7 @@ export class ConfigService {
         throw new LocalizedError('API_KEY_REQUIRED', 'aiUi.apiKeyRequired', {}, locale);
       if (!model.model?.trim())
         throw new LocalizedError('MODEL_ID_REQUIRED', 'aiUi.identifierRequired', {}, locale);
-      if (model.provider !== 'gemini' && !model.baseUrl?.trim())
+      if (requiresBaseUrl(model.provider) && !model.baseUrl?.trim())
         throw new LocalizedError('BASE_URL_REQUIRED', 'aiUi.urlRequired', {}, locale);
       const maxOutputTokens =
         model.maxOutputTokens > 0 ? Math.min(model.maxOutputTokens, 2048) : 2048;

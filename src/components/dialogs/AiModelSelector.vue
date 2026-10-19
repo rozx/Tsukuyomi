@@ -52,6 +52,7 @@ import { computed, inject } from 'vue';
 import Button from 'primevue/button';
 import Select from 'primevue/select';
 import type { ModelInfo } from 'src/services/ai/types/ai-service';
+import { requiresBaseUrl } from 'src/services/ai/types/ai-model';
 import { AI_MODEL_FORM_KEY } from './ai-model-form-types';
 const { t } = useI18n();
 
@@ -81,11 +82,11 @@ const keepModelInputFocus = (event: KeyboardEvent): void => {
   }
 };
 
-// 刷新可用模型列表的前置条件：有 API Key，且非 Gemini 提供商必须有 baseUrl
+// 刷新可用模型列表的前置条件：有 API Key，且需要地址的提供商必须有 baseUrl
 const canRefreshModels = computed(() => {
   return (
     !!formData.value.apiKey?.trim() &&
-    (formData.value.provider === 'gemini' || !!formData.value.baseUrl?.trim())
+    (!requiresBaseUrl(formData.value.provider) || !!formData.value.baseUrl?.trim())
   );
 });
 </script>

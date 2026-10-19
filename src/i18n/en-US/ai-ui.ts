@@ -102,6 +102,8 @@ export default {
     apiKeyPlaceholder: 'Enter API key',
     baseUrlRequired: 'Base URL *',
     baseUrlPlaceholder: 'For example: https://api.openai.com/v1',
+    baseUrlOptional: 'Base URL',
+    anthropicBaseUrlPlaceholder: 'Leave empty to use https://api.anthropic.com/v1',
     modelIdentifier: 'Model ID *',
     refreshList: 'Refresh list',
     modelPlaceholder: 'For example: gpt-4, gemini-pro',

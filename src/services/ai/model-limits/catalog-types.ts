@@ -3,6 +3,7 @@ export type CatalogEntry = readonly [number, number, number?];
 export type LimitsCatalog = Readonly<Record<string, Readonly<Record<string, CatalogEntry>>>>;
 
 export const CATALOG_PROVIDERS = [
+  'anthropic',
   'openai',
   'deepseek',
   'moonshotai',

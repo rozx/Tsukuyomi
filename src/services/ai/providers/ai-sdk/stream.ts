@@ -11,16 +11,24 @@ function reportedUsage(usage: LanguageModelUsage): TextGenerationResult['usage']
   const raw = usage.raw;
   if (!raw) return undefined;
   const inputDetails = raw.prompt_tokens_details as Record<string, unknown> | undefined;
-  const outputDetails = raw.completion_tokens_details as Record<string, unknown> | undefined;
+  const outputDetails = (raw.completion_tokens_details ?? raw.output_tokens_details) as
+    | Record<string, unknown>
+    | undefined;
   // SDK 将缺失细项归零；用原始字段确认存在性，不能把缺省误报为实测零。
+  // Anthropic 的 input_tokens 不含缓存读写，总输入取 SDK 汇总值。
   const values = {
-    inputTokens: raw.prompt_tokens ?? raw.promptTokenCount,
+    inputTokens:
+      raw.prompt_tokens ??
+      raw.promptTokenCount ??
+      (typeof raw.input_tokens === 'number' ? usage.inputTokens : undefined),
     outputTokens:
-      typeof (raw.completion_tokens ?? raw.candidatesTokenCount) === 'number'
+      typeof (raw.completion_tokens ?? raw.candidatesTokenCount ?? raw.output_tokens) === 'number'
         ? usage.outputTokens
         : undefined,
-    reasoningTokens: outputDetails?.reasoning_tokens ?? raw.thoughtsTokenCount,
-    cachedInputTokens: inputDetails?.cached_tokens ?? raw.cachedContentTokenCount,
+    reasoningTokens:
+      outputDetails?.reasoning_tokens ?? outputDetails?.thinking_tokens ?? raw.thoughtsTokenCount,
+    cachedInputTokens:
+      inputDetails?.cached_tokens ?? raw.cachedContentTokenCount ?? raw.cache_read_input_tokens,
   };
   for (const key of Object.keys(values) as (keyof typeof values)[]) {
     const value = values[key];
