@@ -79,7 +79,11 @@ export async function chapterTranslationFixture(chapters: Chapter[]) {
     });
     app.use(pinia).use(ToastService).mount(document.createElement('div'));
     apps.push(app);
-    return { service, selected, loaded };
+    const unmount = () => {
+      apps.splice(apps.indexOf(app), 1);
+      app.unmount();
+    };
+    return { service, selected, loaded, unmount };
   };
   return { pinia, books, mount, dispose: () => apps.forEach((app) => app.unmount()) };
 }

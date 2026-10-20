@@ -1,9 +1,15 @@
-import { ref, computed, watch, onUnmounted, type Ref, type ComputedRef } from 'vue';
+import { computed, watch, type Ref, type ComputedRef } from 'vue';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useBooksStore } from 'src/stores/books';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { useUiStore } from 'src/stores/ui';
+import { useChapterTasksStore } from 'src/stores/chapter-tasks';
+import type {
+  ChapterTranslationState,
+  ChapterPolishState,
+  ChapterProofreadingState,
+} from 'src/stores/chapter-tasks';
 import { TranslationService, PolishService, ProofreadingService } from 'src/services/ai';
 import { createAIProcessingStoreAdapter } from 'src/services/ai/tasks/utils/task-types';
 import { isEmptyParagraph, hasParagraphTranslation } from 'src/utils';
@@ -244,41 +250,17 @@ export function useChapterTranslation(
     }
   };
 
-  // 章节级别的翻译状态管理（按章节ID分别跟踪）
-  type ChapterTranslationState = {
-    isTranslating: boolean;
-    progress: { current: number; total: number; message: string };
-    abortController: AbortController | null;
-    translatingParagraphIds: Set<string>;
-  };
-
-  type ChapterPolishState = {
-    isPolishing: boolean;
-    progress: { current: number; total: number; message: string };
-    abortController: AbortController | null;
-    polishingParagraphIds: Set<string>;
-  };
-
-  type ChapterProofreadingState = {
-    isProofreading: boolean;
-    progress: { current: number; total: number; message: string };
-    abortController: AbortController | null;
-    proofreadingParagraphIds: Set<string>;
-  };
-
-  // 使用 Map 存储每个章节的状态，key 为章节ID
-  const chapterTranslationStates = ref<Map<string, ChapterTranslationState>>(new Map());
-  const chapterPolishStates = ref<Map<string, ChapterPolishState>>(new Map());
-  const chapterProofreadingStates = ref<Map<string, ChapterProofreadingState>>(new Map());
+  // 章节级别的翻译状态管理（按章节ID分别跟踪）：存放在 store 中，页面卸载后任务继续，状态不丢失
+  const chapterTasksStore = useChapterTasksStore();
 
   // 获取当前选中章节的状态
   const currentChapterState = computed(() => {
     const chapterId = selectedChapter.value?.id;
     if (!chapterId) return null;
 
-    const translationState = chapterTranslationStates.value.get(chapterId);
-    const polishState = chapterPolishStates.value.get(chapterId);
-    const proofreadingState = chapterProofreadingStates.value.get(chapterId);
+    const translationState = chapterTasksStore.translation.get(chapterId);
+    const polishState = chapterTasksStore.polish.get(chapterId);
+    const proofreadingState = chapterTasksStore.proofreading.get(chapterId);
 
     return {
       translation: translationState || {
@@ -333,39 +315,39 @@ export function useChapterTranslation(
 
   // 辅助函数：获取或创建章节状态
   const getOrCreateTranslationState = (chapterId: string): ChapterTranslationState => {
-    if (!chapterTranslationStates.value.has(chapterId)) {
-      chapterTranslationStates.value.set(chapterId, {
+    if (!chapterTasksStore.translation.has(chapterId)) {
+      chapterTasksStore.translation.set(chapterId, {
         isTranslating: false,
         progress: { current: 0, total: 0, message: '' },
         abortController: null,
         translatingParagraphIds: new Set(),
       });
     }
-    return chapterTranslationStates.value.get(chapterId)!;
+    return chapterTasksStore.translation.get(chapterId)!;
   };
 
   const getOrCreatePolishState = (chapterId: string): ChapterPolishState => {
-    if (!chapterPolishStates.value.has(chapterId)) {
-      chapterPolishStates.value.set(chapterId, {
+    if (!chapterTasksStore.polish.has(chapterId)) {
+      chapterTasksStore.polish.set(chapterId, {
         isPolishing: false,
         progress: { current: 0, total: 0, message: '' },
         abortController: null,
         polishingParagraphIds: new Set(),
       });
     }
-    return chapterPolishStates.value.get(chapterId)!;
+    return chapterTasksStore.polish.get(chapterId)!;
   };
 
   const getOrCreateProofreadingState = (chapterId: string): ChapterProofreadingState => {
-    if (!chapterProofreadingStates.value.has(chapterId)) {
-      chapterProofreadingStates.value.set(chapterId, {
+    if (!chapterTasksStore.proofreading.has(chapterId)) {
+      chapterTasksStore.proofreading.set(chapterId, {
         isProofreading: false,
         progress: { current: 0, total: 0, message: '' },
         abortController: null,
         proofreadingParagraphIds: new Set(),
       });
     }
-    return chapterProofreadingStates.value.get(chapterId)!;
+    return chapterTasksStore.proofreading.get(chapterId)!;
   };
 
   /**
@@ -1415,7 +1397,7 @@ export function useChapterTranslation(
     const chapterId = targetChapterId || selectedChapter.value?.id;
     if (!chapterId) return;
 
-    const state = chapterTranslationStates.value.get(chapterId);
+    const state = chapterTasksStore.translation.get(chapterId);
     if (!state) return;
 
     // 首先取消本地的 abortController（这是最重要的，因为它会真正停止翻译请求）
@@ -1452,7 +1434,7 @@ export function useChapterTranslation(
     const chapterId = targetChapterId || selectedChapter.value?.id;
     if (!chapterId) return;
 
-    const state = chapterPolishStates.value.get(chapterId);
+    const state = chapterTasksStore.polish.get(chapterId);
     if (!state) return;
 
     // 首先取消本地的 abortController
@@ -1612,7 +1594,7 @@ export function useChapterTranslation(
     const chapterId = targetChapterId || selectedChapter.value?.id;
     if (!chapterId) return;
 
-    const state = chapterProofreadingStates.value.get(chapterId);
+    const state = chapterTasksStore.proofreading.get(chapterId);
     if (!state) return;
 
     // 首先取消本地的 abortController
@@ -1701,7 +1683,7 @@ export function useChapterTranslation(
 
   /** 重置翻译任务的局部 UI 状态（中止 AbortController + 清零进度） */
   const resetTranslationStateIfActive = (chapterId: string): void => {
-    const state = chapterTranslationStates.value.get(chapterId);
+    const state = chapterTasksStore.translation.get(chapterId);
     if (!state?.isTranslating) return;
     state.abortController?.abort();
     state.abortController = null;
@@ -1711,7 +1693,7 @@ export function useChapterTranslation(
   };
 
   const resetPolishStateIfActive = (chapterId: string): void => {
-    const state = chapterPolishStates.value.get(chapterId);
+    const state = chapterTasksStore.polish.get(chapterId);
     if (!state?.isPolishing) return;
     state.abortController?.abort();
     state.abortController = null;
@@ -1721,7 +1703,7 @@ export function useChapterTranslation(
   };
 
   const resetProofreadingStateIfActive = (chapterId: string): void => {
-    const state = chapterProofreadingStates.value.get(chapterId);
+    const state = chapterTasksStore.proofreading.get(chapterId);
     if (!state?.isProofreading) return;
     state.abortController?.abort();
     state.abortController = null;
@@ -1742,12 +1724,8 @@ export function useChapterTranslation(
     }
   };
 
-  // 组件卸载时取消所有任务
-  onUnmounted(() => {
-    cancelTranslation();
-    cancelPolish();
-    cancelProofreading();
-  });
+  // 注意：组件卸载时不取消任务——任务在后台继续，状态保存在 chapterTasksStore 中，
+  // 回到页面后仍可查看进度或取消。
 
   // 翻译状态计算属性
   const translationStatus = computed(() => {
