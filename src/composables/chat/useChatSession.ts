@@ -125,9 +125,14 @@ export function useChatSession(messages: Ref<ChatSessionMessage[]>, onSessionSwi
     { deep: true },
   );
 
-  // 监听上下文变化，处理书籍切换时的会话管理
+  // 监听上下文变化，处理书籍切换时的会话管理。
+  // 只追踪会话 context 用到的字段：悬停段落变化频繁，不应触发会话写入
   watch(
-    () => contextStore.getContext,
+    () => ({
+      currentBookId: contextStore.currentBookId,
+      currentChapterId: contextStore.currentChapterId,
+      selectedParagraphId: contextStore.selectedParagraphId,
+    }),
     (newContext, oldContext) => {
       const newBookId = newContext.currentBookId;
       const oldBookId = oldContext?.currentBookId;
@@ -168,7 +173,6 @@ export function useChatSession(messages: Ref<ChatSessionMessage[]>, onSessionSwi
         paragraphId: newContext.selectedParagraphId,
       });
     },
-    { deep: true },
   );
 
   return {

@@ -57,4 +57,23 @@ describe('chatSessions store - 持久化安全性', () => {
     expect(stored).not.toBeNull();
     expect(stored).toBe(previous);
   });
+  it('updateCurrentSessionContext 不应改写当前会话所属的书籍', () => {
+    const store = useChatSessionsStore();
+    const idA = store.createSession({ bookId: 'a', chapterId: 'ch-a', paragraphId: null });
+
+    store.updateCurrentSessionContext({ bookId: 'b', chapterId: 'ch-b', paragraphId: null });
+
+    const sessionA = store.sessions.find((s) => s.id === idA);
+    expect(sessionA?.context).toEqual({ bookId: 'a', chapterId: 'ch-a', paragraphId: null });
+  });
+
+  it('updateCurrentSessionContext 在书籍一致时刷新章节与段落', () => {
+    const store = useChatSessionsStore();
+    const idA = store.createSession({ bookId: 'a', chapterId: null, paragraphId: null });
+
+    store.updateCurrentSessionContext({ bookId: 'a', chapterId: 'ch-1', paragraphId: 'p-1' });
+
+    const sessionA = store.sessions.find((s) => s.id === idA);
+    expect(sessionA?.context).toEqual({ bookId: 'a', chapterId: 'ch-1', paragraphId: 'p-1' });
+  });
 });

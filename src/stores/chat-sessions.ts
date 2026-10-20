@@ -382,12 +382,14 @@ export const useChatSessionsStore = defineStore('chatSessions', {
 
     /**
      * 更新当前会话的上下文
+     * 会话所属书籍在创建时确定，此处只刷新同一本书内的章节/段落；
+     * 书籍不一致（例如切书后新会话尚未创建完成）时忽略，避免旧会话被改挂到别的书而“消失”
      */
     updateCurrentSessionContext(context: SessionContext): void {
       if (!this.currentSessionId) return;
 
       const session = this.sessions.find((s) => s.id === this.currentSessionId);
-      if (session) {
+      if (session && session.context.bookId === context.bookId) {
         session.context = context;
         session.updatedAt = Date.now();
         saveSessionsToStorage(this.sessions);
