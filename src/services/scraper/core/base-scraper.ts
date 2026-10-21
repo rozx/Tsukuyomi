@@ -17,6 +17,20 @@ import type { ScraperPageSnapshot, ParsedNovelPage } from '../types';
 type CheerioNode = cheerio.Cheerio<any>;
 
 /**
+ * 导航文本：整段只由「目次 / 前の話 / 次の話 / 前へ / 次へ / >> / <<」及分隔符组成。
+ * 必须整体匹配，不能用子串匹配——正文里常见「お前の話」「目次をめくる」「次へ進む」等。
+ */
+const NAVIGATION_TEXT_REGEX = /^(?:目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<<|[\s|｜・/«»])+$/;
+
+/**
+ * 判断文本是否为（上一话 / 下一话 / 目次等）导航标签，空白文本不算导航
+ */
+export function isNavigationText(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 0 && NAVIGATION_TEXT_REGEX.test(trimmed);
+}
+
+/**
  * 爬虫服务基类
  * 提供通用的错误处理和工具方法
  *
@@ -344,23 +358,19 @@ export abstract class BaseScraper<
 
   /**
    * 从指定根元素下查找匹配 `linkSelector` 的 `<a>` 标签，
-   * 若其文本匹配 `navRegex`（视为"上一话/下一话/目次"等导航链接），则从 DOM 中移除。
-   * 各站点仅导航正则不同，共享遍历与 trim 逻辑。
+   * 若其文本是导航标签（见 {@link isNavigationText}），则从 DOM 中移除。
    * @param $ Cheerio API
    * @param root 在该元素下查找链接
    * @param linkSelector 链接选择器（如 `'a[href*="episodes"]'`、`'a'`）
-   * @param navRegex 匹配导航文本的正则（命中即删除）
    */
   protected removeNavigationLinks(
     $: cheerio.CheerioAPI,
     root: CheerioNode,
     linkSelector: string,
-    navRegex: RegExp,
   ): void {
     root.find(linkSelector).each((_, linkEl) => {
       const $link = $(linkEl);
-      const linkText = $link.text().trim();
-      if (navRegex.test(linkText)) {
+      if (isNavigationText($link.text())) {
         $link.remove();
       }
     });

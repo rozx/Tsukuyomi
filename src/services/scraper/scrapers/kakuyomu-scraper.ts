@@ -5,7 +5,7 @@ import type {
   ParsedNovelInfo,
   ParsedVolumeInfo,
 } from 'src/services/scraper/types';
-import { BaseScraper } from '../core';
+import { BaseScraper, isNavigationText } from '../core';
 import { LocalizedError } from 'src/utils/localized-error';
 import { visitCheerioContents } from '../core/cheerio-text-extract';
 
@@ -125,12 +125,7 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
     }
 
     // 移除导航链接（如"前の話"、"次の話"等）
-    this.removeNavigationLinks(
-      $,
-      contentElement,
-      'a[href*="episodes"]',
-      /前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</,
-    );
+    this.removeNavigationLinks($, contentElement, 'a[href*="episodes"]');
 
     const extractText = (el: cheerio.Cheerio<any>) => this.extractTextFromElement($, el);
 
@@ -146,7 +141,7 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
       const cleanedText = extractedText.trim();
 
       // 检查是否为导航文本
-      if (/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(cleanedText)) {
+      if (isNavigationText(cleanedText)) {
         return; // 跳过导航文本
       }
 
@@ -177,7 +172,7 @@ export class KakuyomuScraper extends BaseScraper<ParsedNovelInfo> {
     if (paragraphs.length === 0) {
       const allText = extractText(contentElement);
       const cleanedText = allText.trim();
-      if (cleanedText && !/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(cleanedText)) {
+      if (cleanedText && !isNavigationText(cleanedText)) {
         paragraphs.push(cleanedText);
       }
     }

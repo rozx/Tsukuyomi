@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio';
 import type { Novel } from 'src/models/novel';
 import type { SyosetuNovelInfo, SyosetuChapter } from 'src/services/scraper/scrapers/syosetu-types';
-import { BaseScraper } from '../core';
+import { BaseScraper, isNavigationText } from '../core';
 import { LocalizedError } from 'src/utils/localized-error';
 import {
   extractParagraphText,
@@ -302,7 +302,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
         const $el = $(el);
         const text = $el.text().trim();
         // 如果是导航链接（包含"目次"、"前"、"次"等），移除
-        if (/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(text)) {
+        if (isNavigationText(text)) {
           $el.remove();
         }
       });
@@ -311,6 +311,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
     // 如果 contentElement 是 <div id="honbun">，直接提取其中的 <p> 标签
     // 如果 contentElement 是 <div class="ss">，需要先找到 <div id="honbun">
     const paragraphs: string[] = [];
+    let titleParagraphCount = 0;
 
     // 如果当前元素是 <div class="ss">，尝试找到其中的 <div id="honbun">
     let honbunElement = contentElement;
@@ -339,6 +340,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
         if (titleText.trim()) {
           paragraphs.push(titleText.trim());
           paragraphs.push(''); // 标题后添加空行
+          titleParagraphCount = paragraphs.length;
         }
       }
     }
@@ -355,7 +357,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
       }
 
       // 移除段落内的链接（可能是导航链接）
-      this.removeNavigationLinks($, $p, 'a', /目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</);
+      this.removeNavigationLinks($, $p, 'a');
 
       // 提取段落文本，保留内部格式（如 <br> 换行）
       const extractedText = extractParagraphText($, $p);
@@ -365,15 +367,15 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
       const cleanedText = extractedText;
 
       // 检查是否为导航文本
-      if (!/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(cleanedText.trim())) {
+      if (!isNavigationText(cleanedText)) {
         // 非导航文本，正常添加（保持原始格式）
         paragraphs.push(cleanedText);
       }
     });
 
     // 如果没有找到 <p> 标签，回退到原来的方法
-    const hasTitle = paragraphs.length > 0 && paragraphs[0] !== '\n' && paragraphs[0] !== '';
-    if (paragraphs.length === (hasTitle ? 2 : 0)) {
+    // 只有真正提取到标题时才扣除标题占位，否则正文恰好 2 段时会误触发兜底导致内容重复
+    if (paragraphs.length === titleParagraphCount) {
       const fallbackText = extractTextWithFormatting($, contentElement);
       const trimmedFallback = fallbackText.trim();
 
@@ -381,9 +383,7 @@ export class SyosetuScraper extends BaseScraper<SyosetuNovelInfo> {
         // 按行分割，过滤掉导航文本
         const lines = trimmedFallback.split('\n').filter((line) => {
           const trimmedLine = line.trim();
-          return (
-            trimmedLine && !/目\s*次|前\s*の\s*話|次\s*の\s*話|前へ|次へ|>>|<</.test(trimmedLine)
-          );
+          return trimmedLine && !isNavigationText(trimmedLine);
         });
 
         if (lines.length > 0) {
