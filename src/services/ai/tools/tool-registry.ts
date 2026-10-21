@@ -20,6 +20,7 @@ import { askUserTools } from './ask-user-tools';
 import { taskStatusTools } from './task-status-tools';
 import { createTranslationTools, type CreateTranslationToolsOptions } from './translation-tools';
 import { helpDocsTools } from './help-docs-tools';
+import { specialInstructionTools } from './special-instruction-tools';
 import { GlobalConfig } from 'src/services/global-config-cache';
 import { useSettingsStore } from 'src/stores/settings';
 import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
@@ -67,6 +68,12 @@ const NAVIGATION_AND_LIST_TOOLS = [
 
 const TODO_MUTATION_TOOLS = ['create_todo', 'update_todos', 'delete_todo'] as const;
 
+/** 特殊指令工具：仅聊天助手使用，翻译/润色/校对任务中不暴露（指令已注入提示词） */
+const SPECIAL_INSTRUCTION_TOOLS = [
+  'get_special_instructions',
+  'update_special_instructions',
+] as const;
+
 export class ToolRegistry {
   /**
    * 通用的工具过滤方法
@@ -106,6 +113,11 @@ export class ToolRegistry {
       return this.filterTools(all, EMBEDDING_DEPENDENT_TOOL_NAMES);
     }
     return all;
+  }
+
+  static getSpecialInstructionTools(bookId: string | undefined): AITool[] {
+    if (!bookId) return [];
+    return this.mapTools(specialInstructionTools);
   }
 
   static getMemoryTools(bookId: string | undefined): AITool[] {
@@ -184,6 +196,7 @@ export class ToolRegistry {
         ...this.getCharacterSettingTools(bookId),
         ...this.getParagraphTools(bookId),
         ...this.getBookTools(bookId),
+        ...this.getSpecialInstructionTools(bookId),
         ...this.getMemoryTools(bookId),
         ...this.getNavigationTools(bookId),
         // 翻译相关工具（add_translation_batch）- 用于 translation/polish/proofreading
@@ -285,6 +298,7 @@ export class ToolRegistry {
     const allTools = this.getToolsExcludingTranslationManagement(bookId, toolOptions);
     let tools = this.filterTools(allTools, NAVIGATION_AND_LIST_TOOLS);
     tools = this.filterTools(tools, TODO_MUTATION_TOOLS);
+    tools = this.filterTools(tools, SPECIAL_INSTRUCTION_TOOLS);
 
     // 书籍级配置：在翻译相关任务中跳过 ask_user（不向模型提供该工具）
     if (options?.excludeAskUser) {
@@ -304,6 +318,7 @@ export class ToolRegistry {
       ...paragraphTools,
       ...webSearchTools,
       ...bookTools,
+      ...specialInstructionTools,
       ...memoryTools,
       ...navigationTools,
       ...todoListTools,

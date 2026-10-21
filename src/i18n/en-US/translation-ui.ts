@@ -43,6 +43,9 @@ export default {
     chapterOnlyHint:
       'Chapter instructions apply only to this chapter. Configure book options under “Translation settings” in the sidebar.',
     globalSettings: 'Book settings',
+    bookInstructions: 'Book instructions',
+    bookInstructionsHint:
+      'Applied to every chapter of this book and added to the matching task system prompt; chapter instructions of the same type override them',
     chapterInstructions: 'Chapter instructions',
     chapterInstructionsHint:
       'Added to the system prompt for the selected task in this chapter only.',

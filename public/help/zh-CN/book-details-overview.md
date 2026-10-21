@@ -43,14 +43,14 @@
 
 #### 1) BOOK — 书籍卡 {#book-details-overview-section-4}
 
-显示封面 + 标题 + 卷 / 章 / 字数三联统计。点击任意位置即可打开 `BookDialog` 编辑书籍信息（标题、作者、简介、标签、封面、别名、Web URL、书籍级特殊指令）。
+显示封面 + 标题 + 卷 / 章 / 字数三联统计。点击任意位置即可打开 `BookDialog` 编辑书籍信息（标题、作者、简介、标签、封面、别名、Web URL）。书籍级特殊指令在「翻译设置」中维护。
 
 #### 2) SETTINGS — 可折叠分组 {#book-details-overview-section-5}
 
 展开 / 折叠按钮控制是否显示文字标签：
 
 - **展开态**：显示 `SETTINGS` eyebrow + 收起按钮，5 个项以图标 + 文字呈现：
-  - ⚙️ 翻译设置 → 进入书籍级翻译设置面板，管理显示规则、任务分块与本书模型覆盖
+  - ⚙️ 翻译设置 → 进入书籍级翻译设置面板，管理书籍级特殊指令（翻译/润色/校对）、显示规则、任务分块与本书模型覆盖
   - 🔖 术语设置 → 进入 `TerminologyPanel`
   - 👥 角色设置 → 进入 `CharacterSettingPanel`
   - 🗄 记忆管理 → 进入 `MemoryPanel`
@@ -73,14 +73,14 @@
 
 工作区根据当前选中状态切换显示内容：
 
-| 选中项       | 显示内容                                                         |
-| :----------- | :--------------------------------------------------------------- |
-| 一个章节     | `ChapterContentPanel`（按编辑模式渲染）                          |
-| 「翻译设置」 | `BookTranslationSettingsPanel`（书籍级设置、分块大小与模型覆盖） |
-| 「术语设置」 | `TerminologyPanel`                                               |
-| 「角色设置」 | `CharacterSettingPanel`                                          |
-| 「记忆管理」 | `MemoryPanel`                                                    |
-| 「检查更新」 | `BookUpdatePanel`（同步工作区）                                  |
+| 选中项       | 显示内容                                                                         |
+| :----------- | :------------------------------------------------------------------------------- |
+| 一个章节     | `ChapterContentPanel`（按编辑模式渲染）                                          |
+| 「翻译设置」 | `BookTranslationSettingsPanel`（书籍级特殊指令、书籍级设置、分块大小与模型覆盖） |
+| 「术语设置」 | `TerminologyPanel`                                                               |
+| 「角色设置」 | `CharacterSettingPanel`                                                          |
+| 「记忆管理」 | `MemoryPanel`                                                                    |
+| 「检查更新」 | `BookUpdatePanel`（同步工作区）                                                  |
 
 进入设置面板时，工作区顶部会显示「Translation / Terms / Characters / Memory / Update」eyebrow + 名称 + 图标的上下文标签。
 

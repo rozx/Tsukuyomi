@@ -35,12 +35,12 @@ Three areas:
 
 #### 1) Book card {#book-details-overview-section-4}
 
-Cover, title, and volume/chapter/word counts. Click to edit title, author, description, tags, cover, alternate titles, URLs, and book instructions.
+Cover, title, and volume/chapter/word counts. Click to edit title, author, description, tags, cover, alternate titles, and URLs. Book instructions live in Translation settings.
 
 #### 2) Collapsible Settings {#book-details-overview-section-5}
 
 - **Expanded**: Settings heading and five labeled entries:
-  - ⚙️ Translation settings: target, display, chunking, model overrides
+  - ⚙️ Translation settings: target, book instructions, display, chunking, model overrides
   - 🔖 Terms
   - 👥 Characters
   - 🗄 Memories

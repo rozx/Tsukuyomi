@@ -62,6 +62,8 @@ const TOOLS_REQUIRING_BOOK_ID = [
   'get_previous_chapter',
   'get_next_chapter',
   'update_chapter_title',
+  'get_special_instructions',
+  'update_special_instructions',
   'get_paragraph_info',
   'get_previous_paragraphs',
   'get_next_paragraphs',

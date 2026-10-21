@@ -40,9 +40,6 @@ export default {
     fetchWeb: 'Fetch from website',
     webPlaceholder: 'Enter a URL and press Enter',
     webHint: 'Press Enter to add a URL, or fetch from a supported website',
-    instructions: 'Book instructions',
-    instructionsHint:
-      'These instructions apply to all chapters. Chapter instructions override book instructions.',
     translationInstructions: 'Translation instructions',
     polishInstructions: 'Polishing instructions',
     proofreadInstructions: 'Proofreading instructions',

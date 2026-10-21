@@ -72,7 +72,7 @@ describe('工具声明为简中单源且协议不可变', () => {
     const definitions = (
       ToolRegistry as unknown as { getAllToolDefinitions(): ToolDefinition[] }
     ).getAllToolDefinitions();
-    expect(definitions).toHaveLength(58);
+    expect(definitions).toHaveLength(60);
     for (const { definition } of definitions) {
       const finalized = finalizeToolDefinition(definition);
       expect(protocol(finalized)).toEqual(protocol(definition));

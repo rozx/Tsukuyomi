@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 书籍级翻译设置共享表单：5 个开关 + 分块大小 + 模型覆盖（翻译 / 校对·润色）。
+ * 书籍级翻译设置共享表单：目标语言 + 书籍级特殊指令 + 5 个开关 + 分块大小 +
+ * 模型覆盖（翻译 / 校对·润色）。
  * 被桌面路由面板（BookTranslationSettingsPanel）与手机底部抽屉全局 tab
  * （ChapterSettingsBody showGlobalTab）共用。
  *
@@ -14,6 +15,12 @@ import { resolveAppLocale } from 'src/models/locale';
 import InputSwitch from 'primevue/inputswitch';
 import InputNumber from 'primevue/inputnumber';
 import Select from 'primevue/select';
+import Textarea from 'primevue/textarea';
+import Tabs from 'primevue/tabs';
+import TabList from 'primevue/tablist';
+import Tab from 'primevue/tab';
+import TabPanels from 'primevue/tabpanels';
+import TabPanel from 'primevue/tabpanel';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import type { Novel } from 'src/models/novel';
 import type { AIModel } from 'src/services/ai/types/ai-model';
@@ -41,6 +48,9 @@ const languages = computed(() => languageOptions(resolveAppLocale(locale.value, 
 
 // 表单状态从书籍同步（bookToFormState 承载字段映射与默认值语义）
 const state = ref(bookToFormState(props.book));
+
+// 书籍级特殊指令当前页签（翻译 / 润色 / 校对）
+const instructionTab = ref<string>('translation');
 
 const resetFromBook = () => {
   state.value = bookToFormState(props.book);
@@ -120,6 +130,61 @@ const proofreadingModelSelection = computed({
         class="w-full max-w-md"
       />
       <p class="text-xs text-moon/60">{{ t('books.targetLanguageHint') }}</p>
+    </div>
+    <!-- 书籍级特殊指令 -->
+    <div class="xl:col-span-2 rounded-lg border border-white/10 bg-white/5 overflow-hidden">
+      <div class="px-3 py-2 border-b border-white/10">
+        <div class="text-sm font-medium text-moon-100">
+          {{ t('translationUi.bookInstructions') }}
+        </div>
+        <div class="text-xs text-moon/60 mt-1">{{ t('translationUi.bookInstructionsHint') }}</div>
+      </div>
+      <div class="p-3">
+        <Tabs
+          :value="instructionTab"
+          :show-navigators="false"
+          class="special-instructions-tabs"
+          @update:value="(value) => (instructionTab = String(value))"
+        >
+          <TabList>
+            <Tab value="translation">{{ t('translationUi.translationInstructions') }}</Tab>
+            <Tab value="polish">{{ t('translationUi.polishInstructions') }}</Tab>
+            <Tab value="proofreading">{{ t('translationUi.proofreadInstructions') }}</Tab>
+          </TabList>
+          <TabPanels>
+            <TabPanel value="translation">
+              <Textarea
+                v-model="state.translationInstructions"
+                :aria-label="t('translationUi.translationInstructions')"
+                :placeholder="t('translationUi.translationPlaceholder')"
+                :rows="5"
+                :auto-resize="true"
+                class="w-full mt-2"
+              />
+            </TabPanel>
+            <TabPanel value="polish">
+              <Textarea
+                v-model="state.polishInstructions"
+                :aria-label="t('translationUi.polishInstructions')"
+                :placeholder="t('translationUi.polishPlaceholder')"
+                :rows="5"
+                :auto-resize="true"
+                class="w-full mt-2"
+              />
+            </TabPanel>
+            <TabPanel value="proofreading">
+              <Textarea
+                v-model="state.proofreadingInstructions"
+                :aria-label="t('translationUi.proofreadInstructions')"
+                :placeholder="t('translationUi.proofreadPlaceholder')"
+                :rows="5"
+                :auto-resize="true"
+                class="w-full mt-2"
+              />
+            </TabPanel>
+          </TabPanels>
+        </Tabs>
+      </div>
     </div>
     <div class="space-y-4">
       <!-- 开关设置（统一分组） -->
@@ -279,3 +344,25 @@ const proofreadingModelSelection = computed({
     </div>
   </div>
 </template>
+
+<!-- “特殊指令”页签基础样式，与 BookDialog / EditChapterDialog 共享 -->
+<style scoped src="../dialogs/special-instructions-tabs.css"></style>
+
+<style scoped>
+/* 手机抽屉等窄容器下页签可横向滚动，避免三个页签挤压换行 */
+.special-instructions-tabs :deep(.p-tablist-content) {
+  overflow-x: auto;
+}
+
+.special-instructions-tabs :deep(.p-tablist-tab-list) {
+  min-width: max-content;
+}
+
+@media (max-width: 640px) {
+  .special-instructions-tabs :deep(.p-tab) {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8125rem;
+    white-space: nowrap;
+  }
+}
+</style>

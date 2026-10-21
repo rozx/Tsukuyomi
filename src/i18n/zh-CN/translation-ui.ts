@@ -39,6 +39,9 @@ export default {
     bookAndChapterHint: '全局设置应用于整个书籍，章节设置仅应用于当前章节',
     chapterOnlyHint: '章节特殊指令仅应用于当前章节；书籍级设置请在侧栏「翻译设置」中配置',
     globalSettings: '全局设置',
+    bookInstructions: '特殊指令（书籍级别）',
+    bookInstructionsHint:
+      '应用于本书所有章节，会添加到对应任务的系统提示词中；章节设置中的同类指令会覆盖书籍级指令',
     chapterInstructions: '章节特殊指令',
     chapterInstructionsHint: '仅作用于当前章节；会添加到对应任务的系统提示词中',
     translationInstructions: '翻译指令',

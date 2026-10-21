@@ -1,5 +1,12 @@
 export default {
   aiBookFeedback: {
+    instructionScopeInvalid: 'scope must be book or chapter',
+    instructionTaskInvalid: 'task must be translation, polish, or proofreading',
+    instructionModeInvalid: 'mode must be append or replace',
+    instructionsRequired: 'instructions is required (cannot be empty in append mode)',
+    instructionsGetFailed: 'Failed to get special instructions',
+    instructionsUpdateFailed: 'Failed to update special instructions',
+    instructionsUpdated: 'Special instructions updated',
     fullTextChanged: 'Full-text index inputs changed. The outdated result was discarded; retry.',
     cacheRebuilding:
       'Chapter embeddings are being rebuilt for the target language. Retry later or use original and target-language reading tools.',

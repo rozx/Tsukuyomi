@@ -56,6 +56,21 @@ describe('目标语言批次校验', () => {
   it('英文 ASCII 双引号成对可承载日文对白，简繁保留现有规则', async () => {
     expect((await submit('「こんにちは」', '"Hello"', 'en-US')).success).toBe(true);
   });
+  it('简繁译文把「」改成“”时写入前还原为原文引号', async () => {
+    for (const target of ['zh-CN', 'zh-TW'] as const) {
+      const result = await submit('彼は「ただいま」と言った。', '他说：“我回来了”。', target);
+      expect(result.success).toBe(true);
+      expect(result.accepted_paragraphs).toEqual([
+        { paragraph_id: '11111111', translated_text: '他说：「我回来了」。' },
+      ]);
+    }
+  });
+  it('英文译文的弯引号不被还原为「」', async () => {
+    const result = await submit('「こんにちは」', '“Hello”', 'en-US');
+    expect(result.accepted_paragraphs).toEqual([
+      { paragraph_id: '11111111', translated_text: '“Hello”' },
+    ]);
+  });
   it('英文不平衡的 ASCII 双引号不能通过', async () => {
     expect((await submit('「こんにちは」', '"Hello', 'en-US')).success).toBe(false);
   });

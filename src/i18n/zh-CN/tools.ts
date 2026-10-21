@@ -263,6 +263,22 @@ export default {
       '作者名称（可选，如果提供则更新作者，如果为空字符串则清除作者）',
     update_book_info__parameters__properties__alternate_titles:
       '别名数组（可选，如果提供则更新别名）',
+    get_special_instructions:
+      '查看书籍级特殊指令（翻译/润色/校对），传入 chapter_id 时同时返回该章节的章节级指令。修改指令前先用它确认现有内容。',
+    get_special_instructions__parameters__properties__chapter_id:
+      '章节 ID（可选，提供时一并返回该章节的特殊指令）',
+    update_special_instructions:
+      '修改书籍级或章节级的特殊指令（翻译/润色/校对），指令会注入后续对应任务的系统提示词。用户指出译法错误或提出长期偏好时，用它写入纠正规则以避免后续再犯；只影响全书时用 scope=book，只影响某章时用 scope=chapter。章节级指令会覆盖书籍级同类指令。',
+    update_special_instructions__parameters__properties__scope:
+      '指令范围：book（全书）或 chapter（单个章节）',
+    update_special_instructions__parameters__properties__chapter_id:
+      '章节 ID（scope=chapter 时必填）',
+    update_special_instructions__parameters__properties__task:
+      '任务类型：translation（翻译）、polish（润色）或 proofreading（校对）',
+    update_special_instructions__parameters__properties__mode:
+      '写入方式：append（默认，作为新的一行追加到现有指令末尾）或 replace（整体替换，空字符串表示清除）',
+    update_special_instructions__parameters__properties__instructions:
+      '指令内容：简洁、可执行的规则，例如「原文的「」保留为「」，不要改成“”」',
     list_memories:
       '列出指定书籍的 Memory 列表（用于管理/调试）。支持分页与排序，默认仅返回轻量字段（id/summary/createdAt/lastAccessedAt）。如需完整内容，请设置 include_content=true。',
     list_memories__parameters__properties__offset: '分页偏移量（从 0 开始）',

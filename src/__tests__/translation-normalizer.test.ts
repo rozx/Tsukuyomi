@@ -3,6 +3,7 @@ import { describe, test, expect } from 'vitest';
 import {
   normalizeTranslationQuotes,
   normalizeTranslationSymbols,
+  restoreSourceQuotes,
 } from '../utils/translation-normalizer';
 
 describe('normalizeTranslationQuotes', () => {
@@ -310,5 +311,42 @@ describe('normalizeTranslationSymbols', () => {
 
     // 但如果有内容，两侧空格仍应被移除（保持原有逻辑）
     expect(normalizeTranslationSymbols('【  测试内容  】')).toBe('【测试内容】');
+  });
+});
+
+describe('restoreSourceQuotes（中文译文保留原文引号）', () => {
+  test('原文「」被译成“”时按位置还原', () => {
+    expect(restoreSourceQuotes('彼は「ただいま」と言った。', '他说：“我回来了”。')).toBe(
+      '他说：「我回来了」。',
+    );
+  });
+
+  test('原文「」『』混合时逐个按位置还原', () => {
+    expect(restoreSourceQuotes('「『魔王』を倒せ」', '“打倒‘魔王’”')).toBe('「打倒『魔王』」');
+    expect(restoreSourceQuotes('「一」『二』', '“一”“二”')).toBe('「一」『二』');
+  });
+
+  test('原文本身的“”保持为“”', () => {
+    expect(restoreSourceQuotes('「一」と“二”', '“一”和“二”')).toBe('「一」和“二”');
+  });
+
+  test('译文已保留原文引号时不变', () => {
+    expect(restoreSourceQuotes('「ただいま」', '「我回来了」')).toBe('「我回来了」');
+  });
+
+  test('原文无引号时不改动译文中的引号', () => {
+    expect(restoreSourceQuotes('ただいま。', '“我回来了”。')).toBe('“我回来了”。');
+  });
+
+  test('数量对不上但原文只有「」、译文只有“”时整体映射', () => {
+    expect(restoreSourceQuotes('「え？「なにこれ」', '“诶？这什么啊”')).toBe('「诶？这什么啊」');
+  });
+
+  test('数量对不上且无法安全判断时保持不变', () => {
+    expect(restoreSourceQuotes('「一」『二』', '“一和二”')).toBe('“一和二”');
+  });
+
+  test('空文本安全返回', () => {
+    expect(restoreSourceQuotes('「一」', '')).toBe('');
   });
 });

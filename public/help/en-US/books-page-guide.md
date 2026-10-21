@@ -55,7 +55,7 @@ Available options:
 
 Choose **Add book** to open the form.
 
-Fields include title (required), alternate titles, author, description, tags, cover, website URL, volume/chapter structure, and book instructions for translation, polishing, and proofreading.
+Fields include title (required), alternate titles, author, description, tags, cover, website URL, and volume/chapter structure. Book instructions for translation, polishing, and proofreading are set in the book's Translation settings.
 
 The target language is the interface language when the new book is actually saved. Website and AI imports follow the same rule. Change it later in the book's translation settings; switching the interface does not change existing books.
 

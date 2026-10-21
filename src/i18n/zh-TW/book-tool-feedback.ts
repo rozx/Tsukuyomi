@@ -1,5 +1,12 @@
 export default {
   aiBookFeedback: {
+    instructionScopeInvalid: 'scope 必須是 book 或 chapter',
+    instructionTaskInvalid: 'task 必須是 translation、polish 或 proofreading',
+    instructionModeInvalid: 'mode 必須是 append 或 replace',
+    instructionsRequired: '必須提供 instructions（append 模式下不可為空）',
+    instructionsGetFailed: '取得特殊指令失敗',
+    instructionsUpdateFailed: '更新特殊指令失敗',
+    instructionsUpdated: '特殊指令已更新',
     fullTextChanged: '全文索引輸入已變更，舊計算已捨棄，請重試。',
     cacheRebuilding: '章節向量快取正依目標語言重建，請稍後重試或使用原文／目標語言讀取工具。',
     volumeIdsRequired: '必須提供有效的 volume_ids 清單',

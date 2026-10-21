@@ -69,6 +69,13 @@ describe('模型可见文字保持简中单源', () => {
     expect(englishTarget).not.toContain(agentText('aiText.symbolChinese'));
   });
 
+  it('中文目标要求原样保留原文的「」『』引号', () => {
+    const chineseTarget = buildTextTaskSystemPrompt('translation', {
+      languages: captureExecutionLanguages('zh-CN', 'zh-CN'),
+    });
+    expect(chineseTarget).toMatch(/「」『』[^\n]*原样保留/);
+  });
+
   it('解释提示词为简中并要求以界面语言回复', () => {
     const prompt = buildExplainPrompt('テスト', 'en-US');
     expect(prompt).toMatch(CJK);

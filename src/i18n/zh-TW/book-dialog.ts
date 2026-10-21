@@ -40,8 +40,6 @@ export default {
     fetchWeb: '從網站取得',
     webPlaceholder: '輸入網址後按 Enter',
     webHint: '按 Enter 新增網址，或按按鈕從支援的網站取得',
-    instructions: '特殊指令（書籍層級）',
-    instructionsHint: '指令適用於本書所有章節；章節指令會覆蓋書籍指令。',
     translationInstructions: '翻譯指令',
     polishInstructions: '潤色指令',
     proofreadInstructions: '校對指令',

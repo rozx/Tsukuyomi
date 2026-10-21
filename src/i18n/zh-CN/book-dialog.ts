@@ -40,8 +40,6 @@ export default {
     fetchWeb: '从网站获取',
     webPlaceholder: '输入网络地址后按回车',
     webHint: '输入网络地址后按回车键添加，或点击按钮从支持的网站获取',
-    instructions: '特殊指令（书籍级别）',
-    instructionsHint: '这些指令将应用于该书籍的所有章节。章节级别的指令会覆盖书籍级别的指令。',
     translationInstructions: '翻译指令',
     polishInstructions: '润色指令',
     proofreadInstructions: '校对指令',

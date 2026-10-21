@@ -39,6 +39,26 @@ describe('buildNovelSettingsUpdate（按字段存在性构造 partial update）'
     expect(buildNovelSettingsUpdate(data)).toEqual({});
   });
 
+  it('书籍级指令写入书籍的三类指令字段', () => {
+    expect(
+      buildNovelSettingsUpdate({
+        bookInstructions: { translation: '保留「」', polish: '', proofreading: '校对' },
+      }),
+    ).toEqual({
+      translationInstructions: '保留「」',
+      polishInstructions: '',
+      proofreadingInstructions: '校对',
+    });
+  });
+
+  it('书籍级指令不算章节指令 payload', () => {
+    expect(
+      hasChapterInstructionPayload({
+        bookInstructions: { translation: 'x', polish: '', proofreading: '' },
+      }),
+    ).toBe(false);
+  });
+
   it('空 payload 不产生任何更新', () => {
     expect(buildNovelSettingsUpdate({})).toEqual({});
   });
@@ -98,6 +118,9 @@ describe('bookToFormState / formStateToPayload（表单状态映射）', () => {
       enableOriginalTextValidation: false,
       translationModelOverride: null,
       proofreadingModelOverride: null,
+      translationInstructions: '',
+      polishInstructions: '',
+      proofreadingInstructions: '',
     });
   });
 
@@ -119,6 +142,8 @@ describe('bookToFormState / formStateToPayload（表单状态映射）', () => {
       skipAskUser: true,
       enableOriginalTextValidation: true,
       taskModelOverrides: { translation: 'model-a', proofreading: null },
+      translationInstructions: '  保留「」  ',
+      proofreadingInstructions: '校对',
     } as Novel;
     const state = bookToFormState(book);
     expect(state.filterIndents).toBe(true);
@@ -132,6 +157,7 @@ describe('bookToFormState / formStateToPayload（表单状态映射）', () => {
       skipAskUser: true,
       enableOriginalTextValidation: true,
       taskModelOverrides: { translation: 'model-a', proofreading: null },
+      bookInstructions: { translation: '保留「」', polish: '', proofreading: '校对' },
     });
   });
 });

@@ -12,13 +12,20 @@ import type { BookTranslationSettingsFormHandle } from '../composables/book-deta
 import type { Novel } from '../models/novel';
 
 let app: App | undefined;
-beforeEach(() =>
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+beforeEach(() => {
   vi.stubGlobal('matchMedia', () => ({
     matches: false,
     addEventListener() {},
     removeEventListener() {},
-  })),
-);
+  }));
+  // 书籍级特殊指令页签（PrimeVue Tabs）依赖 ResizeObserver，jsdom 未提供
+  vi.stubGlobal('ResizeObserver', ResizeObserverStub);
+});
 afterEach(() => {
   app?.unmount();
   vi.unstubAllGlobals();

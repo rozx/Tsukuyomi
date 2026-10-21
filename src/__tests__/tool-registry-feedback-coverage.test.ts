@@ -210,6 +210,20 @@ async function scenario(locale: AppLocale): Promise<{ name: string; content: str
   await run('get_next_chapter', { chapter_id: 'c' });
   await run('get_next_chapter', { chapter_id: 'c2' });
   await run('update_chapter_title', { chapter_id: 'c', title_translation: 'Chapter One EN' });
+  await run('update_special_instructions', {
+    scope: 'book',
+    task: 'translation',
+    instructions: 'Keep honorifics',
+  });
+  await run('update_special_instructions', {
+    scope: 'chapter',
+    chapter_id: 'c',
+    task: 'polish',
+    mode: 'replace',
+    instructions: 'Casual tone',
+  });
+  await run('update_special_instructions', { scope: 'volume', task: 'translation' });
+  await run('get_special_instructions', { chapter_id: 'c' });
 
   const memory = await run('create_memory', { content: 'Bob is calm', summary: 'Bob tone' });
   const memoryId = find(memory, 'memory_id') ?? find(memory, 'id') ?? 'missing';

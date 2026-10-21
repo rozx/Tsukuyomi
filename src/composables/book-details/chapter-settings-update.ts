@@ -6,10 +6,18 @@ import {
   resolveTaskChunkSize,
 } from 'src/services/ai/tasks/utils/chunk-formatter';
 
+/** 书籍级三类任务特殊指令（翻译设置面板维护，作用于全书）。 */
+export type BookInstructions = {
+  translation: string;
+  polish: string;
+  proofreading: string;
+};
+
 /**
  * 翻译设置保存 payload：书籍级字段 + 章节级指令。
  * 书籍级字段均为可选——桌面「章节设置」弹窗只提交章节指令，
  * 手机抽屉 / 翻译设置面板提交全量书籍级字段。
+ * 书籍级指令走 bookInstructions，与同名的章节级指令字段区分。
  */
 export type ChapterSettingsFormData = {
   targetLanguage?: AppLocale;
@@ -20,6 +28,7 @@ export type ChapterSettingsFormData = {
   skipAskUser?: boolean;
   enableOriginalTextValidation?: boolean;
   taskModelOverrides?: Novel['taskModelOverrides'];
+  bookInstructions?: BookInstructions;
   translationInstructions?: string;
   polishInstructions?: string;
   proofreadingInstructions?: string;
@@ -38,6 +47,9 @@ export type BookSettingsFormState = {
   enableOriginalTextValidation: boolean;
   translationModelOverride: string | null;
   proofreadingModelOverride: string | null;
+  translationInstructions: string;
+  polishInstructions: string;
+  proofreadingInstructions: string;
 };
 
 /** 共享表单通过 template ref 暴露给壳组件的方法。 */
@@ -56,6 +68,9 @@ const DEFAULT_FORM_STATE: BookSettingsFormState = {
   enableOriginalTextValidation: false,
   translationModelOverride: null,
   proofreadingModelOverride: null,
+  translationInstructions: '',
+  polishInstructions: '',
+  proofreadingInstructions: '',
 };
 
 /** 从书籍构造表单状态；book 为 null 时回退默认值 */
@@ -71,10 +86,13 @@ export function bookToFormState(book: Novel | null): BookSettingsFormState {
     enableOriginalTextValidation: book.enableOriginalTextValidation === true,
     translationModelOverride: book.taskModelOverrides?.translation ?? null,
     proofreadingModelOverride: book.taskModelOverrides?.proofreading ?? null,
+    translationInstructions: book.translationInstructions ?? '',
+    polishInstructions: book.polishInstructions ?? '',
+    proofreadingInstructions: book.proofreadingInstructions ?? '',
   };
 }
 
-/** 表单状态 → 书籍级保存 payload（不含章节指令字段） */
+/** 表单状态 → 书籍级保存 payload（书籍级指令走 bookInstructions，不含章节指令字段） */
 export function formStateToPayload(state: BookSettingsFormState): ChapterSettingsFormData {
   return {
     targetLanguage: state.targetLanguage,
@@ -87,6 +105,11 @@ export function formStateToPayload(state: BookSettingsFormState): ChapterSetting
     taskModelOverrides: {
       translation: state.translationModelOverride,
       proofreading: state.proofreadingModelOverride,
+    },
+    bookInstructions: {
+      translation: state.translationInstructions.trim(),
+      polish: state.polishInstructions.trim(),
+      proofreading: state.proofreadingInstructions.trim(),
     },
   };
 }
@@ -129,6 +152,11 @@ export function buildNovelSettingsUpdate(data: ChapterSettingsFormData): Partial
   }
   if (data.taskModelOverrides !== undefined) {
     updates.taskModelOverrides = data.taskModelOverrides;
+  }
+  if (data.bookInstructions !== undefined) {
+    updates.translationInstructions = data.bookInstructions.translation;
+    updates.polishInstructions = data.bookInstructions.polish;
+    updates.proofreadingInstructions = data.bookInstructions.proofreading;
   }
   return updates;
 }

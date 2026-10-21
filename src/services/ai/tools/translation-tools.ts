@@ -10,6 +10,7 @@ import { ChapterService } from 'src/services/chapter-service';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import { TRANSLATION_BATCH_LIMITS } from 'src/services/ai/constants';
 import { isEmptyParagraph, isSymbolOnly } from 'src/utils/text-utils';
+import { restoreSourceQuotes } from 'src/utils/translation-normalizer';
 import { TodoListService } from 'src/services/todo-list-service';
 import type { AppLocale } from 'src/models/locale';
 import { getLanguageTranslation } from 'src/services/localization/selection';
@@ -1435,9 +1436,17 @@ function validateAllItems(
   const acceptedItems: Array<{ paragraphId: string; translatedText: string }> = [];
   const failedItems: FailedParagraphItem[] = [];
 
-  for (const item of items) {
-    const paragraph = targetParagraphsMap.get(item.paragraphId);
+  for (const rawItem of items) {
+    const paragraph = targetParagraphsMap.get(rawItem.paragraphId);
     if (!paragraph) continue;
+    // 简繁译文尊重原文引号：写入前把被改写成“”‘’的「」『』还原
+    const item =
+      targetLanguage === 'en-US'
+        ? rawItem
+        : {
+            ...rawItem,
+            translatedText: restoreSourceQuotes(paragraph.text, rawItem.translatedText),
+          };
     const outcome = validateSingleItem(
       item,
       paragraph,

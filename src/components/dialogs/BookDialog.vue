@@ -8,13 +8,7 @@ import { useRouter } from 'vue-router';
 import { cloneDeep } from 'lodash';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
-import Textarea from 'primevue/textarea';
 import AutoComplete from 'primevue/autocomplete';
-import Tabs from 'primevue/tabs';
-import TabList from 'primevue/tablist';
-import Tab from 'primevue/tab';
-import TabPanels from 'primevue/tabpanels';
-import TabPanel from 'primevue/tabpanel';
 import AdaptiveDialog from 'src/components/layout/AdaptiveDialog.vue';
 import type { Novel, Chapter, CoverImage } from 'src/models/novel';
 import type { Memory } from 'src/models/memory';
@@ -70,9 +64,6 @@ const formData = ref<Partial<Novel>>({
   description: '',
   tags: [],
   webUrl: [],
-  translationInstructions: '',
-  polishInstructions: '',
-  proofreadingInstructions: '',
 });
 
 // 封面管理对话框
@@ -80,14 +71,6 @@ const showCoverManager = ref(false);
 
 // 表单验证错误
 const formErrors = ref<Record<string, string>>({});
-
-// 特殊指令活动标签页
-const specialInstructionsActiveTab = ref<string>('translation');
-
-// 确保始终有默认值
-const currentSpecialInstructionsActiveTab = computed(
-  () => specialInstructionsActiveTab.value || 'translation',
-);
 
 // 展开的卷 ID 集合（用于折叠/展开）
 const expandedVolumes = ref<Set<string>>(new Set());
@@ -158,9 +141,6 @@ const resetForm = () => {
     description: '',
     tags: [],
     webUrl: [],
-    translationInstructions: '',
-    polishInstructions: '',
-    proofreadingInstructions: '',
   };
   formErrors.value = {};
   expandedVolumes.value.clear();
@@ -233,9 +213,6 @@ const EDIT_OVERRIDE_FIELDS = [
   'description',
   'tags',
   'webUrl',
-  'translationInstructions',
-  'polishInstructions',
-  'proofreadingInstructions',
 ] as const;
 
 // 编辑模式：以 props.book 为基底，用当前表单值覆盖未保存的改动后再构建导出对象
@@ -312,11 +289,6 @@ const handleExportJson = async () => {
       life: 3000,
     });
   }
-};
-
-// 处理特殊指令标签页切换
-const handleSpecialInstructionsTabChange = (value: string | number) => {
-  specialInstructionsActiveTab.value = String(value);
 };
 
 // 导出按钮文案（手机端简短显示）
@@ -483,9 +455,6 @@ const buildEditFormData = (): Partial<Novel> => {
     description: orBlank(book.description),
     tags: cloneStringArray(book.tags),
     webUrl: cloneStringArray(book.webUrl),
-    translationInstructions: orBlank(book.translationInstructions),
-    polishInstructions: orBlank(book.polishInstructions),
-    proofreadingInstructions: orBlank(book.proofreadingInstructions),
   };
   if (book.cover) {
     data.cover = { ...book.cover };
@@ -509,8 +478,6 @@ watch(
         // 添加模式：重置表单
         resetForm();
       }
-      // 重置到默认标签页
-      specialInstructionsActiveTab.value = 'translation';
       formErrors.value = {};
       // 填充表单后立即捕获快照：编辑保存只提交与快照不同的字段，晚于用户输入捕获会吞掉改动
       captureSnapshot();
@@ -681,76 +648,6 @@ watch(
           <small class="text-moon/60 block mt-1">{{ i18nT('bookDialogUi.webHint') }}</small>
         </div>
 
-        <!-- 特殊指令 -->
-        <div class="space-y-2">
-          <div>
-            <label class="block text-sm font-medium text-moon/90">{{
-              i18nT('bookDialogUi.instructions')
-            }}</label>
-            <small class="text-moon/60 text-xs block mt-1">{{
-              i18nT('bookDialogUi.instructionsHint')
-            }}</small>
-          </div>
-          <Tabs
-            :value="currentSpecialInstructionsActiveTab"
-            @update:value="handleSpecialInstructionsTabChange"
-            class="special-instructions-tabs"
-          >
-            <TabList>
-              <Tab value="translation">{{ i18nT('bookDialogUi.translationInstructions') }}</Tab>
-              <Tab value="polish">{{ i18nT('bookDialogUi.polishInstructions') }}</Tab>
-              <Tab value="proofreading">{{ i18nT('bookDialogUi.proofreadInstructions') }}</Tab>
-            </TabList>
-            <TabPanels>
-              <TabPanel value="translation">
-                <div class="space-y-2 pt-2">
-                  <Textarea
-                    :id="`${idPrefix}-translationInstructions`"
-                    v-model="formData.translationInstructions"
-                    :placeholder="i18nT('bookDialogUi.translationPlaceholder')"
-                    :rows="6"
-                    :auto-resize="true"
-                    class="w-full"
-                  />
-                  <small class="text-moon/60 text-xs block">{{
-                    i18nT('bookDialogUi.translationHint')
-                  }}</small>
-                </div>
-              </TabPanel>
-              <TabPanel value="polish">
-                <div class="space-y-2 pt-2">
-                  <Textarea
-                    :id="`${idPrefix}-polishInstructions`"
-                    v-model="formData.polishInstructions"
-                    :placeholder="i18nT('bookDialogUi.polishPlaceholder')"
-                    :rows="6"
-                    :auto-resize="true"
-                    class="w-full"
-                  />
-                  <small class="text-moon/60 text-xs block">{{
-                    i18nT('bookDialogUi.polishHint')
-                  }}</small>
-                </div>
-              </TabPanel>
-              <TabPanel value="proofreading">
-                <div class="space-y-2 pt-2">
-                  <Textarea
-                    :id="`${idPrefix}-proofreadingInstructions`"
-                    v-model="formData.proofreadingInstructions"
-                    :placeholder="i18nT('bookDialogUi.proofreadPlaceholder')"
-                    :rows="6"
-                    :auto-resize="true"
-                    class="w-full"
-                  />
-                  <small class="text-moon/60 text-xs block">{{
-                    i18nT('bookDialogUi.proofreadHint')
-                  }}</small>
-                </div>
-              </TabPanel>
-            </TabPanels>
-          </Tabs>
-        </div>
-
         <!-- 卷和章节（只读） -->
         <BookVolumesTree
           :volumes="availableVolumes"
@@ -890,28 +787,8 @@ watch(
   </AdaptiveDialog>
 </template>
 
-<!-- “特殊指令”页签基础样式（与 EditChapterDialog 共享），详见 special-instructions-tabs.css。
-     本对话框独有的横向滚动规则仍保留在下方 scoped 样式块中，置于其后以保证 @media 覆盖生效。 -->
-<style scoped src="./special-instructions-tabs.css"></style>
-
 <style scoped>
 :deep(.book-dialog .p-dialog-content) {
   overflow-x: hidden;
-}
-
-.special-instructions-tabs :deep(.p-tablist-content) {
-  overflow-x: auto;
-}
-
-.special-instructions-tabs :deep(.p-tablist-tab-list) {
-  min-width: max-content;
-}
-
-@media (max-width: 640px) {
-  .special-instructions-tabs :deep(.p-tab) {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8125rem;
-    white-space: nowrap;
-  }
 }
 </style>

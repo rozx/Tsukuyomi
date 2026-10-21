@@ -38,6 +38,9 @@ export default {
     bookAndChapterHint: '全域設定套用於整本書，章節設定僅套用於目前章節',
     chapterOnlyHint: '章節特殊指令僅套用於目前章節；書籍設定請於側欄「翻譯設定」配置',
     globalSettings: '全域設定',
+    bookInstructions: '特殊指令（書籍層級）',
+    bookInstructionsHint:
+      '適用於本書所有章節，會加入對應任務的系統提示詞；章節設定中的同類指令會覆蓋書籍指令',
     chapterInstructions: '章節特殊指令',
     chapterInstructionsHint: '僅套用於目前章節，會加入對應任務的系統提示詞',
     translationInstructions: '翻譯指令',

@@ -59,7 +59,7 @@ Four cards in a responsive grid:
 
 | Card                       | Action                                                                                                                                                                                                            |
 | :------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ➕ **Add book**            | Open the manual book form: title, author, description, tags, cover, alternate titles, Web URL, and book instructions                                                                                              |
+| ➕ **Add book**            | Open the manual book form: title, author, description, tags, cover, alternate titles, and Web URL                                                                                                                 |
 | 🌐 **Import from website** | Open the sync workspace. Built-in sites include `ncode.syosetu.com`, `novel18.syosetu.com`, `kakuyomu.jp`, and `syosetu.org`; other sites can use AI import. Select/skip chapters and choose a destination volume |
 | 📚 **Open library**        | Go to `/books`                                                                                                                                                                                                    |
 | 🤖 **AI settings**         | Go to `/ai` to configure models and task routing                                                                                                                                                                  |

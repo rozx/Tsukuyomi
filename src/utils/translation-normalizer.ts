@@ -9,6 +9,44 @@ export function normalizeTranslationForLanguage(text: string, language: AppLocal
   return language === 'en-US' ? text : normalizeTranslationQuotes(text);
 }
 
+const QUOTE_OPENS = '「『“‘';
+const QUOTE_CLOSES = '」』”’';
+const QUOTE_CHARS = QUOTE_OPENS + QUOTE_CLOSES;
+
+const collectQuotes = (text: string): string[] => [...text].filter((c) => QUOTE_CHARS.includes(c));
+const isOpenQuote = (char: string): boolean => QUOTE_OPENS.includes(char);
+
+/**
+ * 中文译文尊重原文引号：AI 常把原文「」『』改写为“”‘’，这里按原文还原。
+ * - 原文与译文的引号序列数量一致、开闭角色逐一对应时，按位置换回原文引号（原文自带的“”也保持“”）
+ * - 否则仅在原文只有「」、译文只用“”时整体映射为「」
+ * - 其余无法安全判断的情况保持译文不变，由提示词约束兜底
+ */
+export function restoreSourceQuotes(original: string, translated: string): string {
+  if (!original || !translated) return translated;
+  const sourceQuotes = collectQuotes(original);
+  if (!sourceQuotes.some((c) => '「」『』'.includes(c))) return translated;
+  const targetQuotes = collectQuotes(translated);
+  if (targetQuotes.length === 0) return translated;
+
+  const aligned =
+    sourceQuotes.length === targetQuotes.length &&
+    sourceQuotes.every((c, i) => isOpenQuote(c) === isOpenQuote(targetQuotes[i]!));
+  if (aligned) {
+    let index = 0;
+    return [...translated]
+      .map((c) => (QUOTE_CHARS.includes(c) ? sourceQuotes[index++]! : c))
+      .join('');
+  }
+
+  const sourceOnlyCorner = sourceQuotes.every((c) => c === '「' || c === '」');
+  const targetOnlyCurlyDouble = targetQuotes.every((c) => c === '“' || c === '”');
+  if (sourceOnlyCorner && targetOnlyCurlyDouble) {
+    return translated.replace(/“/g, '「').replace(/”/g, '」');
+  }
+  return translated;
+}
+
 /**
  * 顺序应用一组 [正则, 替换串] 对，返回替换后的字符串
  * 用于把大量重复的 `str = str.replace(a, b)` 收拢为声明式数组
