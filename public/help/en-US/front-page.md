@@ -18,9 +18,9 @@ Welcome to **Tsukuyomi**. This guide introduces the main features and workflows 
 
 1. Open **AI models** from the navigation.
 2. Add a model and enter its connection details:
-   - Supported providers are **OpenAI** and **Gemini**.
+   - Supported providers are **OpenAI**, **Gemini**, and **Anthropic**.
    - Enter an API key.
-   - OpenAI requires a Base URL; Gemini can use its default endpoint.
+   - OpenAI requires a Base URL; Gemini and Anthropic can use their default endpoints.
 3. Use **Fetch model information** to read context and output limits from the bundled models.dev catalog. Use **Test availability** to check the connection, then save.
 
 > 💡 See [AI model configuration](/help/ai-models-guide).

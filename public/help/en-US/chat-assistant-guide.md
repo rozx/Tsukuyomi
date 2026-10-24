@@ -70,6 +70,9 @@ Available tools can read or modify data in the current book:
 - Character settings
 - Memories
 - Paragraphs and book information
+- Special instructions (book-level and chapter-level translation / polishing / proofreading instructions)
+
+Special instructions can fix recurring translation problems. When you point out a mistranslation or state a lasting preference (for a Chinese translation, for example: "keep the source's 「」 as 「」; don't change them to “”"), Tsukuyomi first reviews the existing instructions, then appends the correction to the book instructions (or to that chapter's instructions when it affects only one chapter). Later translation, polishing, and proofreading tasks include the rule. You can also ask Tsukuyomi to replace or clear an instruction directly. These two abilities are available only in the chat assistant and require an open book; afterwards, view and edit the instructions in the book's Translation settings or Chapter settings. See [AI translation](/help/book-details-translation#book-details-translation-section-14).
 
 ### 3) Help documents {#chat-assistant-guide-section-10}
 
@@ -113,6 +116,10 @@ A: The input may be empty, or no assistant default is configured.
 **Q: Why doesn't the assistant know the chapter?**
 
 A: Select the book, chapter, or paragraph in the workspace first.
+
+**Q: What if the same mistranslation keeps coming back?**
+
+A: Tell Tsukuyomi what was wrong and how it should be translated, and ask her to "add it to the special instructions". She writes the rule into this book's instructions, and later translation tasks follow it.
 
 **Q: Can the assistant open a help document?**
 

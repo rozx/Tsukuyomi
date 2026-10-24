@@ -12,24 +12,22 @@
 
 > 面向小说的 AI 导入、阅读与翻译工具：原文不限语言，可译为简体中文、繁體中文或 English；对日文网络小说与轻小说有专门支持。
 
-**Tsukuyomi (月詠)** 将小说导入、双语阅读、翻译、润色和校对放在同一个工作台中。使用自己的 API Key 接入 OpenAI、Gemini 或兼容 OpenAI 协议的服务，通过术语、角色设定和记忆库为翻译提供上下文。支持网页版与 Electron 桌面版。
+**Tsukuyomi (月詠)** 将小说导入、双语阅读、翻译、润色和校对放在同一个工作台中。使用自己的 API Key 接入 OpenAI、Gemini、Anthropic 或兼容 OpenAI 协议的服务，通过术语、角色设定和记忆库为翻译提供上下文。支持网页版与 Electron 桌面版。
 
 - [打开网页版](https://tsukuyomi.rozx.moe/)
 - [下载桌面版](https://github.com/rozx/Tsukuyomi/releases/latest)
 
-## ☁️ v0.18 新增：按章节增量同步与更轻的本地嵌入
+## 🤖 v0.19 新增：原生 Claude 接入与书库一键检查更新
 
-同步改为按章节小组上传与下载，大书库也能顺畅同步；本地嵌入换用更小的模型，并在独立 Worker 中运行，不再卡住界面。
+新增 Anthropic（Claude）提供商，书库可以直接检查所有书籍的更新，聊天助手也能帮你维护特殊指令。
 
-- **同步协议 v6**：书籍目录与章节正文分开存放，正文按章节 ID 固定分成 16 个小组。新增或修改一章通常只上传所在小组、变化的目录和清单，不再重传整本书。
-- **大书库同步**：GitHub 文件列表超过 300 个文件被截断时，按完整同步清单补齐文件继续同步；书库没有变化时跳过全库扫描。
-- **遗留文件清理与修订历史**：在「设置 → 同步设置」扫描并清理远端不再引用的旧文件；修订历史按书籍归组显示文件变化。
-- **设置同步更可靠**：Tavily / Firecrawl API Key 与各任务的默认模型分别按修改时间合并，不再被其他设置覆盖或在同步途中被清空。
-- **Bekko 本地嵌入**：默认模型换成 `bekko-embedding-v1-a25m`（384 维，WebGPU / WASM 共用约 190 MiB），推理移入 Web Worker；「向量索引」面板重做，平板与窄屏也有入口。
+- **Anthropic 提供商**：直接调用 Anthropic API，基础地址可留空；思考等级换算为 Claude 的自适应思考，并使用提示缓存降低长对话费用。
+- **发送温度参数开关**：每个模型可以关闭温度参数；把模型标识改成 Claude 4.7 及之后的型号时自动关闭，避免请求被拒。
+- **书库检查更新**：在书卡上点「检查更新」，或在工具栏点「全部检查更新」，只读取目录；有更新的书在封面显示「N 新章」角标，刷新页面后仍保留，点角标即可进入更新页面。
+- **特殊指令与原文引号**：书籍级特殊指令移到「翻译设置」；指出译法错误后，月詠可以把纠正规则写入特殊指令；简繁译文保留原文的「」『』。
+- **跨标签页排队与更稳的设置导入**：同一网站的抓取排队和暂停在多个浏览器标签页之间共享；设置导入时文件中缺少的部分不再清空本机数据。
 
-**多设备同步请先备份，再把所有设备升级到 v0.18.0，最后逐台同步；首次同步会把 Gist 完整迁移到 v6。启用本地嵌入的用户需要重新下载模型并重建向量。**
-
-[阅读 v0.18.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.18.0.md) · [设置说明](public/help/zh-CN/settings-guide.md) · [本地嵌入](public/help/zh-CN/local-embedding.md)
+[阅读 v0.19.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.19.0.md) · [AI 模型配置](public/help/zh-CN/ai-models-guide.md) · [书籍列表页](public/help/zh-CN/books-page-guide.md)
 
 ![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
@@ -44,12 +42,13 @@
 
 ### 🤖 AI 模型配置
 
-Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
+Tsukuyomi 采用 Bring Your Own Key 模式，内置三种提供商：
 
 - **OpenAI**：填写 API Key、基础地址与模型 ID，也可用于兼容 OpenAI 协议的服务或网关。
 - **Gemini**：使用 Google Generative AI SDK 接入，填写 API Key 与模型 ID。
+- **Anthropic**：直接调用 Claude，填写 API Key 与模型 ID，基础地址可留空；支持思考等级与提示缓存。
 
-其他模型需要通过受支持的兼容接口接入，具体可用模型与工具调用能力取决于服务端。可在界面拉取模型列表、验证连接，并配置自定义请求头及浏览器 CORS 代理。
+其他模型需要通过受支持的兼容接口接入，具体可用模型与工具调用能力取决于服务端。可在界面拉取模型列表、验证连接，并配置自定义请求头及浏览器 CORS 代理；不接受温度参数的新模型可以关闭「发送温度参数」。
 
 翻译、校对/润色、术语翻译和助手可分别设置默认模型；单本书还可覆盖翻译与校对/润色模型。详见 [AI 模型配置](public/help/zh-CN/ai-models-guide.md)。
 
@@ -99,6 +98,7 @@ Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
 
 - **实时协助**: 随时询问 "这句话的梗在哪？" 或 "这里怎么翻译才能保留原作者的俏皮感？"。
 - **自动化操控**: 直接通过对话修改书籍信息或增删术语，例如："帮我把这本书改成完结状态"。
+- **维护特殊指令**: 指出反复出现的译法错误后，月詠会把纠正规则写入书籍或章节的特殊指令，之后的翻译都会遵循。
 - **内置知识库**: 遇到软件使用问题，AI 会检索官方帮助文档为您解答。
 
 ### ☁️ 跨设备同步
@@ -188,7 +188,7 @@ Tsukuyomi 采用 Bring Your Own Key 模式，内置两种提供商：
 4. 在「卷章草稿」检查书籍资料、章节顺序和正文。
 5. 生成「导入方案」，核对目标书籍、缺失章节和译文影响，再点击「确认导入」。完成后点「打开小说」。
 
-更多例子见 [AI 导入工作台指南](public/help/zh-CN/import-guide.md)。也可以在书库中选择「从网站导入」，使用内置的日文小说网站规则处理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他站点可转交 AI 导入器。网站拦截代理访问时会自动改用 Firecrawl 抓取（无需 Key 也可使用）；书籍更新检查只读取目录，可按需逐章比对正文。应用格式的 JSON 书籍文件可通过「从 JSON 导入」添加，完整资料备份在设置中恢复。
+更多例子见 [AI 导入工作台指南](public/help/zh-CN/import-guide.md)。也可以在书库中选择「从网站导入」，使用内置的日文小说网站规则处理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他站点可转交 AI 导入器。网站拦截代理访问时会自动改用 Firecrawl 抓取（无需 Key 也可使用）；书籍更新检查只读取目录，可在书库中逐本或「全部检查更新」，并按需逐章比对正文。应用格式的 JSON 书籍文件可通过「从 JSON 导入」添加，完整资料备份在设置中恢复。
 
 ### 3. 从源码运行
 
@@ -218,7 +218,7 @@ bun run dev
 | **核心逻辑** | [术语管理](public/help/zh-CN/book-details-terminology.md) \| [角色设定](public/help/zh-CN/book-details-characters.md) \| [记忆系统](public/help/zh-CN/book-details-memory.md)  |
 | **AI 导入**  | [导入工作台：分步操作、拆章与补章](public/help/zh-CN/import-guide.md)                                                                                                          |
 | **进阶工具** | [聊天助手实战](public/help/zh-CN/chat-assistant-guide.md) \| [本地嵌入与章节检索](public/help/zh-CN/local-embedding.md)                                                        |
-| **更新日志** | [v0.18.1 发布说明](public/releaseNotes/RELEASE_NOTES_v0.18.1.md)                                                                                                               |
+| **更新日志** | [v0.19.0 发布说明](public/releaseNotes/RELEASE_NOTES_v0.19.0.md)                                                                                                               |
 
 > 应用内「帮助」可查阅使用指南；主分支文档通过工作流同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)。
 
@@ -229,7 +229,7 @@ bun run dev
 | **前端框架**      | Vue 3.5 · Quasar 2.20 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US) |
 | **桌面封装**      | Electron 39（Web SPA 与桌面端共用同一份代码，通过 `useDeviceVariant` 强制 Desktop 变体）                              |
 | **运行时 / 构建** | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                         |
-| **AI SDK**        | OpenAI SDK · Google Generative AI；通过 OpenAI 配置接入兼容协议服务（BYOK）                                           |
+| **AI SDK**        | Vercel AI SDK（OpenAI 兼容 · Google · Anthropic）；通过 OpenAI 配置接入兼容协议服务（BYOK）                           |
 | **本地嵌入**      | Transformers.js (ONNX Runtime Web) · `bekko-embedding-v1-a25m` · 384 维 mean pooling · WebGPU（优先）/ WASM（回退）   |
 | **存储 / 同步**   | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 哈希 manifest · 条件 GET + 伪 CAS 并发保护                |
 | **抓取**          | Puppeteer + `puppeteer-extra-plugin-stealth`（Electron 桌面版）/ CORS 代理（Web 版）· 被拦截时回退 Firecrawl          |
@@ -238,21 +238,21 @@ bun run dev
 
 ## 🛠️ 开发与构建
 
-| 命令                      | 用途                                                                               |
-| :------------------------ | :--------------------------------------------------------------------------------- |
-| `bun install`             | 安装依赖                                                                           |
-| `bun run dev`             | 启动 Web 开发服务器（默认 9000）                                                   |
-| `bun run dev:electron`    | 启动 Electron 开发模式                                                             |
-| `bun run build:spa`       | 构建生产环境 Web SPA                                                               |
-| `bun run build:electron`  | 按目标平台打包桌面客户端（macOS: dmg/zip；Windows: portable exe；Linux: AppImage） |
-| `bun run lint`            | 代码规范性检测                                                                     |
-| `bun run type-check`      | TypeScript 类型检查                                                                |
-| `bun run quality-check`   | Fallow 分析及差异范围 CI 门禁                                                      |
-| `bun run format`          | Prettier 格式化                                                                    |
-| `bun run test`            | 使用 Vitest 运行测试套件                                                           |
-| `bun run test:watch`      | Vitest 监听模式                                                                    |
-| `bun run test:coverage`   | 运行测试并生成 Istanbul 覆盖率                                                     |
-| `bun bump <version>`      | 更新发布版本，例如 `bun bump 0.16.0`                                               |
+| 命令                     | 用途                                                                               |
+| :----------------------- | :--------------------------------------------------------------------------------- |
+| `bun install`            | 安装依赖                                                                           |
+| `bun run dev`            | 启动 Web 开发服务器（默认 9000）                                                   |
+| `bun run dev:electron`   | 启动 Electron 开发模式                                                             |
+| `bun run build:spa`      | 构建生产环境 Web SPA                                                               |
+| `bun run build:electron` | 按目标平台打包桌面客户端（macOS: dmg/zip；Windows: portable exe；Linux: AppImage） |
+| `bun run lint`           | 代码规范性检测                                                                     |
+| `bun run type-check`     | TypeScript 类型检查                                                                |
+| `bun run quality-check`  | Fallow 分析及差异范围 CI 门禁                                                      |
+| `bun run format`         | Prettier 格式化                                                                    |
+| `bun run test`           | 使用 Vitest 运行测试套件                                                           |
+| `bun run test:watch`     | Vitest 监听模式                                                                    |
+| `bun run test:coverage`  | 运行测试并生成 Istanbul 覆盖率                                                     |
+| `bun bump <version>`     | 更新发布版本，例如 `bun bump 0.16.0`                                               |
 
 **开发者文档**: [构建故障排查](docs/BUILD_TROUBLESHOOTING.md) \| [主题指南](docs/THEME_GUIDE.md) \| [翻译指南](docs/TRANSLATION_GUIDE.md) \| [Wiki 同步](docs/WIKI_SYNC.md) \| [贡献者指南](AGENTS.md) \| [项目约定 (Claude Code)](CLAUDE.md)
 

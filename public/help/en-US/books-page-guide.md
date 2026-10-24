@@ -9,7 +9,8 @@ The book library manages all your projects, with search, sorting, import, editin
 - **Search**: filter by title, alternate title, author, description, or tag.
 - **Sort**: several options, with your previous choice remembered.
 - **Add book**: manually, from a website, or from JSON.
-- **Card actions**: favorite, edit, and delete.
+- **Card actions**: favorite, check for updates, edit, and delete.
+- **Check all for updates**: check every checkable book in the library for new chapters at once.
 - **Pagination**: 10/20/50/100 books per page.
 
 ---
@@ -100,8 +101,35 @@ Each card shows:
 Actions at the bottom:
 
 - ⭐ Add/remove favorite
+- 🔄 Check for updates (shown only for books from built-in sites or with a recorded update recipe)
 - ✏️ Edit
 - 🗑️ Delete
+
+When updates are pending, the cover shows a "+N new" or "N changed" badge. See "Check for updates" below.
+
+---
+
+## 🔄 Check for updates {#books-page-guide-section-16}
+
+You can check books for new chapters from the library without opening book details. Only books from built-in sites (see "Import from a website" above) or with a recorded update recipe can be checked.
+
+### Check one book {#books-page-guide-section-17}
+
+- Desktop: choose the 🔄 **Check for updates** button at the bottom of the card. Mobile: tap the 🔄 button on the card. Tablet: choose **Check for updates** in the book details on the right.
+- Checking reads only the contents, not chapter bodies, and shows "Checking for updates…" while running. When it finishes, a notification shows "Updates found" (for example, "New chapters in “Title”: 3") or "Up to date". If the contents cannot be read with the saved rules, the notification asks you to fix it on the update page.
+- With updates, the cover shows "+N new", or "N changed" (chapters updated on the site more recently than the local copy). Click the badge ("View updates") to open the book's update page, which reuses the check result you just got; select and apply chapters there.
+
+### Check all for updates {#books-page-guide-section-18}
+
+- **Check all for updates** in the library toolbar (a 🔄 icon button in the toolbar on mobile and tablet) checks every checkable book in turn (regardless of the search filter), up to 2 books at a time.
+- While running, the button shows "Checked N / M"; click it again to cancel. When everything finishes, a single summary notification appears, such as "Updates found in 2 book(s)" or "Checked 8 book(s), no new chapters"; each book's badge updates as usual.
+- The button is unavailable when the library has no checkable books.
+
+### Saved results and repeated checks {#books-page-guide-section-19}
+
+- Check results are stored on this device (not synced to the cloud), so badges remain after a page reload. After you import new chapters, skip chapters, or compare chapter bodies, badges shrink or disappear automatically based on the book's current content.
+- To avoid triggering site rate limits, checking the same book again within 1 minute, or running **Check all for updates** again within 10 minutes, reuses the previous result. To force a fresh check, open the book's update page and choose **Check again**.
+- Checks follow the same per-site queuing and pause rules; see "Website mappings" in [Settings](/help/settings-guide#settings-guide-section-12).
 
 ---
 
@@ -158,6 +186,10 @@ A: Counts are calculated asynchronously. Initial loading and data changes can ca
 **Q: Can I restore a deleted book?**
 
 A: Use **Undo** before the deletion notification disappears.
+
+**Q: Why doesn't a book card have a "Check for updates" button?**
+
+A: Only books from built-in sites, or with an update recipe recorded by the AI importer, can be checked for updates. Books created manually or imported from JSON without a recipe do not show the button.
 
 **Q: What should I check if import fails?**
 

@@ -78,6 +78,7 @@ Entries:
 
 - **Desktop/tablet update**: sidebar Settings → Check updates, route `/books/:id/settings/update`.
 - **Mobile update**: Check updates in the book overview, displayed full-screen with a Back control.
+- **From the library**: Check for updates on a library book card, or Check all for updates in the toolbar, reads only the contents and shows a badge on the cover when updates exist. Click the badge to open this book's update check, which reuses that check result. See [Book library](/help/books-page-guide#books-page-guide-section-16).
 - **New book**: Import from website on Home/Books, or Fetch from website in the new-book dialog, opens `/books/new/web`. Enter a contents URL and Check (for built-in sites, a chapter URL also works and is resolved to the work's contents page); `?url=` starts checking automatically. Fetch from website while editing opens the current book's update workspace.
 
 Workspace:
