@@ -18,9 +18,9 @@
 
 1. 進入左側導航 **AI列表**。
 2. 新增模型並填寫必要資訊：
-   - 提供商目前支持 **OpenAI** 與 **Gemini**。
+   - 提供商目前支持 **OpenAI**、**Gemini** 與 **Anthropic**。
    - 填寫 API Key。
-   - OpenAI 需填寫基礎位址（Base URL）；Gemini 可不填。
+   - OpenAI 需填寫基礎位址（Base URL）；Gemini 與 Anthropic 可不填。
 3. 可點選“取得模型資料”從內置的 models.dev 目錄讀取上下文視窗與輸出上限，用“測試可用性”確認連線正常，再儲存。
 
 > 💡 詳見 [AI 模型配置](/help/ai-models-guide)。

@@ -99,7 +99,7 @@ Two full-screen views:
 
 > Terms, characters, and memories use `/books/:id/settings/(terms|characters|memory)` instead of sidebar views.
 >
-> Translation settings are in the reader gear sheet's Global settings tab. Check updates opens `/books/:id/settings/update` full-screen from the book overview.
+> Translation settings are in the reader gear sheet's Book settings tab. Check updates opens `/books/:id/settings/update` full-screen from the book overview.
 >
 > Narrow layouts have no right rail. A desktop browser resized to this layout can open Vector index from the top bar when local embeddings are enabled. Physical mobile devices still disable embeddings; keyword/recency memory selection remains, while `query_chapter` is unavailable.
 

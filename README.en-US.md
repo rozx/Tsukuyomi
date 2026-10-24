@@ -12,24 +12,22 @@
 
 > An AI-powered tool for importing, reading, and translating novels: any source language, translated into Simplified Chinese, Traditional Chinese, or English, with dedicated support for Japanese web novels and light novels.
 
-**Tsukuyomi (月詠)** brings novel import, bilingual reading, translation, polishing, and proofreading into one workspace. Bring your own API key for OpenAI, Gemini, or any OpenAI-compatible service, and give the AI context through terminology, character settings, and a memory bank. Available as a web app and an Electron desktop app.
+**Tsukuyomi (月詠)** brings novel import, bilingual reading, translation, polishing, and proofreading into one workspace. Bring your own API key for OpenAI, Gemini, Anthropic, or any OpenAI-compatible service, and give the AI context through terminology, character settings, and a memory bank. Available as a web app and an Electron desktop app.
 
 - [Open the web app](https://tsukuyomi.rozx.moe/)
 - [Download the desktop app](https://github.com/rozx/Tsukuyomi/releases/latest)
 
-## ☁️ New in v0.18: Chapter-Level Incremental Sync and Lighter Local Embeddings
+## 🤖 New in v0.19: Native Claude Support and One-Click Library Update Checks
 
-Sync now uploads and downloads chapters in small groups, so large libraries sync smoothly. Local embeddings switch to a smaller model that runs in a dedicated Worker and no longer freezes the UI.
+A new Anthropic (Claude) provider joins the lineup, the library can check every book for updates directly, and the chat assistant can now maintain special instructions for you.
 
-- **Sync protocol v6**: book metadata and chapter content are stored separately, and chapters are split into 16 fixed groups by chapter ID. Adding or editing one chapter normally uploads only its group, the changed metadata, and the manifest instead of the whole book.
-- **Large-library sync**: when GitHub truncates the file list at 300 files, the client fills in the missing files from the full sync manifest and keeps going. When nothing in the library changed, the full library scan is skipped.
-- **Leftover file cleanup and revision history**: under Settings → Sync, scan for and remove old remote files the manifest no longer references. Revision history groups file changes by book.
-- **More reliable settings sync**: Tavily / Firecrawl API keys and each task's default model merge by their own modification time, so other settings edits no longer override them and they are no longer cleared mid-sync.
-- **Bekko local embeddings**: the default model is now `bekko-embedding-v1-a25m` (384 dimensions, about 190 MiB shared by WebGPU and WASM), and inference runs in a Web Worker. The **Vector index** panel is redesigned and now reachable on tablets and narrow layouts too.
+- **Anthropic provider**: calls the Anthropic API directly, with an optional base URL. Thinking levels map to Claude's adaptive thinking, and prompt caching lowers the cost of long conversations.
+- **Send temperature switch**: each model can stop sending the temperature parameter. Changing the model ID to Claude 4.7 or later turns it off automatically so requests are not rejected.
+- **Library update checks**: choose **Check for updates** on a book card, or **Check all for updates** in the toolbar, to read only the catalog. Books with updates show a "+N new" badge on the cover that survives a page reload; click the badge to open the update page.
+- **Special instructions and source quotes**: book-level special instructions moved to **Translation settings**. After you point out a mistranslation, Tsukuyomi can write the correction into the special instructions. Simplified and Traditional Chinese translations keep the source's 「」 and 『』.
+- **Cross-tab queuing and safer settings import**: per-site scraping queues and pauses are shared across browser tabs, and sections missing from an imported settings file no longer wipe local data.
 
-**For multiple devices, back up first, upgrade every device to v0.18.0, then sync them one at a time. The first sync migrates the whole Gist to v6. If you use local embeddings, the model must be downloaded again and vectors rebuilt.**
-
-[v0.18.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.18.0.md) · [Settings guide](public/help/en-US/settings-guide.md) · [Local embeddings](public/help/en-US/local-embedding.md)
+[v0.19.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.19.0.md) · [AI model configuration](public/help/en-US/ai-models-guide.md) · [Book library guide](public/help/en-US/books-page-guide.md)
 
 ![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
@@ -44,12 +42,13 @@ Sync now uploads and downloads chapters in small groups, so large libraries sync
 
 ### 🤖 AI Model Configuration
 
-Tsukuyomi is Bring Your Own Key, with two built-in providers:
+Tsukuyomi is Bring Your Own Key, with three built-in providers:
 
 - **OpenAI**: enter an API key, base URL, and model ID. Also works with OpenAI-compatible services and gateways.
 - **Gemini**: connects through the Google Generative AI SDK with an API key and model ID.
+- **Anthropic**: calls Claude directly with an API key and model ID; the base URL is optional. Supports thinking levels and prompt caching.
 
-Other models connect through a supported compatible API; which models and tool-calling features work depends on the service. From the UI you can fetch the model list, test the connection, and configure custom request headers and a browser CORS proxy.
+Other models connect through a supported compatible API; which models and tool-calling features work depends on the service. From the UI you can fetch the model list, test the connection, and configure custom request headers and a browser CORS proxy. For newer models that reject a temperature parameter, turn off **Send temperature**.
 
 Translation, proofreading/polishing, term translation, and the assistant each have their own default model, and a single book can override its translation and proofreading/polishing models. See [AI model configuration](public/help/en-US/ai-models-guide.md).
 
@@ -99,6 +98,7 @@ Tsukuyomi answers questions with the current book as context and can act through
 
 - **On-the-spot help**: ask "What's the joke in this line?" or "How do I keep the author's playful tone here?"
 - **Hands-free edits**: change book details or add and remove terms just by asking, e.g. "Mark this book as completed."
+- **Special instructions upkeep**: point out a recurring mistranslation and Tsukuyomi writes the correction into the book's or chapter's special instructions, so later translations follow it.
 - **Built-in knowledge base**: for questions about the app, the AI searches the official help docs.
 
 ### ☁️ Cross-Device Sync
@@ -188,7 +188,7 @@ Use the [web app](https://tsukuyomi.rozx.moe/) or [download the desktop app](htt
 4. In **Volume/chapter draft**, check the book details, chapter order, and text.
 5. Generate an **Import plan**, check the target book, missing chapters, and translation impact, then choose **Confirm import**. When it finishes, choose **Open novel**.
 
-See the [AI import workspace guide](public/help/en-US/import-guide.md) for more examples. You can also choose **Import from website** in the library to use the built-in rules for the Japanese novel sites `ncode.syosetu.com`, `novel18.syosetu.com`, `kakuyomu.jp`, and `syosetu.org`; other sites can be handed to the AI importer. When a site blocks proxy access, fetching falls back to Firecrawl (works without a key), and book update checks read only the catalog, comparing chapter text on demand. App-format JSON book files can be added with **Import from JSON**, and full backups are restored from Settings.
+See the [AI import workspace guide](public/help/en-US/import-guide.md) for more examples. You can also choose **Import from website** in the library to use the built-in rules for the Japanese novel sites `ncode.syosetu.com`, `novel18.syosetu.com`, `kakuyomu.jp`, and `syosetu.org`; other sites can be handed to the AI importer. When a site blocks proxy access, fetching falls back to Firecrawl (works without a key), and book update checks read only the catalog. Check books one at a time or with **Check all for updates** in the library, comparing chapter text on demand. App-format JSON book files can be added with **Import from JSON**, and full backups are restored from Settings.
 
 ### 3. Run from source
 
@@ -218,7 +218,7 @@ bun run dev
 | **Context**       | [Terminology](public/help/en-US/book-details-terminology.md) \| [Character settings](public/help/en-US/book-details-characters.md) \| [Memory](public/help/en-US/book-details-memory.md)            |
 | **AI import**     | [Import workspace: steps, splitting, and adding chapters](public/help/en-US/import-guide.md)                                                                                                        |
 | **Advanced**      | [Chat assistant](public/help/en-US/chat-assistant-guide.md) \| [Local embeddings and chapter search](public/help/en-US/local-embedding.md)                                                          |
-| **Release notes** | [v0.18.1 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.18.1.md)                                                                                                          |
+| **Release notes** | [v0.19.0 release notes (Simplified Chinese)](public/releaseNotes/RELEASE_NOTES_v0.19.0.md)                                                                                                          |
 
 > The in-app **Help** page has the user guides; docs on the main branch are synced to the [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki) by a workflow.
 
@@ -229,7 +229,7 @@ bun run dev
 | **Frontend**          | Vue 3.5 · Quasar 2.20 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US)        |
 | **Desktop**           | Electron 39 (the web SPA and desktop app share one codebase; `useDeviceVariant` forces the Desktop variant)                  |
 | **Runtime / build**   | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                                |
-| **AI SDK**            | OpenAI SDK · Google Generative AI; compatible services connect through the OpenAI provider (BYOK)                            |
+| **AI SDK**            | Vercel AI SDK (OpenAI-compatible · Google · Anthropic); compatible services connect through the OpenAI provider (BYOK)       |
 | **Local embeddings**  | Transformers.js (ONNX Runtime Web) · `bekko-embedding-v1-a25m` · 384-dim mean pooling · WebGPU (preferred) / WASM (fallback) |
 | **Storage / sync**    | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 hash manifest · conditional GET + pseudo-CAS concurrency guard   |
 | **Scraping**          | Puppeteer + `puppeteer-extra-plugin-stealth` (Electron desktop) / CORS proxy (web) · Firecrawl fallback when blocked         |
@@ -238,21 +238,21 @@ bun run dev
 
 ## 🛠️ Development and Build
 
-| Command                   | Purpose                                                                                       |
-| :------------------------ | :-------------------------------------------------------------------------------------------- |
-| `bun install`             | Install dependencies                                                                          |
-| `bun run dev`             | Start the web dev server (port 9000 by default)                                               |
-| `bun run dev:electron`    | Start Electron dev mode                                                                       |
-| `bun run build:spa`       | Build the production web SPA                                                                  |
-| `bun run build:electron`  | Package desktop clients per platform (macOS: dmg/zip; Windows: portable exe; Linux: AppImage) |
-| `bun run lint`            | Lint the code                                                                                 |
-| `bun run type-check`      | TypeScript type check                                                                         |
-| `bun run quality-check`   | Fallow analysis and diff-scoped CI gate                                                       |
-| `bun run format`          | Format with Prettier                                                                          |
-| `bun run test`            | Run the test suite with Vitest                                                                |
-| `bun run test:watch`      | Vitest watch mode                                                                             |
-| `bun run test:coverage`   | Run tests and produce Istanbul coverage                                                       |
-| `bun bump <version>`      | Bump the release version, e.g. `bun bump 0.16.0`                                              |
+| Command                  | Purpose                                                                                       |
+| :----------------------- | :-------------------------------------------------------------------------------------------- |
+| `bun install`            | Install dependencies                                                                          |
+| `bun run dev`            | Start the web dev server (port 9000 by default)                                               |
+| `bun run dev:electron`   | Start Electron dev mode                                                                       |
+| `bun run build:spa`      | Build the production web SPA                                                                  |
+| `bun run build:electron` | Package desktop clients per platform (macOS: dmg/zip; Windows: portable exe; Linux: AppImage) |
+| `bun run lint`           | Lint the code                                                                                 |
+| `bun run type-check`     | TypeScript type check                                                                         |
+| `bun run quality-check`  | Fallow analysis and diff-scoped CI gate                                                       |
+| `bun run format`         | Format with Prettier                                                                          |
+| `bun run test`           | Run the test suite with Vitest                                                                |
+| `bun run test:watch`     | Vitest watch mode                                                                             |
+| `bun run test:coverage`  | Run tests and produce Istanbul coverage                                                       |
+| `bun bump <version>`     | Bump the release version, e.g. `bun bump 0.16.0`                                              |
 
 **Developer docs (Simplified Chinese)**: [Build troubleshooting](docs/BUILD_TROUBLESHOOTING.md) \| [Theme guide](docs/THEME_GUIDE.md) \| [Translation guide](docs/TRANSLATION_GUIDE.md) \| [Wiki sync](docs/WIKI_SYNC.md) \| [Contributor guide](AGENTS.md) \| [Project conventions (Claude Code)](CLAUDE.md)
 

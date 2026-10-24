@@ -106,11 +106,12 @@ Saving either scope leaves the other scope in place.
 
 ### Mobile: two tabs in a bottom sheet {#book-details-translation-section-16}
 
-The gear opens Global settings and Chapter settings. Global settings uses the same book form as desktop/tablet.
+The gear opens Book settings and Chapter settings. Book settings uses the same book form as desktop/tablet.
 
 ### Book settings {#book-details-translation-section-17}
 
 - Target language: Simplified Chinese, Traditional Chinese, or English. Initial target comes from the interface at actual creation; legacy books use Simplified Chinese.
+- Book instructions: three tabs, Translation instructions / Polishing instructions / Proofreading instructions. They apply to every chapter of the book and are added to the matching task's system prompt; chapter instructions of the same type override them. Since v0.19.0 they live here instead of the edit-book dialog; existing instructions are kept.
 - Filter leading indentation
 - Normalize displayed symbols
 - Normalize displayed titles
@@ -138,6 +139,12 @@ Follow global default uses the task model configured on AI models. A disabled/de
 - Proofreading instructions
 
 These are attached to the corresponding prompt for this chapter only.
+
+> The chat assistant can also view and change book and chapter instructions for you. For example, after you point out a mistranslation, ask Tsukuyomi to write the correction into the instructions. See [Chat assistant](/help/chat-assistant-guide#chat-assistant-guide-section-9).
+
+### Source quotation marks {#book-details-translation-section-22}
+
+When the target language is Simplified or Traditional Chinese, the prompt asks the translation to keep the source's 「」 and 『』 exactly, rather than changing them to “” or ‘’. If the AI still rewrites them, they are restored according to the quote positions in the source before the translation is saved; when the quote counts or opening/closing pairs do not match and the restore cannot be done safely, the translation is left unchanged. This is not applied when the target language is English.
 
 ---
 

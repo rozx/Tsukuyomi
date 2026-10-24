@@ -11,7 +11,7 @@ This guide covers the current AI model page and model dialog.
 The **AI model workbench** has three areas:
 
 - **Header**: search by name, provider, model ID, or default task; Add AI model; model counts below.
-- **Model list**: grouped by OpenAI or Google Gemini, with total and enabled counts. Cards support **Duplicate** (disabled initially), **Edit**, and **Delete** (confirmation required, with undo).
+- **Model list**: grouped by OpenAI, Google Gemini, or Anthropic Claude, with total and enabled counts. Cards support **Duplicate** (disabled initially), **Edit**, and **Delete** (confirmation required, with undo).
 - **Task routing**: defaults for translation, proofreading/polishing, terminology translation, and the assistant. "Select automatically" in the dropdown means no explicit choice. These settings are included in import/export.
 
 Task defaults also sync through Gist with the app settings. Each task's choice merges by its own modification time, so editing other settings does not override it. If the chosen model has not synced to this device yet or was deleted, the choice is kept. Meanwhile the desktop dropdown shows "Select automatically", while the tablet/mobile picker shows the fallback model actually used (the first enabled model that supports the task), or "Unset" if there is none. The choice comes back once the model arrives. The choice is cleared only when that model is disabled or no longer used for the task.
@@ -32,8 +32,11 @@ Built-in providers:
 
 - `OpenAI` (OpenAI-compatible APIs)
 - `Gemini` (Google Gemini)
+- `Anthropic` (Anthropic Claude, since v0.19.0)
 
-Both use the Vercel AI SDK: `@ai-sdk/openai-compatible` for OpenAI and `@ai-sdk/google` for Gemini.
+All three use the Vercel AI SDK: `@ai-sdk/openai-compatible` for OpenAI, `@ai-sdk/google` for Gemini, and `@ai-sdk/anthropic` for Anthropic.
+
+With Anthropic, tool definitions, the system prompt, and conversation history use Anthropic prompt caching, so content resent during long conversations and tool loops costs less.
 
 > For DeepSeek, Moonshot, OpenRouter, Ollama, or another compatible service, choose OpenAI and enter its `baseUrl` and model ID. A domain-only URL automatically gains `/v1`; enter the full path if the service uses a different endpoint.
 
@@ -46,19 +49,30 @@ Choose **Add AI model** and fill in:
 1. **Enable model**
 2. **Use CORS proxy** (Web only; see below)
 3. **Model name** (required)
-4. **Temperature** (0–2)
-5. **Provider** (OpenAI / Gemini)
-6. **API key** (required)
-7. **Base URL**:
+4. **Send temperature** (switch, on by default; see below)
+5. **Temperature** (0–2; hidden when "Send temperature" is off)
+6. **Provider** (OpenAI / Gemini / Anthropic (Claude))
+7. **API key** (required)
+8. **Base URL**:
    - OpenAI: required
    - Gemini: hidden; uses Google's endpoint
-8. **Model ID** (required; select or type)
-9. **Thinking level** (optional)
-10. **Model information**: context window and maximum output tokens
-11. **Custom headers** (optional)
-12. **Default tasks**
+   - Anthropic: optional; leave empty to use the official endpoint `https://api.anthropic.com/v1`
+9. **Model ID** (required; select or type)
+10. **Thinking level** (optional)
+11. **Model information**: context window and maximum output tokens
+12. **Custom headers** (optional)
+13. **Default tasks**
 
-Once the API key and, for OpenAI, Base URL are valid, the model list loads automatically. Use **Refresh list** to reload it. You can also type a model ID absent from the list, including through an input method.
+Once the API key and, for OpenAI, Base URL are valid, the model list loads automatically. Use **Refresh list** to reload it. Toggling **Use CORS proxy** also reloads the list with the new setting and aborts any unfinished earlier request. The Anthropic model list also brings in the context window and maximum output. You can also type a model ID absent from the list, including through an input method.
+
+### Send temperature {#ai-models-guide-section-17}
+
+Some newer models (such as Claude 4.7 and later) no longer accept a temperature parameter and return an error when they receive one. With **Send temperature** off:
+
+- No task sends a temperature for this model; the temperature slider and the per-task temperatures under **Default tasks** are hidden.
+- The model card shows the temperature as "Not sent".
+
+Changing the model ID in the dialog to Claude 4.7 or later (including Fable and Mythos, and the OpenRouter `anthropic/…` and Bedrock `anthropic.…` forms) turns this switch off automatically; opening a saved model does not change its existing setting. With the Anthropic provider, temperature is never sent to these models, even if the switch is still on. Models saved by older versions have no such setting and are treated as on.
 
 Closing with unsaved changes asks you to continue editing or discard the changes.
 
@@ -84,13 +98,13 @@ The context window determines when chat and import assistants compress older con
 
 Options include Default (model behavior), Off/minimum, Very low, Low, Medium, High, and Very high. Default leaves provider settings untouched; older models without this field behave as before. Higher levels usually increase response time and token usage. Support varies by model; test the selected combination.
 
-The setting is saved, imported/exported, and synced with the model. It applies to chat, translation, polishing, proofreading, terminology, and context summaries. OpenAI-compatible services use reasoning effort; the SDK converts Gemini settings to a level or budget appropriate to the model.
+The setting is saved, imported/exported, and synced with the model. It applies to chat, translation, polishing, proofreading, terminology, and context summaries. OpenAI-compatible services use reasoning effort; the SDK converts Gemini settings to a level or budget appropriate to the model. For Anthropic, Claude 4.6 and later use adaptive thinking with the effort set by level, while 4.5 and earlier convert the level to a thinking budget; thinking summaries appear in the thinking process.
 
 ---
 
 ## 🌐 Network and proxy {#ai-models-guide-section-9}
 
-These settings apply to both providers, including model listing, generation, and connection testing.
+These settings apply to OpenAI, Gemini, and Anthropic, including model listing, generation, and connection testing.
 
 ### CORS proxy {#ai-models-guide-section-10}
 
@@ -120,7 +134,7 @@ To configure:
 
 ## 🎯 Default task settings {#ai-models-guide-section-12}
 
-Mark a model as eligible for each task and set a separate temperature:
+Mark a model as eligible for each task and set a separate temperature (task temperatures are hidden when "Send temperature" is off):
 
 - Translation
 - Proofreading/polishing (one shared task option)
@@ -149,7 +163,7 @@ Overrides do not affect terminology, chat, or explanation tasks. See [AI transla
 Search filters:
 
 - Model name
-- Provider (OpenAI / Gemini)
+- Provider (OpenAI / Gemini / Anthropic)
 - Model ID
 - Default task labels
 
@@ -157,7 +171,7 @@ Desktop cards show:
 
 - Provider and model ID
 - Enabled/disabled status
-- Temperature, context window, and maximum output
+- Temperature ("Not sent" when "Send temperature" is off), context window, and maximum output
 - Masked API key prefix
 - Base URL
 - Default task summary
@@ -184,6 +198,14 @@ API keys are stored in plaintext in local IndexedDB:
 **Q: Why does Gemini have no Base URL?**
 
 A: It uses Google's default endpoint. Custom headers and the CORS switch still apply.
+
+**Q: Does Anthropic need a Base URL?**
+
+A: No. Leave it empty to use the official endpoint `https://api.anthropic.com/v1`; enter an address only when accessing through a gateway compatible with the Anthropic API.
+
+**Q: A request fails saying temperature is not supported?**
+
+A: That model does not accept a temperature parameter. Edit the model, turn off "Send temperature", and save.
 
 **Q: Why is there no catalog record?**
 

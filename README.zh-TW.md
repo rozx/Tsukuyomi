@@ -12,24 +12,22 @@
 
 > 面向小說的 AI 匯入、閱讀與翻譯工具：原文不限語言，可譯為簡體中文、繁體中文或 English；對日文網路小說與輕小說有專門支援。
 
-**Tsukuyomi (月詠)** 將小說匯入、雙語閱讀、翻譯、潤色和校對放在同一個工作台中。使用自己的 API Key 接入 OpenAI、Gemini 或相容 OpenAI 協定的服務，透過術語、角色設定和記憶庫為翻譯提供上下文。支援網頁版與 Electron 桌面版。
+**Tsukuyomi (月詠)** 將小說匯入、雙語閱讀、翻譯、潤色和校對放在同一個工作台中。使用自己的 API Key 接入 OpenAI、Gemini、Anthropic 或相容 OpenAI 協定的服務，透過術語、角色設定和記憶庫為翻譯提供上下文。支援網頁版與 Electron 桌面版。
 
 - [開啟網頁版](https://tsukuyomi.rozx.moe/)
 - [下載桌面版](https://github.com/rozx/Tsukuyomi/releases/latest)
 
-## ☁️ v0.18 新增：按章節增量同步與更輕量的本機嵌入
+## 🤖 v0.19 新增：原生 Claude 接入與書庫一鍵檢查更新
 
-同步改為按章節小組上傳與下載，大型書庫也能順暢同步；本機嵌入改用更小的模型，並在獨立 Worker 中執行，不再卡住介面。
+新增 Anthropic（Claude）提供商，書庫可以直接檢查所有書籍的更新，聊天助手也能幫你維護特殊指令。
 
-- **同步協定 v6**：書籍目錄與章節正文分開存放，正文按章節 ID 固定分成 16 個小組。新增或修改一章通常只上傳所在小組、變更的目錄與清單，不再重傳整本書。
-- **大型書庫同步**：GitHub 檔案清單超過 300 個檔案被截斷時，依完整同步清單補齊檔案繼續同步；書庫沒有變化時略過全庫掃描。
-- **遺留檔案清理與修訂歷史**：在「設定 → 同步設定」掃描並清理遠端不再引用的舊檔案；修訂歷史按書籍歸組顯示檔案變化。
-- **設定同步更可靠**：Tavily / Firecrawl API Key 與各任務的預設模型分別按修改時間合併，不再被其他設定覆蓋或在同步途中被清空。
-- **Bekko 本機嵌入**：預設模型換成 `bekko-embedding-v1-a25m`（384 維，WebGPU / WASM 共用約 190 MiB），推論移入 Web Worker；「向量索引」面板重新設計，平板與窄螢幕也有入口。
+- **Anthropic 提供商**：直接呼叫 Anthropic API，基礎位址可留空；思考等級換算為 Claude 的自適應思考，並使用提示快取降低長對話費用。
+- **傳送溫度參數開關**：每個模型可以關閉溫度參數；將模型標識改成 Claude 4.7 及之後的型號時自動關閉，避免請求被拒。
+- **書庫檢查更新**：在書卡上點「檢查更新」，或在工具列點「全部檢查更新」，只讀取目錄；有更新的書在封面顯示「N 新章」角標，重新整理頁面後仍保留，點角標即可進入更新頁面。
+- **特殊指令與原文引號**：書籍層級特殊指令移到「翻譯設定」；指出譯法錯誤後，月詠可以將糾正規則寫入特殊指令；簡繁譯文保留原文的「」『』。
+- **跨分頁排隊與更穩定的設定匯入**：同一網站的抓取排隊和暫停在多個瀏覽器分頁之間共享；設定匯入時檔案中缺少的部分不再清空本機資料。
 
-**多裝置同步請先備份，再將所有裝置升級到 v0.18.0，最後逐台同步；首次同步會將 Gist 完整遷移到 v6。啟用本機嵌入的使用者需要重新下載模型並重建向量。**
-
-[閱讀 v0.18.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.18.0.md) · [設定說明](public/help/zh-TW/settings-guide.md) · [本機嵌入](public/help/zh-TW/local-embedding.md)
+[閱讀 v0.19.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.19.0.md) · [AI 模型配置](public/help/zh-TW/ai-models-guide.md) · [書籍列表頁](public/help/zh-TW/books-page-guide.md)
 
 ![Tsukuyomi Dashboard](public/screenshots/desktop-index.png)
 
@@ -44,12 +42,13 @@
 
 ### 🤖 AI 模型配置
 
-Tsukuyomi 採用 Bring Your Own Key 模式，內建兩種提供商：
+Tsukuyomi 採用 Bring Your Own Key 模式，內建三種提供商：
 
 - **OpenAI**：填寫 API Key、基礎位址與模型 ID，也可用於相容 OpenAI 協定的服務或閘道。
 - **Gemini**：使用 Google Generative AI SDK 接入，填寫 API Key 與模型 ID。
+- **Anthropic**：直接呼叫 Claude，填寫 API Key 與模型 ID，基礎位址可留空；支援思考等級與提示快取。
 
-其他模型需要透過受支援的相容介面接入，具體可用模型與工具呼叫能力取決於服務端。可在介面拉取模型列表、驗證連線，並設定自訂請求標頭及瀏覽器 CORS 代理。
+其他模型需要透過受支援的相容介面接入，具體可用模型與工具呼叫能力取決於服務端。可在介面拉取模型列表、驗證連線，並設定自訂請求標頭及瀏覽器 CORS 代理；不接受溫度參數的新模型可以關閉「傳送溫度參數」。
 
 翻譯、校對/潤色、術語翻譯和助手可分別設定預設模型；單本書還可覆寫翻譯與校對/潤色模型。詳見 [AI 模型配置](public/help/zh-TW/ai-models-guide.md)。
 
@@ -99,6 +98,7 @@ Tsukuyomi 採用 Bring Your Own Key 模式，內建兩種提供商：
 
 - **即時協助**: 隨時詢問「這句話的梗在哪？」或「這裡怎麼翻譯才能保留原作者的俏皮感？」。
 - **自動化操控**: 直接透過對話修改書籍資訊或增刪術語，例如：「幫我把這本書改成完結狀態」。
+- **維護特殊指令**: 指出反覆出現的譯法錯誤後，月詠會將糾正規則寫入書籍或章節的特殊指令，之後的翻譯都會遵循。
 - **內建知識庫**: 遇到軟體使用問題，AI 會檢索官方說明文件為您解答。
 
 ### ☁️ 跨裝置同步
@@ -188,7 +188,7 @@ Tsukuyomi 採用 Bring Your Own Key 模式，內建兩種提供商：
 4. 在「卷章草稿」檢查書籍資料、章節順序和正文。
 5. 產生「匯入方案」，核對目標書籍、缺失章節和譯文影響，再點選「確認匯入」。完成後點「打開小說」。
 
-更多範例見 [AI 匯入工作台指南](public/help/zh-TW/import-guide.md)。也可以在書庫中選擇「從網站匯入」，使用內建的日文小說網站規則處理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他網站可轉交 AI 匯入器。網站攔截代理存取時會自動改用 Firecrawl 抓取（無需 Key 也可使用）；書籍更新檢查只讀取目錄，可按需逐章比對正文。應用程式格式的 JSON 書籍檔案可透過「從 JSON 匯入」添加，完整資料備份在設定中還原。
+更多範例見 [AI 匯入工作台指南](public/help/zh-TW/import-guide.md)。也可以在書庫中選擇「從網站匯入」，使用內建的日文小說網站規則處理 `ncode.syosetu.com`、`novel18.syosetu.com`、`kakuyomu.jp`、`syosetu.org`；其他網站可轉交 AI 匯入器。網站攔截代理存取時會自動改用 Firecrawl 抓取（無需 Key 也可使用）；書籍更新檢查只讀取目錄，可在書庫中逐本或「全部檢查更新」，並按需逐章比對正文。應用程式格式的 JSON 書籍檔案可透過「從 JSON 匯入」添加，完整資料備份在設定中還原。
 
 ### 3. 從原始碼執行
 
@@ -218,7 +218,7 @@ bun run dev
 | **核心邏輯** | [術語管理](public/help/zh-TW/book-details-terminology.md) \| [角色設定](public/help/zh-TW/book-details-characters.md) \| [記憶系統](public/help/zh-TW/book-details-memory.md)  |
 | **AI 匯入**  | [匯入工作台：分步操作、拆章與補章](public/help/zh-TW/import-guide.md)                                                                                                          |
 | **進階工具** | [聊天助手實戰](public/help/zh-TW/chat-assistant-guide.md) \| [本地嵌入與章節檢索](public/help/zh-TW/local-embedding.md)                                                        |
-| **更新紀錄** | [v0.18.1 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.18.1.md)                                                                                                   |
+| **更新紀錄** | [v0.19.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.19.0.md)                                                                                                   |
 
 > 應用程式內「說明」可查閱使用指南；主分支文件透過工作流程同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)（簡體中文）。
 
@@ -229,7 +229,7 @@ bun run dev
 | **前端框架**        | Vue 3.5 · Quasar 2.20 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US) |
 | **桌面封裝**        | Electron 39（Web SPA 與桌面端共用同一份程式碼，透過 `useDeviceVariant` 強制 Desktop 變體）                            |
 | **執行環境 / 建置** | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                         |
-| **AI SDK**          | OpenAI SDK · Google Generative AI；透過 OpenAI 配置接入相容協定服務（BYOK）                                           |
+| **AI SDK**          | Vercel AI SDK（OpenAI 相容 · Google · Anthropic）；透過 OpenAI 配置接入相容協定服務（BYOK）                           |
 | **本機嵌入**        | Transformers.js (ONNX Runtime Web) · `bekko-embedding-v1-a25m` · 384 維 mean pooling · WebGPU（優先）/ WASM（回退）   |
 | **儲存 / 同步**     | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 雜湊 manifest · 條件 GET + 偽 CAS 並行保護                |
 | **抓取**            | Puppeteer + `puppeteer-extra-plugin-stealth`（Electron 桌面版）/ CORS 代理（Web 版）· 被攔截時回退 Firecrawl          |
@@ -238,21 +238,21 @@ bun run dev
 
 ## 🛠️ 開發與建置
 
-| 指令                      | 用途                                                                               |
-| :------------------------ | :--------------------------------------------------------------------------------- |
-| `bun install`             | 安裝相依套件                                                                       |
-| `bun run dev`             | 啟動 Web 開發伺服器（預設 9000）                                                   |
-| `bun run dev:electron`    | 啟動 Electron 開發模式                                                             |
-| `bun run build:spa`       | 建置正式環境 Web SPA                                                               |
-| `bun run build:electron`  | 按目標平台打包桌面用戶端（macOS: dmg/zip；Windows: portable exe；Linux: AppImage） |
-| `bun run lint`            | 程式碼規範檢查                                                                     |
-| `bun run type-check`      | TypeScript 型別檢查                                                                |
-| `bun run quality-check`   | Fallow 分析及差異範圍 CI 門禁                                                      |
-| `bun run format`          | Prettier 格式化                                                                    |
-| `bun run test`            | 使用 Vitest 執行測試套件                                                           |
-| `bun run test:watch`      | Vitest 監聽模式                                                                    |
-| `bun run test:coverage`   | 執行測試並產生 Istanbul 覆蓋率                                                     |
-| `bun bump <version>`      | 更新發布版本，例如 `bun bump 0.16.0`                                               |
+| 指令                     | 用途                                                                               |
+| :----------------------- | :--------------------------------------------------------------------------------- |
+| `bun install`            | 安裝相依套件                                                                       |
+| `bun run dev`            | 啟動 Web 開發伺服器（預設 9000）                                                   |
+| `bun run dev:electron`   | 啟動 Electron 開發模式                                                             |
+| `bun run build:spa`      | 建置正式環境 Web SPA                                                               |
+| `bun run build:electron` | 按目標平台打包桌面用戶端（macOS: dmg/zip；Windows: portable exe；Linux: AppImage） |
+| `bun run lint`           | 程式碼規範檢查                                                                     |
+| `bun run type-check`     | TypeScript 型別檢查                                                                |
+| `bun run quality-check`  | Fallow 分析及差異範圍 CI 門禁                                                      |
+| `bun run format`         | Prettier 格式化                                                                    |
+| `bun run test`           | 使用 Vitest 執行測試套件                                                           |
+| `bun run test:watch`     | Vitest 監聽模式                                                                    |
+| `bun run test:coverage`  | 執行測試並產生 Istanbul 覆蓋率                                                     |
+| `bun bump <version>`     | 更新發布版本，例如 `bun bump 0.16.0`                                               |
 
 **開發者文件（簡體中文）**: [建置故障排查](docs/BUILD_TROUBLESHOOTING.md) \| [主題指南](docs/THEME_GUIDE.md) \| [翻譯指南](docs/TRANSLATION_GUIDE.md) \| [Wiki 同步](docs/WIKI_SYNC.md) \| [貢獻者指南](AGENTS.md) \| [專案約定 (Claude Code)](CLAUDE.md)
 
