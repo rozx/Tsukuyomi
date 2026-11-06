@@ -2311,6 +2311,9 @@ describe('add_translation_batch', () => {
           { text: '彼ははいと答えた。', prefix: 'はい', translated: '他回答说是。' },
           // 只有括号，没有有效字符
           { text: '「はい」', prefix: '「', translated: '「是的」' },
+          // 拉丁字母两字前缀必须是完整单词，不能截断单词（He ≠ Hello）
+          { text: 'Hello there.', prefix: 'He', translated: '你好。' },
+          { text: 'yes', prefix: 'y', translated: '是的' },
         ];
 
         for (const { text, prefix, translated } of testCases) {
@@ -2322,6 +2325,70 @@ describe('add_translation_batch', () => {
           });
           expect(JSON.stringify(resultObj)).toContain('ORIGINAL_TEXT_PREFIX_TOO_SHORT');
         }
+      });
+
+      async function expectAllAccepted(
+        testCases: Array<{ text: string; prefix: string; translated: string }>,
+      ) {
+        // 收集全部未通过的用例后统一断言，失败时一次看到完整列表
+        const rejected: string[] = [];
+        for (const { text, prefix, translated } of testCases) {
+          const resultObj = await submitWithPrefix(text, prefix, translated);
+          if (resultObj.success !== true) {
+            rejected.push(`${text} ← ${prefix}: ${JSON.stringify(resultObj.failed_paragraphs)}`);
+          }
+        }
+        expect(rejected).toEqual([]);
+      }
+
+      test('纯符号段落（省略号 / 感叹问号）：全半角、省略号写法差异不应判为不匹配', async () => {
+        await expectAllAccepted([
+          { text: '…………', prefix: '…………', translated: '…………' },
+          { text: '…………', prefix: '……', translated: '……' },
+          // 模型常把 … 写成 ...
+          { text: '…………', prefix: '...', translated: '……' },
+          { text: '!?', prefix: '!?', translated: '！？' },
+          // 全角 / 半角互换
+          { text: '!?', prefix: '！？', translated: '！？' },
+          { text: '！？', prefix: '!?', translated: '！？' },
+          // 合字 ⁉ 与 !? 等价
+          { text: '⁉', prefix: '!?', translated: '！？' },
+          { text: '「!?」', prefix: '!?', translated: '「！？」' },
+        ]);
+      });
+
+      test('英文短段落：大小写差异不应判为不匹配，完整短词可作为前缀', async () => {
+        await expectAllAccepted([
+          { text: 'yes', prefix: 'yes', translated: '是的' },
+          { text: 'Yes.', prefix: 'Yes', translated: '是的。' },
+          { text: 'Yes', prefix: 'yes', translated: '是的' },
+          { text: 'OK', prefix: 'OK', translated: '好' },
+          { text: '"No."', prefix: 'No', translated: '“不。”' },
+          { text: "No, I don't think so.", prefix: 'No', translated: '不，我不这么认为。' },
+        ]);
+      });
+
+      test('emoji / 颜文字 / ASCII art：变体选择符、全角空格差异不应判为不匹配', async () => {
+        await expectAllAccepted([
+          { text: '😊', prefix: '😊', translated: '😊' },
+          { text: '👍👍👍', prefix: '👍', translated: '👍👍👍' },
+          // ❤ 与 ❤️（带 U+FE0F）是同一字符的两种呈现
+          { text: '❤', prefix: '❤️', translated: '❤' },
+          { text: '❤️', prefix: '❤', translated: '❤️' },
+          { text: '(´・ω・`)', prefix: '(´・ω・`)', translated: '(´・ω・`)' },
+          { text: '(´・ω・`)', prefix: 'ω', translated: '(´・ω・`)' },
+          // 全角空格被模型写成半角空格
+          { text: '（　´∀｀）', prefix: '（ ´∀｀）', translated: '（　´∀｀）' },
+          { text: '(^o^)', prefix: '^o^', translated: '(^o^)' },
+          // emoji 开头、后接短词
+          { text: '😊はい、わかった', prefix: 'はい', translated: '😊好，我知道了' },
+        ]);
+      });
+
+      test('emoji 内容不同仍应判为不匹配', async () => {
+        const resultObj = await submitWithPrefix('😊', '😢', '😊');
+        expect(resultObj.success).toBe(false);
+        expect(JSON.stringify(resultObj)).toContain('ORIGINAL_TEXT_PREFIX_MISMATCH');
       });
     });
 

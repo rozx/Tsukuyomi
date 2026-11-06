@@ -73,6 +73,12 @@ const MAX_ORIGINAL_TEXT_PREFIX_LENGTH = 20;
 /** 有效字符：字母 / 数字（含假名、汉字），与 isSymbolOnly 的判定口径一致 */
 const CONTENT_CHAR_PATTERN = /[\p{L}\p{N}]/gu;
 const LEADING_NON_CONTENT_PATTERN = /^[^\p{L}\p{N}]+/u;
+/** emoji 变体选择符（❤ / ❤️ 是同一字符） */
+const VARIATION_SELECTOR_PATTERN = /[︎️]/gu;
+const WHITESPACE_PATTERN = /\s+/gu;
+/** 以空格分词的文字：两字短前缀必须是完整单词（He 不能锚定 Hello） */
+const SPACE_DELIMITED_CHAR_PATTERN = /[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\p{N}]/u;
+const CONTENT_CHAR_TEST_PATTERN = /[\p{L}\p{N}]/u;
 const MAX_PARAGRAPH_ID_EDIT_DISTANCE = 2;
 
 type PrefixLengthResult =
@@ -112,15 +118,60 @@ function countContentChars(text: string): number {
 }
 
 /**
+ * 锚点比对前的规范化：NFKC（全角 ！？ → !?、… → ...、⁉ → !?、全角空格 → 空格）、
+ * 去掉 emoji 变体选择符、统一小写。这些都是模型抄写前缀时常见的无害改写，
+ * 不影响前缀区分段落的能力，严格比对只会造成反复拒绝。
+ */
+function canonicalizeAnchorText(text: string): string {
+  return text.normalize('NFKC').replace(VARIATION_SELECTOR_PATTERN, '').toLowerCase();
+}
+
+/**
+ * 判断前缀是否出自原文（includes 语义），比对前做规范化并忽略空白差异。
+ */
+function prefixMatchesOriginal(prefix: string, originalText: string): boolean {
+  const normalizedPrefix = canonicalizeAnchorText(prefix).replace(WHITESPACE_PATTERN, '');
+  if (!normalizedPrefix) {
+    return false;
+  }
+  return canonicalizeAnchorText(originalText)
+    .replace(WHITESPACE_PATTERN, '')
+    .includes(normalizedPrefix);
+}
+
+/**
+ * 去掉开头括号 / 标点后，前缀是否为原文开头的完整短词。
+ * 拉丁 / 希腊 / 西里尔字母与数字以空格分词，要求前缀后紧跟非字母数字（No, → 通过；He|llo → 拒绝）；
+ * 日文、中文等不分词的文字只要求开头一致。
+ */
+function isLeadingWordPrefix(prefix: string, originalText: string): boolean {
+  const corePrefix = canonicalizeAnchorText(prefix).replace(LEADING_NON_CONTENT_PATTERN, '');
+  const coreOriginal = canonicalizeAnchorText(originalText).replace(
+    LEADING_NON_CONTENT_PATTERN,
+    '',
+  );
+  if (corePrefix.length < MIN_LEADING_WORD_PREFIX_LENGTH || !coreOriginal.startsWith(corePrefix)) {
+    return false;
+  }
+
+  const lastPrefixChar = corePrefix.slice(-1);
+  const nextOriginalChar = coreOriginal.charAt(corePrefix.length);
+  const cutsWord =
+    SPACE_DELIMITED_CHAR_PATTERN.test(lastPrefixChar) &&
+    CONTENT_CHAR_TEST_PATTERN.test(nextOriginalChar);
+  return !cutsWord;
+}
+
+/**
  * 短前缀豁免（issue #135）：「はい」「は？」这类短台词或以短词开头的段落，模型常省略
  * 括号 / 标点只提交词本身，按原始字符数会被判为过短并反复重试。满足任一条件即视为足够的锚点：
  *
  * 1. 原文有效字符不足 MIN_ORIGINAL_TEXT_PREFIX_LENGTH，且前缀覆盖了全部有效字符
  *    （如「はい」→ はい、「は？」→ は）
- * 2. 去掉开头括号 / 标点后，前缀至少 MIN_LEADING_WORD_PREFIX_LENGTH 字符且与原文开头一致
- *    （如「はい、わかりました」→ はい）
+ * 2. 去掉开头括号 / 标点后，前缀至少 MIN_LEADING_WORD_PREFIX_LENGTH 字符且是原文开头的完整短词
+ *    （如「はい、わかりました」→ はい、No, I don't → No）
  *
- * 前缀是否真的出自原文仍由后续 includes 校验负责。
+ * 前缀是否真的出自原文仍由后续 prefixMatchesOriginal 校验负责。
  */
 function isAcceptableShortPrefix(prefix: string, originalText: string): boolean {
   const prefixContentCount = countContentChars(prefix);
@@ -136,11 +187,7 @@ function isAcceptableShortPrefix(prefix: string, originalText: string): boolean 
     return true;
   }
 
-  const corePrefix = prefix.replace(LEADING_NON_CONTENT_PATTERN, '');
-  return (
-    corePrefix.length >= MIN_LEADING_WORD_PREFIX_LENGTH &&
-    originalText.replace(LEADING_NON_CONTENT_PATTERN, '').startsWith(corePrefix)
-  );
+  return isLeadingWordPrefix(prefix, originalText);
 }
 
 /**
@@ -955,7 +1002,7 @@ async function normalizeParagraphIds(
     }
 
     const candidateText = candidateParagraphTextMap.get(correction.candidateId)?.trim();
-    if (!candidateText || !candidateText.includes(prefix)) {
+    if (!candidateText || !prefixMatchesOriginal(prefix, candidateText)) {
       continue;
     }
 
@@ -1266,7 +1313,7 @@ function validateOriginalTextPrefix(
     }
   }
 
-  if (!trimmedOriginalText.includes(trimmedPrefix)) {
+  if (!prefixMatchesOriginal(trimmedPrefix, trimmedOriginalText)) {
     return {
       failure: {
         errorCode: 'ORIGINAL_TEXT_PREFIX_MISMATCH',
