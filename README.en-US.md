@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | [繁體中文](README.zh-TW.md) | **English**
 
-![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg) ![GitHub Release](https://img.shields.io/github/v/release/rozx/Tsukuyomi) ![Vue](https://img.shields.io/badge/Vue.js-3.5-4FC08D?logo=vue.js&logoColor=white) ![Quasar](https://img.shields.io/badge/Quasar-2.20-1976D2?logo=quasar&logoColor=white) ![Electron](https://img.shields.io/badge/Electron-39-47848F?logo=electron&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white) ![Bun](https://img.shields.io/badge/Bun-1.0%2B-000000?logo=bun&logoColor=white)
+![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg) ![GitHub Release](https://img.shields.io/github/v/release/rozx/Tsukuyomi) ![Vue](https://img.shields.io/badge/Vue.js-3.5-4FC08D?logo=vue.js&logoColor=white) ![Quasar](https://img.shields.io/badge/Quasar-2.20-1976D2?logo=quasar&logoColor=white) ![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white) ![Bun](https://img.shields.io/badge/Bun-1.0%2B-000000?logo=bun&logoColor=white)
 
 [![Github All Releases](https://img.shields.io/github/downloads/rozx/Tsukuyomi/total.svg)](https://github.com/rozx/Tsukuyomi/releases)
 
@@ -227,7 +227,7 @@ bun run dev
 | Layer                 | Technology                                                                                                                   |
 | :-------------------- | :--------------------------------------------------------------------------------------------------------------------------- |
 | **Frontend**          | Vue 3.5 · Quasar 2.20 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US)        |
-| **Desktop**           | Electron 39 (the web SPA and desktop app share one codebase; `useDeviceVariant` forces the Desktop variant)                  |
+| **Desktop**           | Electron 45 (the web SPA and desktop app share one codebase; `useDeviceVariant` forces the Desktop variant)                  |
 | **Runtime / build**   | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                                |
 | **AI SDK**            | Vercel AI SDK (OpenAI-compatible · Google · Anthropic); compatible services connect through the OpenAI provider (BYOK)       |
 | **Local embeddings**  | Transformers.js (ONNX Runtime Web) · `bekko-embedding-v1-a25m` · 384-dim mean pooling · WebGPU (preferred) / WASM (fallback) |

@@ -295,7 +295,7 @@ console.error('Failed to load book:', error);
 
 ## 技术栈
 
-Vue 3.5 + Quasar 2.18 + TypeScript 5.9 (strict) + Pinia 3 + PrimeVue 4.5 + Tailwind CSS 3.4 + Vue-i18n + Electron 39 + Bun
+Vue 3.5 + Quasar 2.18 + TypeScript 5.9 (strict) + Pinia 3 + PrimeVue 4.5 + Tailwind CSS 3.4 + Vue-i18n + Electron 45 + Bun
 
 AI: OpenAI SDK + Google Generative AI | 存储: IndexedDB (idb) + GitHub Gist (@octokit/rest)
 
