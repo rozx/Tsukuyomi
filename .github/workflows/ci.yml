@@ -71,7 +71,7 @@ jobs:
 
       - name: Run Fallow
         id: fallow
-        uses: fallow-rs/fallow@v2
+        uses: fallow-rs/fallow@v3
         env:
           FALLOW_COVERAGE: coverage/coverage-final.json
         with:

@@ -1,7 +1,7 @@
 /**
  * 本地复刻 CI 的 Fallow 门禁，确保「本地通过 == CI 通过」。
  *
- * 背景：CI 用的 `fallow-rs/fallow@v2`（见 .github/workflows）开启了
+ * 背景：CI 用的 `fallow-rs/fallow@v3`（见 .github/workflows）开启了
  * `fail-on-issues + auto-changed-since + diff-filter:added`，它把**本次改动**里
  * 新引入的问题（含**重复 duplication clone groups**）计为 issue 并 fail。
  *

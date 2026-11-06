@@ -381,8 +381,6 @@ export const useBooksStore = defineStore('books', {
       this.books = await BookService.getAllBooks();
     },
 
-    // 撤销 helper 通过传入的 store 参数调用，Fallow 不追踪该参数绑定。
-    // fallow-ignore-next-line unused-store-member
     async restoreEntity<T extends Terminology | CharacterSetting>(
       bookId: string,
       kind: 'term' | 'character',
@@ -395,8 +393,6 @@ export const useBooksStore = defineStore('books', {
     },
 
     /** 多个实体在同一事务中恢复，供撤销 / 重做快照使用。 */
-    // 撤销 helper 通过传入的 store 参数调用，Fallow 不追踪该参数绑定。
-    // fallow-ignore-next-line unused-store-member
     async restoreEntities(
       bookId: string,
       entities: Partial<EntityRestoreSet>,

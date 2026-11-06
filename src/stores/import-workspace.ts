@@ -628,7 +628,6 @@ export const useImportWorkspaceStore = defineStore('import-workspace', () => {
     sourceNames,
     initialize,
     // 测试之间解除更新订阅用；应用内 store 与页面同寿命，不需要调用
-    // fallow-ignore-next-line unused-store-member
     dispose,
     selectTask,
     createTask,
