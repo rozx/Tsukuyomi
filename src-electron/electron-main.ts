@@ -11,6 +11,7 @@ import pie from 'puppeteer-in-electron';
 import { getErrorMessage, toError } from '../src/utils/error-message';
 import { getCookieHeaderValue, omitCookieHeader, parseCookieHeader } from './puppeteer-cookies';
 import { trackMainFrameStatus } from './main-frame-status';
+import { findPageWithRetry } from './puppeteer-page-lookup';
 import { claimSingleInstance } from './single-instance';
 import { VelopackApp } from 'velopack';
 import { registerDesktopUpdates } from './desktop-update-ipc';
@@ -637,7 +638,7 @@ async function fetchUrlViaPuppeteer(
   window: BrowserWindow,
 ): Promise<ElectronFetchResponse> {
   const browser = await ensureBrowserPromise();
-  const page = await pie.getPage(browser, window);
+  const page = await findPageWithRetry(() => pie.getPage(browser, window));
   page.setDefaultNavigationTimeout(options?.timeout || 60000);
   await applyRequestCookies(page, options?.headers, url);
   const headersWithoutCookie = omitCookieHeader(options?.headers);
