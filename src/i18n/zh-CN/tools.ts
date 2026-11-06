@@ -404,7 +404,7 @@ export default {
     list_help_docs:
       '列出所有可用的帮助文档，按类别分组。当用户想了解有哪些帮助文档可用，或需要浏览帮助目录时使用此工具。',
     add_translation_batch__parameters__properties__paragraphs__items__properties__original_text_prefix__enabled:
-      '原文前缀锚点，建议开头5–10字符，trim 后至少3、至多20字符，用于核对 paragraph_id 与原文。',
+      '原文前缀锚点，建议开头5–10字符，trim 后至少3、至多20字符（原文不足3字则用完整原文），用于核对 paragraph_id 与原文。',
     add_translation_batch__parameters__properties__paragraphs__items__properties__original_text_prefix__disabled:
       '原文前缀（可选），当前已禁用校验。',
   },

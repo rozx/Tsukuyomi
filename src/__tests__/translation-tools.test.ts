@@ -2226,6 +2226,172 @@ describe('add_translation_batch', () => {
       expect(JSON.stringify(resultObj)).toContain('ORIGINAL_TEXT_PREFIX_MISMATCH');
     });
 
+    describe('短台词 / 短词开头的前缀（issue #135）', () => {
+      async function submitWithPrefix(text: string, prefix: string, translatedText: string) {
+        const para1 = createTestParagraph('para1', text);
+        const chapter = createTestChapter('chapter1', [para1]);
+        const volume = createTestVolume('volume1', [chapter]);
+        const novel = createTestNovel([volume]);
+
+        mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+        mockBooksStore.books = [novel];
+
+        const tool = getTool();
+        const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+        const result = await tool.handler(
+          {
+            paragraphs: [
+              {
+                paragraph_id: 'para1',
+                original_text_prefix: prefix,
+                translated_text: translatedText,
+              },
+            ],
+          },
+          {
+            bookId: 'novel-1',
+            taskId: 'task-1',
+            aiProcessingStore: mockStore,
+            aiModelId: 'model-1',
+            chunkBoundaries: createChunkBoundaries(['para1']),
+            enableOriginalTextValidation: true,
+          },
+        );
+        return JSON.parse(result);
+      }
+
+      test('整段只有短台词时，省略括号/标点的前缀应通过', async () => {
+        // 模型常把「はい」的有效内容理解为 はい，只提交两字前缀；原文含括号共 4 字符，
+        // 旧规则要求至少 3 字符，导致反复拒绝 → 翻译死循环。
+        const testCases = [
+          { text: '「はい」', prefix: 'はい', translated: '「是的」' },
+          { text: '「ああ」', prefix: 'ああ', translated: '「嗯嗯」' },
+          { text: '「うん」', prefix: 'うん', translated: '「嗯」' },
+          { text: '「は？」', prefix: 'は？', translated: '「哈？」' },
+          { text: '「は？」', prefix: 'は', translated: '「哈？」' },
+          { text: 'はい。', prefix: 'はい', translated: '是的。' },
+          { text: 'は？', prefix: 'は', translated: '哈？' },
+          { text: '『うん……』', prefix: 'うん', translated: '『嗯……』' },
+        ];
+
+        for (const { text, prefix, translated } of testCases) {
+          const resultObj = await submitWithPrefix(text, prefix, translated);
+          expect({ text, prefix, success: resultObj.success }).toEqual({
+            text,
+            prefix,
+            success: true,
+          });
+        }
+      });
+
+      test('段落以短词开头时，与原文开头一致的两字前缀应通过', async () => {
+        const testCases = [
+          { text: '「はい、わかりました」', prefix: 'はい', translated: '「好的，我明白了」' },
+          { text: 'ああ、そういうことか。', prefix: 'ああ', translated: '啊，原来如此。' },
+          { text: '「は？何言ってんの？」', prefix: 'は？', translated: '「哈？你在说什么？」' },
+          { text: 'うん、そうだね。', prefix: 'うん', translated: '嗯，是啊。' },
+        ];
+
+        for (const { text, prefix, translated } of testCases) {
+          const resultObj = await submitWithPrefix(text, prefix, translated);
+          expect({ text, prefix, success: resultObj.success }).toEqual({
+            text,
+            prefix,
+            success: true,
+          });
+        }
+      });
+
+      test('不足以作为锚点的短前缀仍应被拒绝', async () => {
+        const testCases = [
+          // 单个有效字符，且原文有效内容更长
+          { text: '「はい、わかりました」', prefix: 'は', translated: '「好的，我明白了」' },
+          // 两字但不在原文开头（仅 includes 命中）
+          { text: '彼ははいと答えた。', prefix: 'はい', translated: '他回答说是。' },
+          // 只有括号，没有有效字符
+          { text: '「はい」', prefix: '「', translated: '「是的」' },
+          // 拉丁字母两字前缀必须是完整单词，不能截断单词（He ≠ Hello）
+          { text: 'Hello there.', prefix: 'He', translated: '你好。' },
+          { text: 'yes', prefix: 'y', translated: '是的' },
+        ];
+
+        for (const { text, prefix, translated } of testCases) {
+          const resultObj = await submitWithPrefix(text, prefix, translated);
+          expect({ text, prefix, success: resultObj.success }).toEqual({
+            text,
+            prefix,
+            success: false,
+          });
+          expect(JSON.stringify(resultObj)).toContain('ORIGINAL_TEXT_PREFIX_TOO_SHORT');
+        }
+      });
+
+      async function expectAllAccepted(
+        testCases: Array<{ text: string; prefix: string; translated: string }>,
+      ) {
+        // 收集全部未通过的用例后统一断言，失败时一次看到完整列表
+        const rejected: string[] = [];
+        for (const { text, prefix, translated } of testCases) {
+          const resultObj = await submitWithPrefix(text, prefix, translated);
+          if (resultObj.success !== true) {
+            rejected.push(`${text} ← ${prefix}: ${JSON.stringify(resultObj.failed_paragraphs)}`);
+          }
+        }
+        expect(rejected).toEqual([]);
+      }
+
+      test('纯符号段落（省略号 / 感叹问号）：全半角、省略号写法差异不应判为不匹配', async () => {
+        await expectAllAccepted([
+          { text: '…………', prefix: '…………', translated: '…………' },
+          { text: '…………', prefix: '……', translated: '……' },
+          // 模型常把 … 写成 ...
+          { text: '…………', prefix: '...', translated: '……' },
+          { text: '!?', prefix: '!?', translated: '！？' },
+          // 全角 / 半角互换
+          { text: '!?', prefix: '！？', translated: '！？' },
+          { text: '！？', prefix: '!?', translated: '！？' },
+          // 合字 ⁉ 与 !? 等价
+          { text: '⁉', prefix: '!?', translated: '！？' },
+          { text: '「!?」', prefix: '!?', translated: '「！？」' },
+        ]);
+      });
+
+      test('英文短段落：大小写差异不应判为不匹配，完整短词可作为前缀', async () => {
+        await expectAllAccepted([
+          { text: 'yes', prefix: 'yes', translated: '是的' },
+          { text: 'Yes.', prefix: 'Yes', translated: '是的。' },
+          { text: 'Yes', prefix: 'yes', translated: '是的' },
+          { text: 'OK', prefix: 'OK', translated: '好' },
+          { text: '"No."', prefix: 'No', translated: '“不。”' },
+          { text: "No, I don't think so.", prefix: 'No', translated: '不，我不这么认为。' },
+        ]);
+      });
+
+      test('emoji / 颜文字 / ASCII art：变体选择符、全角空格差异不应判为不匹配', async () => {
+        await expectAllAccepted([
+          { text: '😊', prefix: '😊', translated: '😊' },
+          { text: '👍👍👍', prefix: '👍', translated: '👍👍👍' },
+          // ❤ 与 ❤️（带 U+FE0F）是同一字符的两种呈现
+          { text: '❤', prefix: '❤️', translated: '❤' },
+          { text: '❤️', prefix: '❤', translated: '❤️' },
+          { text: '(´・ω・`)', prefix: '(´・ω・`)', translated: '(´・ω・`)' },
+          { text: '(´・ω・`)', prefix: 'ω', translated: '(´・ω・`)' },
+          // 全角空格被模型写成半角空格
+          { text: '（　´∀｀）', prefix: '（ ´∀｀）', translated: '（　´∀｀）' },
+          { text: '(^o^)', prefix: '^o^', translated: '(^o^)' },
+          // emoji 开头、后接短词
+          { text: '😊はい、わかった', prefix: 'はい', translated: '😊好，我知道了' },
+        ]);
+      });
+
+      test('emoji 内容不同仍应判为不匹配', async () => {
+        const resultObj = await submitWithPrefix('😊', '😢', '😊');
+        expect(resultObj.success).toBe(false);
+        expect(JSON.stringify(resultObj)).toContain('ORIGINAL_TEXT_PREFIX_MISMATCH');
+      });
+    });
+
     test('当书籍不存在时应返回错误', async () => {
       mockGetBookById.mockImplementation(() => Promise.resolve(undefined));
 

@@ -115,8 +115,8 @@ The gear opens Book settings and Chapter settings. Book settings uses the same b
 - Filter leading indentation
 - Normalize displayed symbols
 - Normalize displayed titles
-- Source integrity validation for AI paragraph labels
 - Skip AI questions (`ask_user`)
+- Validate source alignment: the AI must attach the first few characters of the source with each translated paragraph, so Tsukuyomi can confirm the translation landed on the right paragraph. For short lines such as 「はい」 copying all of the words is enough; for a paragraph that opens with a short word, its first two characters are enough (in English, a whole word). Differences in full-width/half-width characters, ellipsis style, emoji variants, English letter case and whitespace do not count as a mismatch. Turning it off reduces token usage.
 - Task chunk size in characters
 
 Save writes to the book. Cancel or leaving discards unsaved edits.

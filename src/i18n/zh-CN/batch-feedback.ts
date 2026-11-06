@@ -25,7 +25,7 @@ export default {
     MISSING_TRANSLATION: '批次中第 {index} 个段落缺少翻译文本 (translated_text)',
     MISSING_ORIGINAL_TEXT_PREFIX: '段落 {paragraphId} 缺少 original_text_prefix（用于防错位校验）',
     ORIGINAL_TEXT_PREFIX_TOO_SHORT:
-      '段落 {paragraphId} 的 original_text_prefix 长度不足（最少 {minLength} 个字符）',
+      '段落 {paragraphId} 的 original_text_prefix 长度不足（最少 {minLength} 个字符，可连同开头括号/标点一起提交）',
     ORIGINAL_TEXT_PREFIX_TOO_LONG:
       '段落 {paragraphId} 的 original_text_prefix 过长（最多 {maxLength} 个字符）',
     ORIGINAL_TEXT_PREFIX_MISMATCH: '段落 {paragraphId} 的原文前缀不匹配："{prefix}"',
