@@ -1,5 +1,13 @@
-# 项目由 Bun 管理（bun.lock），默认的 npm_and_yarn 生态无法更新 bun.lock，安全更新会失败。
-# open-pull-requests-limit: 0 关闭定期版本更新 PR，只保留安全更新。
+# 项目由 Bun 管理（bun.lock）。
+#
+# Dependabot 的 bun 生态只支持「版本更新」，不支持「安全更新」。安全更新作业会退回
+# npm_and_yarn，而它无法更新 bun.lock，每次都报 misconfigured_tooling 失败，
+# 这个文件里的配置也改变不了这一点。所以：
+# - 在 Settings → Advanced Security 里关闭「Dependabot security updates」
+#   （保留「Dependabot alerts」用来提醒），
+# - 安全修复交给 .github/workflows/security-updates.yml（每周 bun audit fix 自动开 PR）。
+#
+# open-pull-requests-limit: 0 关闭定期版本更新 PR；想要每周版本更新时删掉这一行。
 version: 2
 updates:
   - package-ecosystem: 'bun'

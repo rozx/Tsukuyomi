@@ -1,0 +1,156 @@
+# Bun 项目的安全更新。
+#
+# Dependabot 的 bun 生态只支持「版本更新」，不支持「安全更新」：安全更新作业会退回
+# npm_and_yarn，而它无法更新 bun.lock，所以每次都失败（见 .github/dependabot.yml）。
+# 这里改用 `bun audit fix`：在 package.json 现有版本范围内把有漏洞的包升到最低安全版本
+# （精确锁定的包也会改 package.json），跑完 lint / type-check / test 后开或更新一个 PR。
+# 需要跨大版本的修复（`bun audit fix --latest`）不会自动做，会列在 PR 和运行摘要里。
+#
+# 前置设置：Settings → Actions → General → Workflow permissions 勾选
+# 「Allow GitHub Actions to create and approve pull requests」，否则无法创建 PR。
+# 用 GITHUB_TOKEN 创建的 PR 不会触发 CI，所以检查在本 workflow 里跑；
+# 需要 CI 时可以关闭再重新打开 PR。
+name: Security Updates
+
+on:
+  schedule:
+    - cron: '23 2 * * 1' # 每周一 02:23 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: security-updates
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  NO_COLOR: '1'
+  FORCE_COLOR: '0'
+
+jobs:
+  audit-fix:
+    name: bun audit fix
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Apply security fixes
+        id: fix
+        run: |
+          # 仍有修不掉的漏洞时 bun audit fix 可能返回非 0，这里只看依赖文件有没有变化
+          bun audit fix > "$RUNNER_TEMP/audit-fix.log" 2>&1 || true
+          cat "$RUNNER_TEMP/audit-fix.log"
+          if git diff --quiet -- package.json bun.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat -- package.json bun.lock
+          fi
+
+      - name: Verify updated dependencies
+        id: verify
+        if: steps.fix.outputs.changed == 'true'
+        run: |
+          bun install
+          status=0
+          : > "$RUNNER_TEMP/checks.md"
+          for check in lint type-check test; do
+            if bun run "$check" > "$RUNNER_TEMP/$check.log" 2>&1; then
+              echo "- ✅ \`bun run $check\`" >> "$RUNNER_TEMP/checks.md"
+            else
+              status=1
+              echo "- ❌ \`bun run $check\`" >> "$RUNNER_TEMP/checks.md"
+              echo "::group::$check 失败（最后 80 行）"
+              tail -n 80 "$RUNNER_TEMP/$check.log"
+              echo "::endgroup::"
+            fi
+          done
+          cat "$RUNNER_TEMP/checks.md"
+          if [ "$status" -eq 0 ]; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build pull request body
+        if: steps.fix.outputs.changed == 'true'
+        run: |
+          {
+            echo '## 摘要'
+            echo
+            echo '每周 `bun audit fix` 自动生成：在 `package.json` 现有版本范围内把有漏洞的依赖升到最低安全版本。'
+            echo 'Dependabot 不支持 Bun 生态的安全更新，这个 workflow 用来代替它。'
+            echo
+            echo '## 检查'
+            echo
+            cat "$RUNNER_TEMP/checks.md"
+            echo
+            echo '> 这个 PR 由 `GITHUB_TOKEN` 创建，不会自动触发 CI。需要跑 CI 时关闭再重新打开 PR。'
+            echo
+            echo '## bun audit fix 输出'
+            echo
+            echo "\"blocked by a dependent's range\" 和 \"no published version fixes\" 下的条目需要手动处理（跨大版本升级等）。"
+            echo
+            echo '```'
+            head -c 50000 "$RUNNER_TEMP/audit-fix.log"
+            echo '```'
+          } > "$RUNNER_TEMP/pr-body.md"
+
+      - name: Create or update pull request
+        if: steps.fix.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/security-updates
+          delete-branch: true
+          add-paths: |
+            package.json
+            bun.lock
+          commit-message: 'chore(deps): bun audit fix 安全更新'
+          title: 'chore(deps): bun audit fix 安全更新'
+          body-path: ${{ runner.temp }}/pr-body.md
+          draft: ${{ steps.verify.outputs.passed != 'true' }}
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo '## bun audit fix'
+            echo
+            if [ "${{ steps.fix.outputs.changed }}" = 'true' ]; then
+              echo '依赖有更新，已开或更新 PR（分支 `chore/security-updates`）。'
+              echo
+              cat "$RUNNER_TEMP/checks.md" 2>/dev/null || true
+            else
+              echo '现有版本范围内没有可自动修复的漏洞。'
+            fi
+            echo
+            echo '```'
+            head -c 50000 "$RUNNER_TEMP/audit-fix.log" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail when checks fail
+        if: steps.verify.outputs.passed == 'false'
+        run: |
+          echo '::error::升级后的依赖没有通过 lint / type-check / test，PR 已以草稿形式创建，需要手动修复。'
+          exit 1
