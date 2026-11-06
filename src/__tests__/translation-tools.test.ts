@@ -2226,6 +2226,105 @@ describe('add_translation_batch', () => {
       expect(JSON.stringify(resultObj)).toContain('ORIGINAL_TEXT_PREFIX_MISMATCH');
     });
 
+    describe('短台词 / 短词开头的前缀（issue #135）', () => {
+      async function submitWithPrefix(text: string, prefix: string, translatedText: string) {
+        const para1 = createTestParagraph('para1', text);
+        const chapter = createTestChapter('chapter1', [para1]);
+        const volume = createTestVolume('volume1', [chapter]);
+        const novel = createTestNovel([volume]);
+
+        mockGetBookById.mockImplementation(() => Promise.resolve(novel));
+        mockBooksStore.books = [novel];
+
+        const tool = getTool();
+        const mockStore = createMockAIProcessingStore('task-1', 'working', 'translation');
+
+        const result = await tool.handler(
+          {
+            paragraphs: [
+              {
+                paragraph_id: 'para1',
+                original_text_prefix: prefix,
+                translated_text: translatedText,
+              },
+            ],
+          },
+          {
+            bookId: 'novel-1',
+            taskId: 'task-1',
+            aiProcessingStore: mockStore,
+            aiModelId: 'model-1',
+            chunkBoundaries: createChunkBoundaries(['para1']),
+            enableOriginalTextValidation: true,
+          },
+        );
+        return JSON.parse(result);
+      }
+
+      test('整段只有短台词时，省略括号/标点的前缀应通过', async () => {
+        // 模型常把「はい」的有效内容理解为 はい，只提交两字前缀；原文含括号共 4 字符，
+        // 旧规则要求至少 3 字符，导致反复拒绝 → 翻译死循环。
+        const testCases = [
+          { text: '「はい」', prefix: 'はい', translated: '「是的」' },
+          { text: '「ああ」', prefix: 'ああ', translated: '「嗯嗯」' },
+          { text: '「うん」', prefix: 'うん', translated: '「嗯」' },
+          { text: '「は？」', prefix: 'は？', translated: '「哈？」' },
+          { text: '「は？」', prefix: 'は', translated: '「哈？」' },
+          { text: 'はい。', prefix: 'はい', translated: '是的。' },
+          { text: 'は？', prefix: 'は', translated: '哈？' },
+          { text: '『うん……』', prefix: 'うん', translated: '『嗯……』' },
+        ];
+
+        for (const { text, prefix, translated } of testCases) {
+          const resultObj = await submitWithPrefix(text, prefix, translated);
+          expect({ text, prefix, success: resultObj.success }).toEqual({
+            text,
+            prefix,
+            success: true,
+          });
+        }
+      });
+
+      test('段落以短词开头时，与原文开头一致的两字前缀应通过', async () => {
+        const testCases = [
+          { text: '「はい、わかりました」', prefix: 'はい', translated: '「好的，我明白了」' },
+          { text: 'ああ、そういうことか。', prefix: 'ああ', translated: '啊，原来如此。' },
+          { text: '「は？何言ってんの？」', prefix: 'は？', translated: '「哈？你在说什么？」' },
+          { text: 'うん、そうだね。', prefix: 'うん', translated: '嗯，是啊。' },
+        ];
+
+        for (const { text, prefix, translated } of testCases) {
+          const resultObj = await submitWithPrefix(text, prefix, translated);
+          expect({ text, prefix, success: resultObj.success }).toEqual({
+            text,
+            prefix,
+            success: true,
+          });
+        }
+      });
+
+      test('不足以作为锚点的短前缀仍应被拒绝', async () => {
+        const testCases = [
+          // 单个有效字符，且原文有效内容更长
+          { text: '「はい、わかりました」', prefix: 'は', translated: '「好的，我明白了」' },
+          // 两字但不在原文开头（仅 includes 命中）
+          { text: '彼ははいと答えた。', prefix: 'はい', translated: '他回答说是。' },
+          // 只有括号，没有有效字符
+          { text: '「はい」', prefix: '「', translated: '「是的」' },
+        ];
+
+        for (const { text, prefix, translated } of testCases) {
+          const resultObj = await submitWithPrefix(text, prefix, translated);
+          expect({ text, prefix, success: resultObj.success }).toEqual({
+            text,
+            prefix,
+            success: false,
+          });
+          expect(JSON.stringify(resultObj)).toContain('ORIGINAL_TEXT_PREFIX_TOO_SHORT');
+        }
+      });
+    });
+
     test('当书籍不存在时应返回错误', async () => {
       mockGetBookById.mockImplementation(() => Promise.resolve(undefined));
 

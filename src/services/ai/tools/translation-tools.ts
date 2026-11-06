@@ -67,7 +67,12 @@ const MAX_BATCH_SIZE = TRANSLATION_BATCH_LIMITS.normal;
 const MAX_BATCH_SIZE_WITH_TOLERANCE = TRANSLATION_BATCH_LIMITS.withTolerance;
 const MAX_BATCH_SIZE_DOUBLE = TRANSLATION_BATCH_LIMITS.remaining;
 const MIN_ORIGINAL_TEXT_PREFIX_LENGTH = 3;
+/** 以短词开头的段落（如「はい、…」），与原文开头一致时允许的最短前缀 */
+const MIN_LEADING_WORD_PREFIX_LENGTH = 2;
 const MAX_ORIGINAL_TEXT_PREFIX_LENGTH = 20;
+/** 有效字符：字母 / 数字（含假名、汉字），与 isSymbolOnly 的判定口径一致 */
+const CONTENT_CHAR_PATTERN = /[\p{L}\p{N}]/gu;
+const LEADING_NON_CONTENT_PATTERN = /^[^\p{L}\p{N}]+/u;
 const MAX_PARAGRAPH_ID_EDIT_DISTANCE = 2;
 
 type PrefixLengthResult =
@@ -102,17 +107,54 @@ interface ParagraphIdCorrectionCandidate {
   distance: number;
 }
 
+function countContentChars(text: string): number {
+  return text.match(CONTENT_CHAR_PATTERN)?.length ?? 0;
+}
+
+/**
+ * 短前缀豁免（issue #135）：「はい」「は？」这类短台词或以短词开头的段落，模型常省略
+ * 括号 / 标点只提交词本身，按原始字符数会被判为过短并反复重试。满足任一条件即视为足够的锚点：
+ *
+ * 1. 原文有效字符不足 MIN_ORIGINAL_TEXT_PREFIX_LENGTH，且前缀覆盖了全部有效字符
+ *    （如「はい」→ はい、「は？」→ は）
+ * 2. 去掉开头括号 / 标点后，前缀至少 MIN_LEADING_WORD_PREFIX_LENGTH 字符且与原文开头一致
+ *    （如「はい、わかりました」→ はい）
+ *
+ * 前缀是否真的出自原文仍由后续 includes 校验负责。
+ */
+function isAcceptableShortPrefix(prefix: string, originalText: string): boolean {
+  const prefixContentCount = countContentChars(prefix);
+  if (prefixContentCount === 0) {
+    return false;
+  }
+
+  const originalContentCount = countContentChars(originalText);
+  if (
+    originalContentCount < MIN_ORIGINAL_TEXT_PREFIX_LENGTH &&
+    prefixContentCount >= originalContentCount
+  ) {
+    return true;
+  }
+
+  const corePrefix = prefix.replace(LEADING_NON_CONTENT_PATTERN, '');
+  return (
+    corePrefix.length >= MIN_LEADING_WORD_PREFIX_LENGTH &&
+    originalText.replace(LEADING_NON_CONTENT_PATTERN, '').startsWith(corePrefix)
+  );
+}
+
 /**
  * 校验前缀长度是否在合法范围内（不含 includes 匹配和纯符号跳过逻辑）。
  *
- * - 最小长度：min(MIN_ORIGINAL_TEXT_PREFIX_LENGTH, originalText.length)
+ * - 最小长度：min(MIN_ORIGINAL_TEXT_PREFIX_LENGTH, originalText.length)，
+ *   短台词 / 短词开头的段落按 isAcceptableShortPrefix 放宽
  * - 最大长度：min(MAX_ORIGINAL_TEXT_PREFIX_LENGTH, originalText.length)
  *   即固定上限 20 与原文长度取较小值，与 tool description 一致。
  */
 function validatePrefixLength(prefix: string, originalText: string): PrefixLengthResult {
   const effectiveMinLength = Math.min(MIN_ORIGINAL_TEXT_PREFIX_LENGTH, originalText.length);
 
-  if (prefix.length < effectiveMinLength) {
+  if (prefix.length < effectiveMinLength && !isAcceptableShortPrefix(prefix, originalText)) {
     return { valid: false, errorCode: 'ORIGINAL_TEXT_PREFIX_TOO_SHORT', limit: effectiveMinLength };
   }
 
