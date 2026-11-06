@@ -61,6 +61,26 @@ describe('配方回放', () => {
     if (result.ok) expect(result.catalog.entries[0]?.lastUpdated).toBeInstanceOf(Date);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+  it('末页章节标题含「次の」时完整回放目录，不把章节页当作目录页', async () => {
+    const page = (n: number, last: boolean, title: string) =>
+      `<html><head><title>作品</title></head><body><div class="l-container"><main><article><h1>作品</h1><div class="c-pager"><div class="c-pager__pager">${last ? '<span class="c-pager__item c-pager__item--next">次へ</span>' : `<a href="/n1234ab/?p=${n + 1}" class="c-pager__item c-pager__item--next">次へ</a>`}</div></div><div class="p-eplist"><div class="p-eplist__sublist"><a class="p-eplist__subtitle" href="/n1234ab/${n}/">${title}</a><div class="p-eplist__update">2026/09/22 12:00</div></div></div></article></main></div></body></html>`;
+    const scraper = new NcodeSyosetuScraper();
+    const fetch = spyOn(scraper, 'fetchPageSnapshot').mockImplementation((url) =>
+      Promise.resolve(
+        snapshot(
+          url.includes('p=2') ? page(2, true, '第二話「次の戦い」') : page(1, false, '第一話'),
+          url,
+        ),
+      ),
+    );
+    spyOn(NovelScraperFactory, 'getScraper').mockReturnValue(scraper);
+    const result = await new BookSyncReplay(builtin).fetchCatalog();
+    expect(result).toMatchObject({
+      ok: true,
+      catalog: { entries: [{ url: root + '1/' }, { url: root + '2/' }] },
+    });
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([root, root + '?p=2']);
+  });
   it('第二页请求失败时没有部分目录', async () => {
     const scraper = new NcodeSyosetuScraper();
     spyOn(scraper, 'fetchPageSnapshot').mockImplementation((url) => {

@@ -26,6 +26,65 @@ function isNotFoundError(error: unknown): boolean {
   return error instanceof LocalizedError && error.values.status === 404;
 }
 
+interface ContentsPageLink {
+  url: string;
+  page: number;
+}
+
+const NEXT_LINK_SELECTORS = [
+  'a[rel="next"]',
+  '.c-pager__item--next a',
+  '.c-pager__item--next',
+  '.novelview_pager-next a',
+  '.novelview_pager-next',
+  '.pagination .next a',
+  'li.next a',
+  'nav[aria-label*="pagination"] a[aria-label*="next"]',
+  '.p-eplist__pager a',
+];
+const PAGER_LINK_SELECTOR =
+  '.c-pager a, .novelview_pager a, .pagination a, .p-eplist__pager a, nav a';
+// 符号与单字「次」必须完全一致，避免命中章节标题
+const NEXT_TEXT_EXACT = ['次', '»', '›', '＞'];
+const NEXT_TEXT_PARTIAL = ['次へ', '次の', 'Next'];
+
+function isNextLinkText(text: string): boolean {
+  return NEXT_TEXT_EXACT.includes(text) || NEXT_TEXT_PARTIAL.some((v) => text.includes(v));
+}
+
+function contentsPageNumber(url: URL): number | null {
+  const value = url.searchParams.get('p');
+  return value !== null && /^\d+$/.test(value) ? Number(value) : null;
+}
+
+const trimTrailingSlash = (path: string) => path.replace(/\/+$/, '');
+
+/**
+ * 目录分页只在同一目录页上切换 ?p=N。末页的「次へ」是不带链接的 span，
+ * 回退到文本匹配时会命中标题含「次の」的章节（如「次の戦い」），
+ * 把章节页当作目录页解析会得到空目录（CATALOG_EMPTY），因此只接受同路径、页码更大的链接。
+ */
+function nextContentsPageLink(
+  href: string | undefined,
+  current: URL,
+  currentPage: number,
+): ContentsPageLink | null {
+  if (!href || href.startsWith('#')) return null;
+  let url: URL;
+  try {
+    url = new URL(href, current);
+  } catch {
+    return null;
+  }
+  if (
+    url.origin !== current.origin ||
+    trimTrailingSlash(url.pathname) !== trimTrailingSlash(current.pathname)
+  )
+    return null;
+  const page = contentsPageNumber(url);
+  return page !== null && page > currentPage ? { url: url.href, page } : null;
+}
+
 export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
   protected static readonly BASE_URL: string = 'https://ncode.syosetu.com';
   // 匹配 ncode.syosetu.com 的小说 URL
@@ -214,102 +273,27 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
    */
   protected getNextPageUrl(html: string, currentUrl: string): string | null {
     const $ = cheerio.load(html);
+    const current = new URL(currentUrl);
+    const currentPage = contentsPageNumber(current) ?? 1;
+    // 只收集指向同一目录页、页码更大的链接；章节链接一律不算下一页
+    const pageLinks = (selector: string, keep: (text: string) => boolean = () => true) =>
+      $(selector)
+        .toArray()
+        .filter((el) => keep($(el).text().trim()))
+        .map((el) => nextContentsPageLink($(el).attr('href'), current, currentPage))
+        .filter((link): link is ContentsPageLink => link !== null);
 
-    const resolveHref = (href: string): string => {
-      const baseUrlObj = new URL(currentUrl);
-      if (href.startsWith('http')) return href;
-      if (href.startsWith('/')) return `${baseUrlObj.origin}${href}`;
-      return new URL(href, baseUrlObj.href).href;
-    };
-
-    const extractIfNext = (href: string | undefined | null): string | null => {
-      if (!href) return null;
-      const url = resolveHref(String(href));
-      // Skip same-page anchors
-      if (url === currentUrl || href.startsWith('#')) return null;
-      const nextMatch = url.match(/[?&]p=(\d+)/);
-      const currentMatch = currentUrl.match(/[?&]p=(\d+)/);
-      const nextPage = nextMatch && nextMatch[1] ? parseInt(nextMatch[1], 10) : null;
-      const currentPage = currentMatch && currentMatch[1] ? parseInt(currentMatch[1], 10) : 1;
-      if (nextPage === null) {
-        // If no explicit p param, but URL differs, treat as candidate
-        return url !== currentUrl ? url : null;
-      }
-      return nextPage > currentPage ? url : null;
-    };
-
-    // 1) rel="next"
-    const relNext = $('a[rel="next"]').first();
-    let hrefCandidate = relNext.prop('href') || relNext.attr('href');
-    let candidate = extractIfNext(hrefCandidate);
-    if (candidate) return candidate;
-
-    // 2) Known classnames that may wrap the anchor or be the anchor
-    const selectors = [
-      '.c-pager__item--next a',
-      '.c-pager__item--next',
-      '.novelview_pager-next a',
-      '.novelview_pager-next',
-      '.pagination .next a',
-      'li.next a',
-      'nav[aria-label*="pagination"] a[aria-label*="next"]',
-      '.p-eplist__pager a',
-    ];
-    for (const sel of selectors) {
-      const el = $(sel).first();
-      if (el.length) {
-        hrefCandidate = el.prop('href') || el.attr('href');
-        candidate = extractIfNext(hrefCandidate);
-        if (candidate) return candidate;
-      }
+    // 1) rel="next" 与已知分页类名
+    for (const selector of NEXT_LINK_SELECTORS) {
+      const [link] = pageLinks(selector);
+      if (link) return link.url;
     }
-
-    // 3) Text match variants for "next"
-    const textVariants = ['次へ', '次', '次の', 'Next', '»', '›', '＞'];
-    const textLink = $('a')
-      .filter((_, el) => {
-        const t = $(el).text().trim();
-        return textVariants.some((v) => {
-          // Symbols and short words should be strict match to avoid matching titles
-          if (['»', '›', '＞', '次'].includes(v)) {
-            return t === v;
-          }
-          return t === v || t.includes(v);
-        });
-      })
-      .first();
-    if (textLink.length) {
-      hrefCandidate = textLink.prop('href') || textLink.attr('href');
-      candidate = extractIfNext(hrefCandidate);
-      if (candidate) return candidate;
-    }
-
-    // 4) Fallback: pick smallest page number greater than current
-    const allPagerLinks = $(
-      '.c-pager a, .novelview_pager a, .pagination a, .p-eplist__pager a, nav a',
-    );
-    const currentPageMatch = currentUrl.match(/[?&]p=(\d+)/);
-    const currentPage =
-      currentPageMatch && currentPageMatch[1] ? parseInt(currentPageMatch[1], 10) : 1;
-
-    let nextPageUrl: string | null = null;
-    let minNextPage = Infinity;
-
-    allPagerLinks.each((_, el) => {
-      const $link = $(el);
-      const href = $link.prop('href') || $link.attr('href');
-      if (!href) return;
-      const pageMatch = href.toString().match(/[?&]p=(\d+)/);
-      if (pageMatch && pageMatch[1]) {
-        const page = parseInt(pageMatch[1], 10);
-        if (page > currentPage && page < minNextPage) {
-          minNextPage = page;
-          nextPageUrl = resolveHref(String(href));
-        }
-      }
-    });
-
-    return nextPageUrl;
+    // 2) 文本为「次へ」等的链接
+    const [textLink] = pageLinks('a', isNextLinkText);
+    if (textLink) return textLink.url;
+    // 3) 回退：分页区域里比当前页大的最小页码
+    const [fallback] = pageLinks(PAGER_LINK_SELECTOR).sort((a, b) => a.page - b.page);
+    return fallback?.url ?? null;
   }
 
   /**
