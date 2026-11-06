@@ -22,7 +22,7 @@ Tsukuyomi (月咏) - Moonlit Translator 是一个专业的小说翻译工作台�
 ### 运行时环境
 
 - **Bun 1.0+**: JavaScript 运行时和包管理器，负责所有脚本执行
-- **Electron 39+**: 桌面应用框架
+- **Electron 45+**: 桌面应用框架
 
 ### UI 组件库
 

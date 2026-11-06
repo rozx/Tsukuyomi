@@ -381,10 +381,10 @@ function createWindow() {
     console.log('[Electron] DOM ready');
   });
 
-  // 监听控制台消息（用于调试）
+  // 监听控制台消息（用于调试）；位置参数自 Electron 35 起弃用，改从事件对象读取
   if (isDebugMode) {
-    mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-      console.log(`[Electron Console ${level}]:`, message, `(${sourceId}:${line})`);
+    mainWindow.webContents.on('console-message', ({ level, message, lineNumber, sourceId }) => {
+      console.log(`[Electron Console ${level}]:`, message, `(${sourceId}:${lineNumber})`);
     });
   }
 
