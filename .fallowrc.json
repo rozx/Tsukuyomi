@@ -24,6 +24,7 @@
   "ignoreDependencies": [
     "@quasar/extras",
     "@intlify/unplugin-vue-i18n",
+    "@intlify/message-compiler",
     "unplugin-auto-import",
     "vite-plugin-checker",
     "vite",
