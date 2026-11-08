@@ -15,6 +15,36 @@ describe('快照上的 HTML / XHTML 提取', () => {
     expect(blank).toBeDefined();
     expect(html.slice(blank!.start, blank!.end)).toBe('<p></p>');
   });
+
+  it('真实排版的标签间换行不产生空行，全角空格段落和 <br> 段落各算一个空行（#137）', () => {
+    const html = [
+      '<div class="p-novel__body">',
+      '<div class="js-novel-text p-novel__text">',
+      '<p id="L1">　一行目</p>',
+      '<p id="L2">「二行目」</p>',
+      '<p id="L3">　</p>',
+      '<p id="L4"><br /></p>',
+      '<p id="L5">　三行目</p>',
+      '</div>',
+      '</div>',
+    ].join('\n');
+    const parsed = parseImportHtml(html, { preset: 'ncode' });
+    expect(parsed.blocks.map((block) => block.text).join('\n')).toBe(
+      '　一行目\n「二行目」\n\n\n　三行目',
+    );
+    const blanks = parsed.blocks.filter((block) => block.kind === 'whitespace');
+    expect(blanks.map((block) => html.slice(block.start, block.end))).toEqual([
+      '<p id="L3">　</p>',
+      '<p id="L4"><br /></p>',
+    ]);
+  });
+
+  it('块之间的全角空格文本和 <pre> 内的空白是正文排版，不当作标签间换行丢弃', () => {
+    const fullWidth = parseImportHtml('<article><p>甲</p>　<p>乙</p></article>');
+    expect(fullWidth.blocks.map((block) => block.text)).toEqual(['甲', '　', '乙']);
+    const pre = parseImportHtml('<article><pre>\n\n</pre><p>乙</p></article>');
+    expect(pre.blocks.map((block) => block.text)).toEqual(['\n\n', '乙']);
+  });
   it('复用站点范围，保留前言、正文和后记，分别记录导航广告和时间排除', () => {
     const html =
       '<html><head><meta name="author" content="作者"><meta property="og:title" content="小说"></head><body><div class="p-novel__body"><div class="p-novel__text p-novel__text--preface"><p>前言</p></div><div class="p-novel__text"><time>2026-01-01</time><p>　正文&amp;符号<br>换行</p><aside class="ad">广告</aside><nav>下一章</nav></div><div class="p-novel__text p-novel__text--afterword"><p>后记</p></div></div></body></html>';

@@ -229,8 +229,12 @@ function extractBlocks(
     let text = '';
     let start = node.startIndex ?? 0;
     let end = start;
+    // 本段只由文本节点组成（无 <br> / 行内元素），用于识别源码排版产生的标签间换行
+    let onlyTextNodes = true;
     const flush = () => {
-      if (text)
+      const layoutWhitespace =
+        onlyTextNodes && nodeName(node) !== 'pre' && /^[ \t\n\r\f]*$/.test(text);
+      if (text && !layoutWhitespace)
         blocks.push({
           start,
           end,
@@ -239,6 +243,7 @@ function extractBlocks(
           locator: locate(node),
         });
       text = '';
+      onlyTextNodes = true;
     };
     const inline = (child: HtmlNode): void => {
       const excludedAt = excludedReason($, child, rules);
@@ -254,15 +259,20 @@ function extractBlocks(
       if (!text) start = child.startIndex ?? start;
       end = (child.endIndex ?? end - 1) + 1;
       if (isText(child)) text += child.data;
-      else if (nodeName(child) === 'br') text += '\n';
-      else if ('children' in child) child.children.forEach(inline);
+      else {
+        onlyTextNodes = false;
+        if (nodeName(child) === 'br') text += '\n';
+        else if ('children' in child) child.children.forEach(inline);
+      }
     };
     node.children.forEach(inline);
+    // 只含空白（含全角空格）或 <br> 的 <p> 与空 <p> 一样算一个空行，与站点专用解析器一致
     if (
-      !text &&
+      !text.trim() &&
       nodeName(node) === 'p' &&
       !node.children.some((child) => BLOCK_TAGS.has(nodeName(child)))
     ) {
+      text = '';
       blocks.push({
         start: node.startIndex ?? 0,
         end: (node.endIndex ?? html.length - 1) + 1,
