@@ -21,6 +21,19 @@ function resolveEplistHref(href: string, baseUrl: string): string {
  * 用于从 ncode.syosetu.com 获取和解析小说信息
  * 注意：ncode.syosetu.com 和 syosetu.org 是两个不同的网站
  */
+/**
+ * 作者留言去除区块首尾的空行与排版空白，内部每个空段落仍只占一行。
+ * @param paragraphs 留言区块的段落（空段落为 '\n' 或 ''）
+ */
+function trimNoteEdges(paragraphs: string[]): string[] {
+  const first = paragraphs.findIndex((paragraph) => paragraph.trim());
+  if (first < 0) return [];
+  const trimmed = paragraphs.slice(first, paragraphs.findLastIndex((p) => p.trim()) + 1);
+  trimmed[0] = trimmed[0]!.trimStart();
+  trimmed[trimmed.length - 1] = trimmed[trimmed.length - 1]!.trimEnd();
+  return trimmed;
+}
+
 /** 抓取链路的自有错误把 HTTP 状态放在参数里（直连、代理与 Firecrawl 目标站状态） */
 function isNotFoundError(error: unknown): boolean {
   return error instanceof LocalizedError && error.values.status === 404;
@@ -170,12 +183,9 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
         )
         .remove();
 
-      const sectionParagraphs: string[] = [];
-      if (isNote) {
-        // 作者留言沿用后记的处理方式，去除区块首尾的排版空白。
-        const noteText = extractParagraphText($, element).trim();
-        if (noteText) sectionParagraphs.push(...noteText.split(/\r?\n/));
-      } else if (element.find('p').length > 0) {
+      let sectionParagraphs: string[] = [];
+      if (element.find('p').length > 0) {
+        // 正文与作者留言都按 <p> 逐段提取，标签间的排版换行不会变成额外空行。
         element.find('p').each((_, paragraph) => {
           const $p = $(paragraph);
           if (this.isEmptyParagraphElement($p)) {
@@ -185,11 +195,16 @@ export class NcodeSyosetuScraper extends BaseScraper<ParsedNovelInfo> {
           const text = extractParagraphText($, $p);
           if (text.trim()) sectionParagraphs.push(text);
         });
+      } else if (isNote) {
+        const noteText = extractParagraphText($, element);
+        if (noteText.trim()) sectionParagraphs.push(...noteText.split(/\r?\n/));
       } else {
         // 无 <p> 的正文仍保留文本和 <br> 换行。
         const text = extractTextWithFormatting($, element);
         if (text.trim()) sectionParagraphs.push(...text.split(/\r?\n/));
       }
+      // 作者留言沿用后记的处理方式，去除区块首尾的排版空白。
+      if (isNote) sectionParagraphs = trimNoteEdges(sectionParagraphs);
 
       if (!sectionParagraphs.some((paragraph) => paragraph.trim())) return;
       if (!isNote) hasBodyContent = true;

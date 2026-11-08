@@ -80,7 +80,8 @@ describe('NcodeSyosetuScraper', () => {
   it('fetches chapter content', async () => {
     const chapterUrl = 'https://ncode.syosetu.com/n2032iz/1/';
     const content = await scraper.fetchChapterContent(chapterUrl);
-    expect(content.length).toBe(3970);
+    // 后记 <p> 之间的排版缩进不再输出为空白行（#137）
+    expect(content.length).toBe(3920);
     expect(
       content.startsWith(
         '「ありがとうございましたー……ふぅ」\n\n僕は時計を見上げ、あとちょっとでシフトが終わるって気が付いて',

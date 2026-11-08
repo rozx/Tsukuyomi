@@ -42,6 +42,37 @@ for (const host of ['ncode.syosetu.com', 'novel18.syosetu.com']) {
       expect(content).toBe('作者前言\n\n---\n\n正文开头\n\n正文结尾\n续行\n\n---\n\n作者后记\n');
     });
 
+    it('前言和后记里的空行与正文一致：每个空段落只算一个空行，并去掉区块首尾空行', async () => {
+      const content = await fetchContent(
+        url,
+        [
+          '<div class="p-novel__body">',
+          '<div class="js-novel-text p-novel__text p-novel__text--preface">',
+          '<p id="Lp1"><br /></p>',
+          '<p id="Lp2">前言一</p>',
+          '<p id="Lp3"><br /></p>',
+          '<p id="Lp4">前言二</p>',
+          '</div>',
+          '<div class="js-novel-text p-novel__text">',
+          '<p id="L1">正文</p>',
+          '</div>',
+          '<div class="js-novel-text p-novel__text p-novel__text--afterword">',
+          '<p id="La1">后记一</p>',
+          '<p id="La2"><br /></p>',
+          '<p id="La3">后记二<br>续行</p>',
+          '<p id="La4">　</p>',
+          '<p id="La5">后记三</p>',
+          '<p id="La6"><br /></p>',
+          '</div>',
+          '</div>',
+        ].join('\n'),
+      );
+
+      expect(content).toBe(
+        '前言一\n\n前言二\n\n---\n\n正文\n\n---\n\n后记一\n\n后记二\n续行\n\n后记三\n',
+      );
+    });
+
     for (const { name, preface, afterword, expected } of [
       { name: '只有正文', preface: '', afterword: '', expected: '正文\n' },
       { name: '前言和正文', preface: '前言', afterword: '', expected: '前言\n\n---\n\n正文\n' },
