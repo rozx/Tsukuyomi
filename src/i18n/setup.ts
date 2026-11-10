@@ -6,12 +6,20 @@ import enUS from 'quasar/lang/en-US';
 import zhCN from 'quasar/lang/zh-CN';
 import zhTW from 'quasar/lang/zh-TW';
 import { resolveAppLocale } from 'src/models/locale';
+import type { AppLocale } from 'src/models/locale';
 import { useSettingsStore } from 'src/stores/settings';
 import { isDbBlocked } from 'src/utils/indexed-db';
 import { createAppI18n } from './vue';
 import { getPrimeVueLocale } from './framework';
 
-const quasarLocales = { 'zh-CN': zhCN, 'zh-TW': zhTW, 'en-US': enUS };
+// Quasar 2.32 的类型自相矛盾：语言包（QuasarLanguage）把 formatNumber 声明为 (value: string) => string，
+// Lang.set 的参数类型（由 API JSON 生成）却声明为 (value?: string) => string，开启 strictFunctionTypes
+// 后官方语言包无法直接传给 Lang.set。运行时是同一个对象，这里统一按 Lang.set 的参数类型断言。
+type QuasarLangPack = Parameters<typeof Lang.set>[0];
+const quasarLocales = { 'zh-CN': zhCN, 'zh-TW': zhTW, 'en-US': enUS } as Record<
+  AppLocale,
+  QuasarLangPack
+>;
 
 /** 轮询直到数据库报告升级被阻塞；返回的 stop 用于提前结束轮询。 */
 function untilBlocked(isBlocked: () => boolean, pollMs: number) {
