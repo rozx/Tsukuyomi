@@ -540,6 +540,15 @@
     }
   },
   {
+    "id": "v0.19.2",
+    "title": "v0.19.2",
+    "file": "RELEASE_NOTES_v0.19.2.md",
+    "path": "releaseNotes",
+    "category": "Release notes",
+    "description": "Desktop moves to Electron 45 to resolve security advisories (macOS 13+ now required); fixes Narou multi-page contents misdetecting the next page, extra blank lines in forewords/afterwords and AI import HTML (#137), and intermittent desktop fetch failures; vue-i18n and other dependency security updates",
+    "categoryId": "release-notes"
+  },
+  {
     "id": "v0.19.1",
     "title": "v0.19.1",
     "file": "RELEASE_NOTES_v0.19.1.md",

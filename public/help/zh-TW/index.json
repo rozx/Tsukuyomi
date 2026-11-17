@@ -540,6 +540,15 @@
     }
   },
   {
+    "id": "v0.19.2",
+    "title": "v0.19.2",
+    "file": "RELEASE_NOTES_v0.19.2.md",
+    "path": "releaseNotes",
+    "category": "更新紀錄",
+    "description": "桌面版升級至 Electron 45 修正安全公告（macOS 版需 13+）；修正なろう多頁目錄誤判下一頁、前言後記多餘空行與 AI 匯入 HTML 多餘空段落（#137），桌面版連續擷取偶發失敗；vue-i18n 等相依套件安全更新",
+    "categoryId": "release-notes"
+  },
+  {
     "id": "v0.19.1",
     "title": "v0.19.1",
     "file": "RELEASE_NOTES_v0.19.1.md",

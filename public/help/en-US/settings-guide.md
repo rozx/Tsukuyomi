@@ -383,7 +383,7 @@ Installation requires confirmation; ordinary closing or the next launch does not
 - Saves are incomplete.
 - New work starts during the save check; that work still completes and saves normally, while restart preparation fails.
 
-> Desktop v0.16.0 and earlier require one manual download of v0.16.1. Windows uses a portable ZIP; retain the entire extracted folder. macOS is not Apple-notarized; if blocked on first launch, use System Settings → Privacy & Security → Open Anyway.
+> Desktop v0.16.0 and earlier require one manual download of v0.16.1. Windows uses a portable ZIP; retain the entire extracted folder. From v0.19.2 the desktop app runs on Electron 45, and the macOS build requires macOS 13 (Ventura) or later; on older macOS keep using v0.19.1 or switch to the web version. macOS is not Apple-notarized; if blocked on first launch, use System Settings → Privacy & Security → Open Anyway.
 
 ---
 
