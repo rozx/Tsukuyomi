@@ -2,7 +2,7 @@
 
 [简体中文](README.md) | **繁體中文** | [English](README.en-US.md)
 
-![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg) ![GitHub Release](https://img.shields.io/github/v/release/rozx/Tsukuyomi) ![Vue](https://img.shields.io/badge/Vue.js-3.5-4FC08D?logo=vue.js&logoColor=white) ![Quasar](https://img.shields.io/badge/Quasar-2.20-1976D2?logo=quasar&logoColor=white) ![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white) ![Bun](https://img.shields.io/badge/Bun-1.0%2B-000000?logo=bun&logoColor=white)
+![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg) ![GitHub Release](https://img.shields.io/github/v/release/rozx/Tsukuyomi) ![Vue](https://img.shields.io/badge/Vue.js-3.5-4FC08D?logo=vue.js&logoColor=white) ![Quasar](https://img.shields.io/badge/Quasar-2.32-1976D2?logo=quasar&logoColor=white) ![Electron](https://img.shields.io/badge/Electron-45-47848F?logo=electron&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white) ![Bun](https://img.shields.io/badge/Bun-1.0%2B-000000?logo=bun&logoColor=white)
 
 [![Github All Releases](https://img.shields.io/github/downloads/rozx/Tsukuyomi/total.svg)](https://github.com/rozx/Tsukuyomi/releases)
 
@@ -218,7 +218,7 @@ bun run dev
 | **核心邏輯** | [術語管理](public/help/zh-TW/book-details-terminology.md) \| [角色設定](public/help/zh-TW/book-details-characters.md) \| [記憶系統](public/help/zh-TW/book-details-memory.md)  |
 | **AI 匯入**  | [匯入工作台：分步操作、拆章與補章](public/help/zh-TW/import-guide.md)                                                                                                          |
 | **進階工具** | [聊天助手實戰](public/help/zh-TW/chat-assistant-guide.md) \| [本地嵌入與章節檢索](public/help/zh-TW/local-embedding.md)                                                        |
-| **更新紀錄** | [v0.19.1 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.19.1.md)                                                                                                   |
+| **更新紀錄** | [v0.19.2 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.19.2.md)                                                                                                   |
 
 > 應用程式內「說明」可查閱使用指南；主分支文件透過工作流程同步到 [GitHub Wiki](https://github.com/rozx/Tsukuyomi/wiki)（簡體中文）。
 
@@ -226,7 +226,7 @@ bun run dev
 
 | 層級                | 技術                                                                                                                  |
 | :------------------ | :-------------------------------------------------------------------------------------------------------------------- |
-| **前端框架**        | Vue 3.5 · Quasar 2.20 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US) |
+| **前端框架**        | Vue 3.5 · Quasar 2.32 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US) |
 | **桌面封裝**        | Electron 45（Web SPA 與桌面端共用同一份程式碼，透過 `useDeviceVariant` 強制 Desktop 變體）                            |
 | **執行環境 / 建置** | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                         |
 | **AI SDK**          | Vercel AI SDK（OpenAI 相容 · Google · Anthropic）；透過 OpenAI 配置接入相容協定服務（BYOK）                           |
