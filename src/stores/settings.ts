@@ -8,14 +8,18 @@ import { toRaw } from 'vue';
 import { cloneDeep } from 'lodash';
 import { v4 } from 'uuid';
 import type {
+  AgentMcpSettings,
   AppSettings,
   ImportResult,
   MemoryInjectionSettings,
   ProxySiteMappingEntry,
 } from 'src/models/settings';
 import type { SyncConfig } from 'src/models/sync';
+import type { DesktopMcpStartConfig } from 'src/models/desktop-mcp';
 import { SyncType } from 'src/models/sync';
-import { GENERAL_SETTINGS_TAB } from 'src/models/settings';
+import { DEFAULT_AGENT_MCP_SETTINGS, GENERAL_SETTINGS_TAB } from 'src/models/settings';
+import { generateAgentMcpToken, normalizeAgentMcpSettings } from 'src/utils/agent-mcp-settings';
+import { stripAgentMcpFromAppSettings } from 'src/utils/sync-strip';
 import { TOMBSTONE_TTL_DAYS } from 'src/models/manifest';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
 import {
@@ -89,6 +93,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   quickStartDismissed: false,
   memoryInjection: { ...DEFAULT_MEMORY_INJECTION },
   enableLocalEmbedding: false, // 默认关闭,用户在设置页主动开启以触发模型下载
+  agentMcp: { ...DEFAULT_AGENT_MCP_SETTINGS },
 };
 
 /**
@@ -187,6 +192,9 @@ function normalizeLoadedSettings(raw: unknown): AppSettings {
         ? ((settings as any).quickStartDismissed as boolean)
         : false,
     memoryInjection: mergedMemoryInjection,
+    agentMcp: normalizeAgentMcpSettings(
+      (settings as { agentMcp?: Partial<AgentMcpSettings> }).agentMcp,
+    ),
   };
 
   if (!isAppLocale(loadedSettings.uiLocale)) delete loadedSettings.uiLocale;
@@ -521,6 +529,13 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 获取外部 Agent / MCP 与 WebMCP 设备本地配置
+     */
+    agentMcp: (state): AgentMcpSettings => {
+      return normalizeAgentMcpSettings(state.settings.agentMcp);
+    },
+
+    /**
      * 获取强制推送模式状态
      * 旧数据缺失时返回 { active: false }
      */
@@ -693,7 +708,7 @@ export const useSettingsStore = defineStore('settings', {
         }
 
         // 深度合并 taskDefaultModels，确保不会丢失本地配置
-        // 先移除 lastEdited、proxySiteMapping 和 syncs（syncs 由同步逻辑单独处理），稍后单独处理
+        // 先移除 lastEdited、proxySiteMapping、syncs 与本机 agentMcp（经单一剥离入口移除）
         const {
           lastEdited: _removed,
           proxySiteMapping: _proxyMapping,
@@ -702,7 +717,7 @@ export const useSettingsStore = defineStore('settings', {
           firecrawlApiKey: _firecrawlKey,
           apiKeysUpdatedAt: _keyTimes,
           ...settingsWithoutSpecial
-        } = settings;
+        } = stripAgentMcpFromAppSettings(settings);
         const mergedSettings: Partial<AppSettings> = {
           ...settingsWithoutSpecial,
         };
@@ -778,18 +793,20 @@ export const useSettingsStore = defineStore('settings', {
         const localEmbeddingModelCached =
           this.settings.memoryInjection?.embeddingModelCached ??
           DEFAULT_MEMORY_INJECTION.embeddingModelCached;
+        const localAgentMcp = normalizeAgentMcpSettings(this.settings.agentMcp);
 
-        const { syncs: _syncs, ...snapshotSettings } = settings as Partial<AppSettings> & {
-          syncs?: SyncConfig[];
-        };
+        const { syncs: _syncs, ...snapshotSettings } = stripAgentMcpFromAppSettings(
+          settings as Partial<AppSettings> & { syncs?: SyncConfig[] },
+        );
         const normalized = normalizeLoadedSettings(snapshotSettings);
 
-        // normalizeLoadedSettings 会始终补齐 memoryInjection 默认值，这里直接覆盖设备本地缓存状态。
+        // normalizeLoadedSettings 会始终补齐 memoryInjection 与 agentMcp 默认值，这里直接恢复设备本地状态。
         normalized.memoryInjection = {
           ...DEFAULT_MEMORY_INJECTION,
           ...normalized.memoryInjection,
           embeddingModelCached: localEmbeddingModelCached,
         };
+        normalized.agentMcp = localAgentMcp;
 
         await saveSettingsToDB(normalized);
         this.settings = normalized;
@@ -841,6 +858,51 @@ export const useSettingsStore = defineStore('settings', {
       await applyMemoryInjectionSemanticSideEffect(current.enableSemantic, updates.enableSemantic);
 
       await this.updateSettings({ memoryInjection: merged });
+    },
+
+    /**
+     * 更新外部 Agent / MCP 设备本地配置。
+     * 保留原 lastEdited，避免修改本机端口/令牌/开关产生待同步的远端设置变更。
+     */
+    async updateAgentMcpSettings(updates: Partial<AgentMcpSettings>): Promise<AgentMcpSettings> {
+      const current = normalizeAgentMcpSettings(this.settings.agentMcp);
+      const merged = normalizeAgentMcpSettings(updates, current);
+      await this.updateSettings({
+        agentMcp: merged,
+        lastEdited: this.settings.lastEdited,
+      });
+      return merged;
+    },
+
+    /**
+     * 确保本机存在非空 Bearer Token；若为空则生成新的 32 字节随机 hex 并持久化。
+     */
+    async ensureAgentMcpAuthToken(): Promise<string> {
+      const current = normalizeAgentMcpSettings(this.settings.agentMcp);
+      if (current.desktopAuthToken) {
+        return current.desktopAuthToken;
+      }
+      return this.regenerateAgentMcpAuthToken();
+    },
+
+    /**
+     * 桌面 MCP 服务端的启动 / 更新配置：确保令牌存在后返回当前端口与令牌。
+     */
+    async getDesktopMcpStartConfig(): Promise<DesktopMcpStartConfig> {
+      const authToken = await this.ensureAgentMcpAuthToken();
+      return {
+        port: normalizeAgentMcpSettings(this.settings.agentMcp).desktopPort,
+        authToken,
+      };
+    },
+
+    /**
+     * 重新生成高熵 Bearer Token 并持久化，使旧令牌立即失效。
+     */
+    async regenerateAgentMcpAuthToken(): Promise<string> {
+      const token = generateAgentMcpToken();
+      await this.updateAgentMcpSettings({ desktopAuthToken: token });
+      return token;
     },
 
     /**

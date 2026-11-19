@@ -26,6 +26,15 @@
     }
   },
   {
+    "id": "agent-mcp-guide",
+    "title": "外部 Agent / MCP 接入",
+    "file": "agent-mcp-guide.md",
+    "path": "help/zh-CN",
+    "category": "使用指南",
+    "description": "连接 Claude Code、Pi、Antigravity 与浏览器 WebMCP，使用外部 Agent 额度操控书库与翻译小说",
+    "categoryId": "guides"
+  },
+  {
     "id": "library-guide",
     "title": "主页介绍",
     "file": "library-guide.md",

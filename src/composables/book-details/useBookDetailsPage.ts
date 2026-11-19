@@ -1,4 +1,5 @@
 import { useMemoryReferences } from './useMemoryReferences';
+import { resolveTranslationModelLabel } from 'src/utils/translation-model-label';
 import { getLanguageTranslation } from 'src/services/localization/selection';
 import { BookService } from 'src/services/book-service';
 import {
@@ -1042,8 +1043,7 @@ function createBookDetailsPageContext() {
   const getParagraphModelName = (paragraph: Paragraph): string | null => {
     const sel = getLanguageTranslation(paragraph, book.value?.targetLanguage ?? 'zh-CN');
     if (!sel) return null;
-    const model = aiModelsStore.models.find((m) => m.id === sel.aiModelId);
-    return model?.name ?? null;
+    return resolveTranslationModelLabel(sel.aiModelId, aiModelsStore.models, null);
   };
 
   const mobileReaderModelName = computed<string>(() => {
@@ -1264,6 +1264,36 @@ function createBookDetailsPageContext() {
       } else {
         contextStore.setCurrentChapter(null);
       }
+    },
+    { immediate: true },
+  );
+
+  watch(
+    () =>
+      [
+        bookId.value,
+        selectedChapterId.value,
+        selectedChapterWithContent.value,
+        isLoadingChapterContent.value,
+        bookDetailsStore.pendingParagraphTarget,
+      ] as const,
+    async ([currentBookId, currentChapterId, loadedChapter, isLoading, target]) => {
+      if (!target || isLoading) return;
+      if (target.bookId !== currentBookId || target.chapterId !== currentChapterId) return;
+      // 章节加载失败（loadedChapter 为 null）时清除目标；旧章节内容尚未替换前继续等待
+      if (!loadedChapter) {
+        bookDetailsStore.clearPendingParagraphNavigation();
+        return;
+      }
+      if (loadedChapter.id !== target.chapterId) return;
+
+      const paragraphs = loadedChapter.content ?? [];
+      const idx = paragraphs.findIndex((p) => p.id === target.paragraphId);
+      bookDetailsStore.clearPendingParagraphNavigation();
+      if (idx < 0) return;
+
+      await nextTick();
+      navigateToParagraph(idx, true, false);
     },
     { immediate: true },
   );

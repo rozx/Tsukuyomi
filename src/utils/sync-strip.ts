@@ -154,18 +154,34 @@ export function normalizeMemoriesForSync(
 }
 
 /**
+ * 从 AppSettings（或其子集）中剥离仅限本机的 `agentMcp` 配置（端口、Bearer Token、开关与权限），
+ * 供同步哈希、备份导出、远端导入等路径复用，确保单一剥离入口。
+ */
+export function stripAgentMcpFromAppSettings<T extends { agentMcp?: unknown }>(
+  settings: T,
+): Omit<T, 'agentMcp'> {
+  const { agentMcp: _agentMcp, ...rest } = settings;
+  return rest;
+}
+
+/**
  * 剥离 AppSettings 中不参与同步的本地字段：
  * - `syncs`：每个设备的同步状态（lastSyncTime / lastRemoteETag / knownRemoteHashes / 删除记录等），
  *   每次同步都会更新，若参与同步会导致 hash 永远不稳定。GitHub token 等也是设备专属的。
  * - `memoryInjection.embeddingModelCached`：浏览器 Cache Storage 探测结果，是设备本地状态。
+ * - `agentMcp`：本机 MCP 服务端端口、Bearer Token、开关与权限模式，属于设备本地敏感状态。
  *
- * 剥离后的 AppSettings 用于 manifest hash 与上传。下载合并时，本地 `syncs` 与
+ * 剥离后的 AppSettings 用于 manifest hash 与上传。下载合并时，本地 `syncs`、`agentMcp` 与
  * `embeddingModelCached` 保持不变（见 `settingsStore.importSettings` 的实现）。
  */
 export function stripAppSettingsLocalFields(
   settings: AppSettings & { syncs?: unknown },
 ): AppSettings {
-  const { syncs: _syncs, memoryInjection: rawMemoryInjection, ...rest } = settings;
+  const {
+    syncs: _syncs,
+    memoryInjection: rawMemoryInjection,
+    ...rest
+  } = stripAgentMcpFromAppSettings(settings);
 
   const memoryInjection = rawMemoryInjection
     ? (() => {

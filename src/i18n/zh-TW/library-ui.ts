@@ -8,6 +8,7 @@ export default {
     aiImport: 'AI 匯入',
     aiModels: 'AI 模型',
     aiList: 'AI 列表',
+    agentMcp: '外部 Agent',
     settings: '設定',
     help: '說明',
     assistant: '月詠',

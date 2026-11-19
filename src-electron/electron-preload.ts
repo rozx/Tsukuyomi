@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { DesktopUpdateAPI } from '../src/models/desktop-update';
+import type {
+  DesktopMcpAPI,
+  DesktopMcpIpcRequest,
+  DesktopMcpIpcResponse,
+  DesktopMcpServerStatus,
+  DesktopMcpStartConfig,
+} from '../src/models/desktop-mcp';
 import type { AppLocale } from '../src/models/locale';
 
 const updates: DesktopUpdateAPI = {
@@ -39,6 +46,36 @@ const updates: DesktopUpdateAPI = {
   },
 };
 
+const mcp: DesktopMcpAPI = {
+  start: (config: DesktopMcpStartConfig) => ipcRenderer.invoke('agent-mcp:start', config),
+  stop: () => ipcRenderer.invoke('agent-mcp:stop'),
+  updateConfig: (config: DesktopMcpStartConfig) =>
+    ipcRenderer.invoke('agent-mcp:updateConfig', config),
+  getStatus: () => ipcRenderer.invoke('agent-mcp:getStatus'),
+  onStatus: (callback: (status: DesktopMcpServerStatus) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: DesktopMcpServerStatus) =>
+      callback(status);
+    ipcRenderer.on('agent-mcp:status', handler);
+    return () => {
+      ipcRenderer.removeListener('agent-mcp:status', handler);
+    };
+  },
+  onRequest: (callback: (request: DesktopMcpIpcRequest) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: DesktopMcpIpcRequest) =>
+      callback(request);
+    ipcRenderer.on('agent-mcp:request', handler);
+    return () => {
+      ipcRenderer.removeListener('agent-mcp:request', handler);
+    };
+  },
+  sendResponse: (response: DesktopMcpIpcResponse) => {
+    ipcRenderer.send('agent-mcp:response', response);
+  },
+  notifyReady: () => {
+    ipcRenderer.send('agent-mcp:ready');
+  },
+};
+
 /**
  * Electron Preload Script
  * 为渲染进程提供安全的 API 访问
@@ -48,6 +85,7 @@ const updates: DesktopUpdateAPI = {
 contextBridge.exposeInMainWorld('electronAPI', {
   setUiLocale: (locale: AppLocale) => ipcRenderer.invoke('interface-locale:set', locale),
   updates,
+  mcp,
   /**
    * 通过 Electron 的 net 模块发起 HTTP 请求
    * 避免浏览器的 CORS 限制

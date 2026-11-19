@@ -170,6 +170,12 @@ const greetingSub = computed(() =>
           class="p-button-outlined mh-action-btn"
           @click="ctx.importBookFromWeb"
         />
+        <Button
+          :label="i18nT('libraryUi.agentMcp')"
+          icon="pi pi-link"
+          class="p-button-outlined mh-action-btn"
+          @click="ctx.navigateToMcp"
+        />
       </div>
     </section>
 

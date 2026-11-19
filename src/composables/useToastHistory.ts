@@ -62,53 +62,59 @@ export function useToastHistory() {
 }
 
 /**
+ * 把一条 toast 写入历史记录并登记时间戳（用于关闭时标记已读）。
+ * 无法使用 useToast 的场景（如 boot 钩子）调用它之后再自行显示 toast。
+ */
+export function recordToastInHistory(message: ToastMessageWithHistoryOptions): void {
+  const store = useToastHistoryStore();
+  // 确保 severity 是有效的类型
+  const severityValue = message.severity;
+  const severity: 'success' | 'error' | 'info' | 'warn' =
+    severityValue === 'success' ||
+    severityValue === 'error' ||
+    severityValue === 'info' ||
+    severityValue === 'warn'
+      ? (severityValue as 'success' | 'error' | 'info' | 'warn')
+      : 'info';
+
+  // 计算一次时间戳，确保在 composable 和 store 中使用一致
+  const timestamp = Date.now();
+  const summary = message.summary || '';
+  const detail = message.detail || '';
+
+  // 添加到历史记录（store 会自动保存到 IndexedDB）
+  void co(function* () {
+    try {
+      yield store.addToHistory(
+        {
+          severity,
+          summary,
+          detail,
+          ...(message.life !== undefined ? { life: message.life } : {}),
+        },
+        message.onRevert,
+        timestamp,
+      );
+    } catch (error) {
+      console.error('[useToastHistory] 保存 toast 历史记录失败:', error);
+    }
+  });
+
+  // 将消息映射到时间戳（用于关闭时标记为已读）
+  store.setMessageTimestamp({ summary, detail }, timestamp);
+}
+
+/**
  * 带历史记录的 useToast 包装器
  * 所有组件应该使用这个而不是直接使用 useToast
  */
 export function useToastWithHistory() {
   const toast = useToast();
-  const store = useToastHistoryStore();
 
   // 包装 add 方法，自动保存历史记录
   const originalAdd = toast.add.bind(toast);
   const wrappedAdd = (message: ToastMessageWithHistoryOptions) => {
-    // 保存到历史记录
-    // 确保 severity 是有效的类型
-    const severityValue = message.severity;
-    const severity: 'success' | 'error' | 'info' | 'warn' =
-      severityValue === 'success' ||
-      severityValue === 'error' ||
-      severityValue === 'info' ||
-      severityValue === 'warn'
-        ? (severityValue as 'success' | 'error' | 'info' | 'warn')
-        : 'info';
-
-    // 计算一次时间戳，确保在 composable 和 store 中使用一致
-    const timestamp = Date.now();
-    const summary = message.summary || '';
-    const detail = message.detail || '';
-
-    // 添加到历史记录（store 会自动保存到 IndexedDB）
-    // 传递时间戳以确保一致性
-    void co(function* () {
-      try {
-        yield store.addToHistory(
-          {
-            severity,
-            summary,
-            detail,
-            ...(message.life !== undefined ? { life: message.life } : {}),
-          },
-          message.onRevert,
-          timestamp,
-        );
-      } catch (error) {
-        console.error('[useToastHistory] 保存 toast 历史记录失败:', error);
-      }
-    });
-
-    // 将消息映射到时间戳（用于关闭时标记为已读）
-    store.setMessageTimestamp({ summary, detail }, timestamp);
+    recordToastInHistory(message);
 
     // 调用原始的 add 方法
     return originalAdd(message);

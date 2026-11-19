@@ -4,11 +4,13 @@
  */
 
 import type { DesktopUpdateAPI } from '../models/desktop-update';
+import type { DesktopMcpAPI } from '../models/desktop-mcp';
 import type { AppLocale } from '../models/locale';
 
 export interface ElectronAPI {
   setUiLocale?: (locale: AppLocale) => Promise<void>;
   updates: DesktopUpdateAPI;
+  mcp?: DesktopMcpAPI;
   /**
    * 通过 Electron 的 net 模块发起 HTTP 请求
    * 避免浏览器的 CORS 限制

@@ -2,10 +2,18 @@ import { computed, type ComputedRef } from 'vue';
 import { useRoute } from 'vue-router';
 import { useUiStore } from 'src/stores/ui';
 
-export type MainNavTab = 'home' | 'library' | 'import' | 'chat' | 'ai' | 'help' | 'settings';
+export type MainNavTab =
+  | 'home'
+  | 'library'
+  | 'import'
+  | 'chat'
+  | 'ai'
+  | 'mcp'
+  | 'help'
+  | 'settings';
 
 /**
- * 主导航入口（首页 / 书库 / AI 导入 / AI 助手 / AI 模型 / 帮助 / 设置）当前激活项的共享派生状态。
+ * 主导航入口（首页 / 书库 / AI 导入 / AI 助手 / AI 模型 / 外部 Agent / 帮助 / 设置）当前激活项的共享派生状态。
  *
  * 移动端底部导航与平板侧边图标导航共用此逻辑，避免激活态规则在两个位置漂移。
  */
@@ -21,6 +29,7 @@ export function useMainNavActive(): ComputedRef<MainNavTab> {
     if (ui.rightPanelOpen && ui.activeRightTab === 'chat') return 'chat';
     if (path === '/') return 'home';
     if (path.startsWith('/ai')) return 'ai';
+    if (path === '/mcp' || path.startsWith('/mcp/')) return 'mcp';
     if (path.startsWith('/help')) return 'help';
     if (path.startsWith('/settings')) return 'settings';
     if (path === '/books' || path.startsWith('/books/')) return 'library';

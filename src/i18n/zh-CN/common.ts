@@ -15,6 +15,7 @@ import appUi from './app-ui';
 import activityUi from './activity-ui';
 import bookUi from './book-ui';
 import importUi from './import-ui';
+import agentMcpUi from './agent-mcp-ui';
 export default {
   ...aiUi,
   ...embeddingUi,
@@ -33,6 +34,7 @@ export default {
   ...activityUi,
   ...bookUi,
   ...importUi,
+  ...agentMcpUi,
   failed: '操作失败',
   success: '操作成功',
 };

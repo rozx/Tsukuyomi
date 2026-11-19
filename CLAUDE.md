@@ -97,6 +97,7 @@ src/composables/<name-kebab>/use<Name>.ts         # 业务逻辑，通过 provid
 /books/:id            → BookDetailsPage (书籍详情，最复杂的页面)
 /books/:id/settings/:setting(terms|characters|memory) → BookDetailsPage (设置标签)
 /ai                   → AIPage (AI 配置)
+/mcp                  → AgentMcpPage (外部 Agent / MCP 工作台)
 /settings             → SettingsPage (应用设置，已从弹窗改为路由页)
 /help/:docId?         → HelpPage
 ```
