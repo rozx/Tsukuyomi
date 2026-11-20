@@ -1,6 +1,6 @@
 # 外部 Agent 与 MCP 接入指南 {#agent-mcp-guide-section-1}
 
-通过 **外部 Agent 工作台**（`/mcp`），你可以让 Claude Code、Pi、Antigravity 或支持 WebMCP 的浏览器 Agent 直接操控 Tsukuyomi，使用已有 Agent 订阅额度完成建书、加章、维护设定与分块翻译。
+通过 **外部 Agent 工作台**（`/mcp`），你可以让 Claude Code、Pi、Antigravity 等本地 Agent 直接操控 Tsukuyomi，使用已有 Agent 订阅额度完成建书、加章、维护设定与分块翻译。
 
 ## 运行模式 {#agent-mcp-guide-section-2}
 
@@ -11,11 +11,14 @@
 - 同一 `POST /mcp` 端点同时兼容 `2026-07-28` 无状态协议（`server/discover`）与 `2025-03-26` 握手协议（`initialize`）。
 - 本机端口、Bearer Token、服务开关与权限模式仅保存于当前设备，不会同步到 GitHub Gist，也不会包含在导出备份文件中。
 
-### 浏览器版：WebMCP 桥接 {#agent-mcp-guide-section-4}
+### 浏览器版：WebMCP 本地中继 {#agent-mcp-guide-section-4}
 
-- 在浏览器版打开 `/mcp` 页面时，应用会自动检测 `document.modelContext` 或 `navigator.modelContext`。
-- 在页面第一步开启 WebMCP 后，当前权限允许的工具（及只读工作流指南 `get_workflow_guide`）会自动注册到浏览器模型上下文。
-- 浏览器没有提供 WebMCP 接口时开关不可用，页面会按浏览器给出开启办法：Chrome 在 `chrome://flags/#enable-webmcp-testing` 把「WebMCP for testing」设为 Enabled 后重启；Edge 在 `edge://flags` 搜索 WebMCP；Firefox 与 Safari 目前没有原生支持，请改用 Chrome 或 Edge。该接口只在 HTTPS 或 localhost 页面上提供。
+- 浏览器版通过 **WebMCP 本地中继**（`@mcp-b/webmcp-local-relay`）让 Claude Code、Cursor 等本地 Agent 使用本页的工具，不需要打开浏览器的实验开关。
+- 在页面第一步开启 WebMCP 后，应用会在本页注册当前权限允许的工具（含只读的工作流指南 `get_workflow_guide`），并连接你电脑上运行的中继。
+- 在 Agent 客户端里添加中继：Claude Code 运行 `claude mcp add webmcp-local-relay -- npx -y @mcp-b/webmcp-local-relay@latest --widget-origin <本页地址>`，其他客户端把页面给出的 JSON 合并到 MCP 配置里。需要 Node.js 22 或更高版本。页面给出的配置已经填好本页地址，中继只接受来自它的连接。
+- 让 Agent 调用 `webmcp_list_sources`，能看到本页就说明已连接。工具列表里看不到本页工具时，可用 `webmcp_list_tools` 列出、`webmcp_call_tool` 按名称调用。
+- 使用期间请保持本页打开：工具来自这个标签页，关闭或刷新后 Agent 会暂时看不到它们。
+- 本页必须通过 HTTPS 或 localhost 打开，否则无法开启。
 - 浏览器环境因跨域限制无法抓取部分站点时，可让 Agent 自行获取正文后调用 `create_book` 与 `add_chapters` 直接导入。
 
 ## 权限分级与多版本写回 {#agent-mcp-guide-section-5}
@@ -27,8 +30,8 @@
 
 ## 推荐翻译工作流 {#agent-mcp-guide-section-6}
 
-1. 在 `/mcp` 页面按顺序完成三步：开启服务 → 把配置复制到客户端（Claude Code / Pi / Antigravity）→ 复制「快速上手指南」并粘贴给 Agent。服务没有运行时配置不可复制。
-2. 「快速上手指南」是一份给 Agent 看的通用说明：有哪些工具、怎样了解书库现状、翻译 / 润色 / 导入 / 跟进更新各用哪些工具，以及必须遵守的规则。可以直接粘贴到对话里，也可以放进 Agent 的项目说明文件。
+1. 在 `/mcp` 页面只需要两步：开启服务，然后复制「快速上手指南」并粘贴给 Agent。
+2. 指南开头的「首次设置」会让 Agent 替你完成准备：询问并建立项目文件夹、在其中配置好这个 MCP、把指南保存为该文件夹里的 AGENTS.md（Claude Code 另建一个引用它的 CLAUDE.md）。之后在这个文件夹里启动 Agent 就能直接工作，不用再粘贴。指南后面是数据模型、全部工具、分步工作流、规则与出错处理。桌面版的指南里包含访问令牌，不要把这个文件夹提交到公开仓库。想自己在客户端里添加 MCP 时，展开页面上的「手动添加 MCP」。
 3. 大部头网页小说通过 `import_book_from_url` 默认按批抓取最多 20 章，可按返回的 `pending_chapter_count` 重复调用续传，并通过 `max_chapters` 调节单批章数。
 4. 连载中的书籍可用 `check_book_updates` 检查来源站点的新章节，再用 `apply_book_updates` 导入。默认只导入新章节；应用已导入章节的正文改动（`include_updated`）会清除被改段落的译文。
 5. 翻译落盘后会立即刷新书库与阅读页面，页面上的「调用活动」会实时显示每次工具调用，译文历史中会展示对应的外部来源标签（如 `MCP · claude-opus-4`）。

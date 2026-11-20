@@ -1,6 +1,6 @@
 # External Agent & MCP Integration Guide {#agent-mcp-guide-section-1}
 
-Use the **External Agent Workbench** (`/mcp`) to connect Claude Code, Pi, Antigravity, or WebMCP-capable browser agents directly to Tsukuyomi so you can manage books and translate chapters with your existing agent quota.
+Use the **External Agent Workbench** (`/mcp`) to connect local agents such as Claude Code, Pi, or Antigravity directly to Tsukuyomi so you can manage books and translate chapters with your existing agent quota.
 
 ## Transport Modes {#agent-mcp-guide-section-2}
 
@@ -11,11 +11,14 @@ Use the **External Agent Workbench** (`/mcp`) to connect Claude Code, Pi, Antigr
 - Serves both the stateless `2026-07-28` MCP revision (`server/discover`) and the legacy `2025-03-26` handshake (`initialize`) on the same `POST /mcp` endpoint.
 - Local port, Bearer token, toggles, and permission mode stay strictly on this device and are never uploaded to GitHub Gist or exported into backup files.
 
-### Browser Build: WebMCP Bridge {#agent-mcp-guide-section-4}
+### Browser Build: WebMCP Local Relay {#agent-mcp-guide-section-4}
 
-- Opening `/mcp` in a browser detects `document.modelContext` (or legacy `navigator.modelContext`).
-- Turning on WebMCP in the first step of the page exposes all tools allowed by the active permission mode plus the read-only `get_workflow_guide` tool.
-- When the browser does not provide the WebMCP interface the switch is disabled, and the page shows how to enable it per browser: in Chrome set "WebMCP for testing" to Enabled at `chrome://flags/#enable-webmcp-testing` and relaunch; in Edge search for WebMCP at `edge://flags`; Firefox and Safari have no native support yet, so use Chrome or Edge. The interface is only available on HTTPS or localhost pages.
+- The browser build uses the **WebMCP local relay** (`@mcp-b/webmcp-local-relay`) so local agents such as Claude Code or Cursor can use the tools on this page. No experimental browser flag is needed.
+- Turning on WebMCP in the first step of the page registers the tools allowed by the active permission mode (plus the read-only `get_workflow_guide`) and connects to the relay running on your computer.
+- Add the relay to your agent client: for Claude Code run `claude mcp add webmcp-local-relay -- npx -y @mcp-b/webmcp-local-relay@latest --widget-origin <this page's address>`; for other clients merge the JSON shown on the page into the MCP configuration. Node.js 22 or later is required. The configuration shown on the page already contains this page's address, and the relay only accepts connections from it.
+- Ask the agent to call `webmcp_list_sources`; seeing this page there means it is connected. If the page's tools are missing from the agent's tool list, list them with `webmcp_list_tools` and call them by name with `webmcp_call_tool`.
+- Keep the page open while you work: the tools come from this tab, and the agent temporarily loses them when it is closed or reloaded.
+- The page must be opened over HTTPS or localhost; otherwise WebMCP cannot be turned on.
 - If a site is blocked by browser CORS when calling `import_book_from_url`, have your agent fetch the text itself and call `create_book` followed by `add_chapters`.
 
 ## Permission Modes & Translation Versions {#agent-mcp-guide-section-5}
@@ -27,8 +30,8 @@ Use the **External Agent Workbench** (`/mcp`) to connect Claude Code, Pi, Antigr
 
 ## Recommended Translation Workflow {#agent-mcp-guide-section-6}
 
-1. On `/mcp`, complete the three steps in order: turn on the server, copy the configuration into your client (Claude Code, Pi, or Antigravity), then copy the quick start guide and paste it to your agent. The configuration cannot be copied while the server is not running.
-2. The quick start guide is a general briefing for the agent: which tools exist, how to get its bearings in the library, which tools to use for translating, polishing, importing and following updates, and the rules it must follow. Paste it into the conversation or put it in the agent's project instructions.
+1. On `/mcp` there are only two steps: turn on the server, then copy the quick start guide and paste it to your agent.
+2. The "First-time setup" section at the top of the guide has the agent prepare everything for you: it asks where to put the project and creates the folder, configures this MCP inside it, and saves the guide there as AGENTS.md (plus a CLAUDE.md that references it for Claude Code). After that, starting the agent in that folder is enough and you do not need to paste the guide again. The rest of the guide covers the data model, every tool, step-by-step workflows, rules and error handling. In the desktop app the guide contains the access token, so do not commit that folder to a public repository. To add the MCP to your client yourself, expand "Add the MCP manually" on the page.
 3. For long web novels, `import_book_from_url` fetches up to 20 chapters per batch by default; adjust with `max_chapters` and call it again while `pending_chapter_count > 0`.
 4. For ongoing serials, `check_book_updates` checks the source site for new chapters and `apply_book_updates` imports them. Only new chapters are imported by default; applying text changes to imported chapters (`include_updated`) clears the translations of revised paragraphs.
 5. Saved translations appear live in the reader, "Call activity" on the page shows every tool call in real time, and translation history displays the external source label (such as `MCP · claude-opus-4`).

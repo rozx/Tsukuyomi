@@ -123,14 +123,19 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
   - `append` 的两个既有约束：同语言同文本时复用已有版本而不新增；每种语言最多保留 5 个版本（新版本 + 最近 4 个），更早的版本会被逐出。
 - **理由**：零 schema 破坏、完全兼容 Gist 双向同步和历史修订恢复，且老版本客户端也能无损读取该译文记录。
 
-### 6. WebMCP 适配层与浏览器兼容性策略
-- **决策**：在 `src/services/agent-mcp/webmcp-adapter.ts` 中封装探测与生命周期管理：
-  - 探测顺序：`document.modelContext`（最新 W3C 草案，标记状态 `native-document`）→ `navigator.modelContext`（早期 Chrome Preview 或 `@mcp-b` polyfill 注入，标记状态 `native-navigator`）→ 均不存在时标记 `unavailable`。
-  - 注册工具时为每个工具提供 `name`、`description`、`inputSchema`、`annotations: { readOnlyHint }` 与 `execute(args)`；若运行环境支持 `registerTool(def, { signal })` 则挂入批次 `AbortController`，注销时调用 `controller.abort()`；若目标对象提供 `unregisterTool(name)` 则在清理时同步调用作为兜底。
-  - `registerTool` 在同名工具已存在时会抛错：权限切换与 HMR 重注册必须先完成注销再注册，并对单个工具注册失败做捕获与状态上报，不得中断其余工具。
-  - 桌面端（Electron）渲染进程没有浏览器 Agent，WebMCP 开关在 Electron 下不展示、不注册。
-  - 不在主 bundle 中强行引入第三方 polyfill（避免增大常规用户体积和追踪不稳定草案依赖），但适配器完全兼容页面已存在的 `@w3c/webmcp-polyfill` 或 `@mcp-b/global` 注入对象。
-- **理由**：既紧跟 W3C 标准演进，又零风险地支持早期 Chrome Preview 与 MCP-B 浏览器扩展。
+### 6. 浏览器端：页面 WebMCP 运行时 + 本地中继（webmcp-local-relay）
+- **决策**（取代最初「只适配浏览器原生 WebMCP、不引入 polyfill」的方案）：
+  - 浏览器版开启 WebMCP 时，`src/services/agent-mcp/webmcp-relay.ts` 做两件事：动态 `import('@mcp-b/global')` 让 `document.modelContext` 存在；注入 `@mcp-b/webmcp-local-relay` 的 `embed.js`，由它创建隐藏 iframe，经本机 WebSocket（默认 `ws://127.0.0.1:9333`）把本页注册的工具转发给用户电脑上的中继进程，本地 Agent 再经 stdio 连接该进程。
+  - `@mcp-b/global` 作为运行时依赖但只动态加载，不进主包。它一加载就会以「任意来源可连」的配置自动初始化，因此加载前先设置 `window.__webModelContextOptions = { autoInitialize: false }`，再以 `tabServer.allowedOrigins = [本页来源]` 显式初始化。
+  - `embed.js` 与 `widget.html` 原样复制到 `public/webmcp-relay/` 随应用分发（应用强调离线可用，不从 CDN 加载）；`@mcp-b/webmcp-local-relay` 仅作为开发依赖提供这两个文件，测试校验两者逐字节一致且与 `@mcp-b/global` 主版本相同。这两个文件加入 ESLint 与 Prettier 的忽略列表。
+  - `webmcp-adapter.ts` 保持不变，仍向 `document.modelContext`（回退 `navigator.modelContext`）注册工具：定义含 `name`、`description`、`inputSchema`、`annotations: { readOnlyHint }` 与 `execute(args)`，支持 `registerTool(def, { signal })` 与 `unregisterTool(name)` 两种注销方式，重注册前先注销。
+  - 运行时顺序：开启时先接通运行时与中继再注册工具；关闭时先注销工具，再移除中继脚本与 iframe 并清理运行时。Electron 渲染进程不创建适配器和中继。
+  - 页面不在安全上下文时不加载运行时，开关不可开启。
+  - 客户端配置：`claude mcp add webmcp-local-relay -- npx -y @mcp-b/webmcp-local-relay@latest --widget-origin <本页来源>`，以及通用 `mcpServers` JSON。中继默认接受任何网站接入，因此页面给出的配置一律带 `--widget-origin` 限定为本页来源。
+  - Agent 侧看到的是本页工具（按原名注册）加中继自带的 `webmcp_list_sources` / `webmcp_list_tools` / `webmcp_call_tool` / `webmcp_open_page`；快速上手指南的浏览器版据此说明如何确认连接与兜底调用。
+- **理由**：浏览器原生 WebMCP 仍是实验特性，各浏览器开启方式不一且不稳定（曾做过按浏览器的开启指南，随后弃用）；本地中继不依赖浏览器开关，并让浏览器版也能接入 Claude Code 等本地 Agent，这正是复用订阅额度的主要场景。
+- **已验证**：用真实浏览器加本机中继进程做过端到端检查——中继列出本页 22 个工具与 4 个管理工具，`list_books`、`get_workflow_guide` 调用成功，页面调用活动同步记录。
+- **已知限制**：页面必须保持打开；需要 Node.js 22+ 来运行中继；从 HTTPS 页面连接 `ws://127.0.0.1` 在部分浏览器可能受限或弹出本地网络访问授权（未逐一验证）；中继没有令牌鉴权，安全边界是回环地址加来源限定；页面侧没有连接状态接口，是否连通靠「已收到首次调用」体现。
 
 ### 7. 设备本地配置持久化与 Gist 同步隔离
 - **决策**：在 `src/models/settings.ts` 的 `AppSettings` 中新增可选字段 `agentMcp?: AgentMcpSettings`：
@@ -166,9 +171,9 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
     - `src/composables/agent-mcp-page/useAgentMcpPage.ts`（`provideAgentMcpPage` / `injectAgentMcpPage`，保存跨断点存活的配置标签页、已展开的工具类别、端口草稿与两处待确认状态）
     - `src/components/agent-mcp/`：`AgentMcpPanel`（基于 `DesktopWorkbenchSurface` 的共用面板与小部件样式）、`AgentMcpSetupSteps`、`AgentMcpActivityLog`、`AgentMcpPermissionPanel`、`AgentMcpConnectionSettings`、`AgentMcpToolCatalog`。
   - **页面按「用户要完成什么」组织，而不是按设置项平铺**：
-    - 接入步骤依次为开启服务 → 客户端配置（仅桌面端）→ 给 Agent 快速上手指南；服务未运行时配置片段置灰且不可复制；底部显示是否已收到首次调用。
-    - 最后一步是「快速上手指南」，由 `src/services/agent-mcp/agent-quick-start.ts` 的 `buildAgentQuickStartGuide` 生成 Markdown：已连接的服务、了解现状的工具、各类常见任务用哪些工具、必须遵守的规则。它是通用说明，不让用户选任务或书籍（最初做成按任务和书籍拼接的任务提示，用户反馈后改为指南）；桌面通道引用 MCP Prompt，WebMCP 通道改用 `get_workflow_guide`；测试校验指南里出现的工具名都是已注册工具。浏览器端没有需要粘贴的客户端配置，接入指引由这份指南承担。
-    - 浏览器端检测不到 WebMCP 接口时：状态只显示「浏览器不支持」，开关禁用且始终显示为关（已保存的开启设置保留，接口出现后自动生效）；按浏览器给出开启指南，默认选中 `src/utils/browser-kind.ts` 按 UA 识别出的当前浏览器。Chrome 给出 `chrome://flags/#enable-webmcp-testing`（WebMCP for testing）；Edge 的确切开关名未能核实，只引导到 `edge://flags` 搜索；Firefox 与 Safari 未查到原生支持，引导改用 Chrome / Edge。页面不在安全上下文时另行提示。这些说明依据的是 2026-11 的公开资料，实验特性变化快，需要随浏览器版本复核。
+    - 接入步骤只有两步：开启服务 → 把快速上手指南交给 Agent；客户端配置片段收进默认折叠的「手动添加 MCP」（展开状态存于 composable），桌面端服务未运行时片段置灰且不可复制；底部显示是否已收到首次调用。
+    - 第二步是把快速上手指南交给 Agent，由 `src/services/agent-mcp/agent-quick-start.ts` 的 `buildAgentQuickStartGuide` 生成。指南以「首次设置」开头，让 Agent 替用户完成：询问并建立项目文件夹（默认 `~/tsukuyomi-translation`）、在其中以项目级方式配置 MCP（Claude Code 用 `claude mcp add --scope project …`）、把指南保存为该文件夹的 AGENTS.md（Claude Code 另建只含 `@AGENTS.md` 的 CLAUDE.md，已有文件时追加为一节）、告知用户之后在该文件夹里启动即可、无需再粘贴。随后是数据模型、了解现状、工具一览、五个分步工作流、规则、出错处理。它是通用内容，不让用户选任务或书籍。配置命令与「手动添加」里的片段共用 `src/services/agent-mcp/client-config.ts`（指南用项目级作用域，手动片段用客户端默认作用域）；工具一览由已注册工具和界面文案生成，测试校验其完整。桌面端指南含访问令牌，因此附带「不要把该文件夹提交到公开仓库」的提醒。（这一步的形态经过三次调整：按任务和书籍拼接的任务提示 → 简短指南 → 误改成纯 AGENTS.md 说明 → 现在的「首次设置 + 参考」。）
+    - （已弃用，见决策 6）浏览器端检测不到 WebMCP 接口时：状态只显示「浏览器不支持」，开关禁用且始终显示为关（已保存的开启设置保留，接口出现后自动生效）；按浏览器给出开启指南，默认选中 `src/utils/browser-kind.ts` 按 UA 识别出的当前浏览器。Chrome 给出 `chrome://flags/#enable-webmcp-testing`（WebMCP for testing）；Edge 的确切开关名未能核实，只引导到 `edge://flags` 搜索；Firefox 与 Safari 未查到原生支持，引导改用 Chrome / Edge。页面不在安全上下文时另行提示。这些说明依据的是 2026-11 的公开资料，实验特性变化快，需要随浏览器版本复核。
     - 调用活动放在主栏；工具目录收成按类别折叠的概览，不再提供搜索；页头不再重复展示状态与数量指标。
     - 权限以带后果说明和工具数量的选项呈现；切换到 `full` 与重新生成令牌用页面内的二次确认（状态保存在 composable，不依赖全局确认对话框）。
   - 导航入口：

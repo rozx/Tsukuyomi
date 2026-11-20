@@ -8,7 +8,7 @@ import {
   type AgentMcpWriteMode,
 } from 'src/models/settings';
 
-export function clampAgentMcpPort(port: unknown, fallback = DEFAULT_AGENT_MCP_PORT): number {
+function clampAgentMcpPort(port: unknown, fallback = DEFAULT_AGENT_MCP_PORT): number {
   if (port === null || port === undefined || (typeof port === 'string' && port.trim() === '')) {
     return fallback;
   }

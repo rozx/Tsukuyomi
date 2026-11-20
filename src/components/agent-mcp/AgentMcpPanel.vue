@@ -87,6 +87,37 @@ withDefaults(defineProps<{ title?: string; hint?: string }>(), { title: '', hint
   gap: 12px;
 }
 
+/* 可展开区域的标题按钮（工具分类、手动添加等） */
+.amcp-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--white-opacity-6);
+  background: var(--white-opacity-2-5);
+  color: var(--moon-50-opacity-92);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.amcp-disclosure:focus-visible {
+  outline: 2px solid var(--tsukuyomi-opacity-40);
+  outline-offset: 2px;
+}
+
+.amcp-disclosure .pi {
+  font-size: 11px;
+  color: var(--moon-50-opacity-55);
+}
+
+/* 行内的按钮不随文字区域被挤压换行 */
+.amcp-row > .p-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .amcp-code {
   flex: 1;
   min-width: 0;

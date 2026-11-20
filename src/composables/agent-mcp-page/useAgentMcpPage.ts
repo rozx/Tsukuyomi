@@ -11,7 +11,6 @@ import {
 import type {
   AgentMcpActivityEntry,
   ExternalAgentChannel,
-  WebMcpAvailability,
   WebMcpRuntimeStatus,
 } from 'src/models/agent-mcp';
 import type { DesktopMcpServerState, DesktopMcpServerStatus } from 'src/models/desktop-mcp';
@@ -26,6 +25,12 @@ import type { MessageKey } from 'src/i18n/types';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { ALL_AGENT_MCP_TOOLS, getAgentMcpKernel } from 'src/services/agent-mcp';
 import { buildAgentQuickStartGuide } from 'src/services/agent-mcp/agent-quick-start';
+import {
+  buildDesktopClaudeCommand,
+  buildRelayClaudeCommand,
+  buildRelayJsonConfig,
+  TOKEN_PLACEHOLDER,
+} from 'src/services/agent-mcp/client-config';
 import { isToolAllowedByPermission } from 'src/services/agent-mcp/kernel';
 import { getActiveDesktopMcpBridge, getActiveWebMcpAdapter } from 'src/services/agent-mcp/runtime';
 import type {
@@ -35,10 +40,15 @@ import type {
 } from 'src/services/agent-mcp/types';
 import { useAgentMcpStore } from 'src/stores/agent-mcp';
 import { useSettingsStore } from 'src/stores/settings';
-import { detectBrowserKind } from 'src/utils/browser-kind';
 import { isElectron } from 'src/utils/platform';
 
-export type AgentMcpConnectTab = 'claude-code' | 'pi' | 'antigravity';
+/** 桌面端直连本地 MCP 服务的客户端，以及浏览器端经本地中继接入的两种配置形式 */
+export type AgentMcpConnectTab =
+  | 'claude-code'
+  | 'pi'
+  | 'antigravity'
+  | 'relay-claude-code'
+  | 'relay-json';
 
 export interface LocalizedAgentMcpToolDescriptor extends AgentMcpToolDescriptor {
   displayDescription: string;
@@ -47,43 +57,6 @@ export interface LocalizedAgentMcpToolDescriptor extends AgentMcpToolDescriptor 
 export interface LocalizedAgentMcpPromptDescriptor extends AgentMcpPromptDescriptor {
   displayDescription: string;
 }
-
-/** 提供 WebMCP 开启指南的浏览器 */
-export type WebMcpGuideBrowser = 'chrome' | 'edge' | 'firefox' | 'safari';
-
-export interface WebMcpGuide {
-  steps: string[];
-  /** 补充说明（如实验性功能的版本限制）；没有时为空字符串 */
-  note: string;
-  /** 需要在地址栏打开的实验功能页；该浏览器没有可开的开关时为 null */
-  flagUrl: string | null;
-}
-
-const WEBMCP_GUIDE_META: Record<
-  WebMcpGuideBrowser,
-  { stepKeys: MessageKey[]; noteKey: MessageKey | null; flagUrl: string | null }
-> = {
-  chrome: {
-    stepKeys: [
-      'agentMcp.steps.webGuideChrome1',
-      'agentMcp.steps.webGuideChrome2',
-      'agentMcp.steps.webGuideReload',
-    ],
-    noteKey: 'agentMcp.steps.webGuideChromeNote',
-    flagUrl: 'chrome://flags/#enable-webmcp-testing',
-  },
-  edge: {
-    stepKeys: [
-      'agentMcp.steps.webGuideEdge1',
-      'agentMcp.steps.webGuideEdge2',
-      'agentMcp.steps.webGuideReload',
-    ],
-    noteKey: 'agentMcp.steps.webGuideEdgeNote',
-    flagUrl: 'edge://flags',
-  },
-  firefox: { stepKeys: ['agentMcp.steps.webGuideFirefox'], noteKey: null, flagUrl: null },
-  safari: { stepKeys: ['agentMcp.steps.webGuideSafari'], noteKey: null, flagUrl: null },
-};
 
 export interface AgentMcpToolGroup {
   category: AgentMcpToolCategory;
@@ -135,6 +108,8 @@ const SNIPPET_PLACEMENT_KEYS: Record<AgentMcpConnectTab, MessageKey> = {
   'claude-code': 'agentMcp.steps.placeClaudeCode',
   pi: 'agentMcp.steps.placePi',
   antigravity: 'agentMcp.steps.placeAntigravity',
+  'relay-claude-code': 'agentMcp.steps.placeRelayClaudeCode',
+  'relay-json': 'agentMcp.steps.placeRelayJson',
 };
 
 const DESKTOP_STATUS_META: Record<
@@ -147,15 +122,6 @@ const DESKTOP_STATUS_META: Record<
   stopped: { labelKey: 'agentMcp.status.stopped', severity: 'secondary' },
 };
 
-const WEB_AVAILABILITY_META: Record<
-  WebMcpAvailability,
-  { labelKey: MessageKey; severity: 'success' | 'info' | 'secondary' }
-> = {
-  'native-document': { labelKey: 'agentMcp.status.nativeDocument', severity: 'success' },
-  'native-navigator': { labelKey: 'agentMcp.status.nativeNavigator', severity: 'info' },
-  unavailable: { labelKey: 'agentMcp.status.unavailable', severity: 'secondary' },
-};
-
 export interface AgentMcpPageContext {
   isElectronEnv: ComputedRef<boolean>;
   settings: ComputedRef<AgentMcpSettings>;
@@ -163,17 +129,10 @@ export interface AgentMcpPageContext {
   webMcpStatus: ComputedRef<WebMcpRuntimeStatus>;
   runtimeStatusLabel: ComputedRef<string>;
   runtimeStatusSeverity: ComputedRef<'success' | 'info' | 'danger' | 'secondary'>;
-  /** 当前浏览器是否提供 WebMCP 接口；不提供时开关不会生效 */
-  webMcpSupported: ComputedRef<boolean>;
-  /** WebMCP 开关的显示值：浏览器不支持时始终显示为关 */
+  /** WebMCP 开关的显示值：页面不在安全上下文时始终显示为关 */
   webMcpToggleOn: ComputedRef<boolean>;
-  /** 开启指南当前展示的浏览器，默认是检测到的当前浏览器 */
-  webMcpGuideBrowser: Ref<WebMcpGuideBrowser>;
-  webMcpGuide: ComputedRef<WebMcpGuide>;
-  /** 页面不是 HTTPS / localhost：此时浏览器不会提供 WebMCP 接口 */
+  /** 页面不是 HTTPS / localhost：此时无法提供 WebMCP */
   pageInsecure: ComputedRef<boolean>;
-  webAvailabilityLabel: ComputedRef<string>;
-  webAvailabilitySeverity: ComputedRef<'success' | 'info' | 'secondary'>;
   /** 当前通道已可用：桌面端服务运行中，或浏览器端工具已注册 */
   connectionReady: ComputedRef<boolean>;
   /** 本次会话是否已收到过外部调用 */
@@ -208,7 +167,9 @@ export interface AgentMcpPageContext {
   copyEndpoint: () => Promise<void>;
   copyActiveSnippet: () => Promise<void>;
   copyQuickStartGuide: () => Promise<void>;
-  copyWebMcpFlagUrl: () => Promise<void>;
+  /** 「手动添加 MCP」是否展开；把指南交给 Agent 时不需要它，默认收起 */
+  manualSetupOpen: Ref<boolean>;
+  toggleManualSetup: () => void;
   toggleToolCategory: (category: string) => void;
   toggleWebMcp: (enabled: boolean) => Promise<void>;
   /** 选择权限模式；「完全控制」需再调用 confirmFullPermission 才生效 */
@@ -227,14 +188,22 @@ function translateOrFallback(locale: AppLocale, key: string, fallback: string): 
   return translated === key ? fallback : translated;
 }
 
-function buildClientSnippet(tab: AgentMcpConnectTab, endpointUrl: string, token: string): string {
-  const displayToken = token || '<YOUR_BEARER_TOKEN>';
+function buildClientSnippet(
+  tab: AgentMcpConnectTab,
+  endpointUrl: string,
+  token: string,
+  pageOrigin: string,
+): string {
+  const displayToken = token || TOKEN_PLACEHOLDER;
   switch (tab) {
+    case 'relay-claude-code':
+      return buildRelayClaudeCommand(pageOrigin);
+
+    case 'relay-json':
+      return buildRelayJsonConfig(pageOrigin);
+
     case 'claude-code':
-      return [
-        `claude mcp add --transport http tsukuyomi ${endpointUrl} \\`,
-        `  --header "Authorization: Bearer ${displayToken}"`,
-      ].join('\n');
+      return buildDesktopClaudeCommand(endpointUrl, token);
 
     case 'pi':
       return JSON.stringify(
@@ -270,7 +239,7 @@ function buildClientSnippet(tab: AgentMcpConnectTab, endpointUrl: string, token:
   }
 }
 
-export function createAgentMcpPageContext(): AgentMcpPageContext {
+function createAgentMcpPageContext(): AgentMcpPageContext {
   const settingsStore = useSettingsStore();
   const agentMcpStore = useAgentMcpStore();
   const toast = useToastWithHistory();
@@ -284,39 +253,18 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
   const desktopStatusMeta = computed(
     () => DESKTOP_STATUS_META[desktopServerStatus.value.state] ?? DESKTOP_STATUS_META.stopped,
   );
-  const webAvailabilityMeta = computed(
-    () =>
-      WEB_AVAILABILITY_META[webMcpStatus.value.availability] ?? WEB_AVAILABILITY_META.unavailable,
-  );
-
-  const webMcpSupported = computed(() => webMcpStatus.value.availability !== 'unavailable');
-  const webMcpToggleOn = computed(() => webMcpSupported.value && settings.value.webMcpEnabled);
-
-  const detectedBrowser =
-    typeof navigator === 'undefined' ? 'other' : detectBrowserKind(navigator.userAgent);
-  // 识别不出的浏览器先展示 Chrome 的说明作为参考
-  const webMcpGuideBrowser = ref<WebMcpGuideBrowser>(
-    detectedBrowser === 'other' ? 'chrome' : detectedBrowser,
-  );
-  const webMcpGuide = computed<WebMcpGuide>(() => {
-    const locale = settingsStore.uiLocale;
-    const meta = WEBMCP_GUIDE_META[webMcpGuideBrowser.value];
-    return {
-      steps: meta.stepKeys.map((key) => translateText(locale, key)),
-      note: meta.noteKey ? translateText(locale, meta.noteKey) : '',
-      flagUrl: meta.flagUrl,
-    };
-  });
   const pageInsecure = computed(
     () => typeof window !== 'undefined' && window.isSecureContext === false,
   );
+
+  const webMcpToggleOn = computed(() => !pageInsecure.value && settings.value.webMcpEnabled);
 
   const runtimeStatusLabel = computed(() => {
     const locale = settingsStore.uiLocale;
     if (isElectronEnv.value) {
       return translateText(locale, desktopStatusMeta.value.labelKey);
     }
-    if (!webMcpSupported.value) return translateText(locale, 'agentMcp.status.unsupported');
+    if (pageInsecure.value) return translateText(locale, 'agentMcp.status.unsupported');
     return webMcpStatus.value.registered
       ? translateText(locale, 'agentMcp.status.registered')
       : translateText(locale, 'agentMcp.status.unregistered');
@@ -329,11 +277,6 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     return webMcpStatus.value.registered ? 'success' : 'secondary';
   });
 
-  const webAvailabilityLabel = computed(() =>
-    translateText(settingsStore.uiLocale, webAvailabilityMeta.value.labelKey),
-  );
-  const webAvailabilitySeverity = computed(() => webAvailabilityMeta.value.severity);
-
   const activePort = computed(() => desktopServerStatus.value.port ?? settings.value.desktopPort);
   const endpointUrl = computed(() => `http://127.0.0.1:${activePort.value}/mcp`);
 
@@ -341,9 +284,14 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
   const tokenRevealed = ref(false);
 
   const connectTabs = computed<AgentMcpConnectTab[]>(() =>
-    isElectronEnv.value ? ['claude-code', 'pi', 'antigravity'] : [],
+    isElectronEnv.value
+      ? ['claude-code', 'pi', 'antigravity']
+      : ['relay-claude-code', 'relay-json'],
   );
-  const activeConnectTab = ref<AgentMcpConnectTab>('claude-code');
+  const activeConnectTab = ref<AgentMcpConnectTab>(
+    isElectronEnv.value ? 'claude-code' : 'relay-claude-code',
+  );
+  const pageOrigin = typeof window === 'undefined' ? '' : window.location.origin;
 
   const maskedToken = computed(() => {
     const token = settings.value.desktopAuthToken;
@@ -354,7 +302,12 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
   });
 
   const activeSnippet = computed(() =>
-    buildClientSnippet(activeConnectTab.value, endpointUrl.value, settings.value.desktopAuthToken),
+    buildClientSnippet(
+      activeConnectTab.value,
+      endpointUrl.value,
+      settings.value.desktopAuthToken,
+      pageOrigin,
+    ),
   );
 
   const activeChannel = computed<ExternalAgentChannel>(() =>
@@ -419,7 +372,17 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
   );
 
   const quickStartGuide = computed(() =>
-    buildAgentQuickStartGuide({ locale: settingsStore.uiLocale, channel: activeChannel.value }),
+    buildAgentQuickStartGuide({
+      locale: settingsStore.uiLocale,
+      channel: activeChannel.value,
+      connection: isElectronEnv.value
+        ? {
+            kind: 'desktop',
+            endpointUrl: endpointUrl.value,
+            token: settings.value.desktopAuthToken,
+          }
+        : { kind: 'relay', pageOrigin },
+    }),
   );
 
   const prompts = computed<LocalizedAgentMcpPromptDescriptor[]>(() => {
@@ -535,8 +498,9 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
   };
 
   const copyActiveSnippet = async (): Promise<void> => {
-    // 服务没在运行时配置片段连不上，直接提示而不是让用户复制一份无效配置
-    if (!connectionReady.value) {
+    // 桌面端服务没在运行时配置片段连不上，直接提示而不是让用户复制一份无效配置；
+    // 浏览器端的中继配置不含令牌、不依赖本页开关，随时可以复制
+    if (isElectronEnv.value && !connectionReady.value) {
       toast.add({
         severity: 'warn',
         summary: translateText(settingsStore.uiLocale, 'agentMcp.notify.serverNotRunning'),
@@ -547,9 +511,9 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     await copyText(activeSnippet.value);
   };
 
-  const copyWebMcpFlagUrl = async (): Promise<void> => {
-    const url = webMcpGuide.value.flagUrl;
-    if (url) await copyText(url);
+  const manualSetupOpen = ref(false);
+  const toggleManualSetup = (): void => {
+    manualSetupOpen.value = !manualSetupOpen.value;
   };
 
   const copyQuickStartGuide = async (): Promise<void> => {
@@ -557,8 +521,8 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
   };
 
   const toggleWebMcp = async (enabled: boolean): Promise<void> => {
-    // 浏览器不提供接口时打开开关没有任何效果，直接忽略；关闭始终允许
-    if (enabled && !webMcpSupported.value) return;
+    // 页面不在安全上下文时 WebMCP 无法工作，打开开关直接忽略；关闭始终允许
+    if (enabled && pageInsecure.value) return;
     await settingsStore.updateAgentMcpSettings({ webMcpEnabled: enabled });
   };
 
@@ -608,13 +572,8 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     webMcpStatus,
     runtimeStatusLabel,
     runtimeStatusSeverity,
-    webMcpSupported,
     webMcpToggleOn,
-    webMcpGuideBrowser,
-    webMcpGuide,
     pageInsecure,
-    webAvailabilityLabel,
-    webAvailabilitySeverity,
     connectionReady,
     firstCallReceived,
     endpointUrl,
@@ -643,7 +602,8 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     copyEndpoint,
     copyActiveSnippet,
     copyQuickStartGuide,
-    copyWebMcpFlagUrl,
+    manualSetupOpen,
+    toggleManualSetup,
     toggleToolCategory,
     toggleWebMcp,
     requestPermissionMode,

@@ -9,7 +9,7 @@
 - 新增协议无关的 **外部 Agent 工具内核**（`src/services/agent-mcp/`）：提供面向外部 Agent 工作流的精选工具集（应用上下文与导航、书库与导入/加章、分块翻译上下文打包与批量写回、术语/角色/记忆/特殊指令维护）与 3 个内置翻译工作流模板，复用既有 `useBooksStore` 写盘刷新、`chunk-formatter`、`selectRelevantMemoriesForChunk` 与从 `translation-tools.ts` 抽离的译文校验逻辑。
 - 新增 **三级权限门禁**（`read_only` / `translate_and_edit` / `full`）与调用活动记录，服务总开关默认关闭；写回已有译文默认采用 `append` 新增译文版本并选中（支持显式 `overwrite`），并为 `mcp:*` / `webmcp:*` 外部译文来源提供友好展示标签。
 - 新增 **Electron 本地双代 Streamable HTTP MCP 服务端**（`src-electron/mcp-server.ts` + IPC 桥接）：仅绑定 `127.0.0.1`，在同一 `POST /mcp` 端点兼容 `2026-07-28` 无状态语义与 `2025-03-26` 握手协议，提供 Bearer Token 鉴权、`Host`/`Origin` 防护、`trustedDesktopSender` IPC 校验与 MCP `tools/*`、`prompts/*` 协议，使 Antigravity、Pi、Claude Code 等本地 Coding Agents 开箱即用；服务端端口、Token 与开关作为设备本地配置，不参与 Gist 同步与设置备份导出。
-- 新增 **浏览器 WebMCP 适配层**（`src/services/agent-mcp/webmcp-adapter.ts`）：兼容 `document.modelContext` 与 `navigator.modelContext`、按开关和权限模式动态注册与清理工具，使浏览器版与支持 WebMCP / `@mcp-b` 的 Agent 共享同一套工具内核。
+- 新增 **浏览器 WebMCP 适配层与本地中继接入**（`src/services/agent-mcp/webmcp-adapter.ts`、`webmcp-relay.ts`）：开启时按需加载页面 WebMCP 运行时（`@mcp-b/global`）并接入用户电脑上的 WebMCP 本地中继（`@mcp-b/webmcp-local-relay`），按开关和权限模式动态注册与清理工具，使浏览器版也能被 Claude Code 等本地 Agent 使用，且不依赖浏览器实验开关。
 - 新增 **独立一级工作台页面 `/mcp`**（`AgentMcpPage.vue` + Desktop / Tablet / Mobile 三变体与 `useAgentMcpPage` composable），在桌面与平板主导航中平行于 AI 导入（`/import`）与 AI 模型（`/ai`），提供连接控制、端口/Token 管理、Claude Code / Pi / Antigravity / WebMCP 一键配置片段、工具目录浏览与实时调用日志。
 
 ## Capabilities

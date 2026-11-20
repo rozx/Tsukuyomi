@@ -5,12 +5,18 @@ import { isElectron } from 'src/utils/platform';
 import { configureAgentMcpKernelHooks, getAgentMcpKernel } from './index';
 import { createDesktopMcpBridge, type DesktopMcpBridge } from './desktop-bridge';
 import { createWebMcpAdapter, type WebMcpAdapter, type WebMcpEnvLike } from './webmcp-adapter';
+import { createWebMcpRelayBridge, type WebMcpRelayBridge } from './webmcp-relay';
 import type { AgentMcpWriteNotification } from './types';
 
 export interface StartAgentMcpRuntimeOptions {
   isElectronEnv?: boolean;
   desktopApi?: DesktopMcpAPI | null;
   webMcpEnv?: () => WebMcpEnvLike;
+  /**
+   * 浏览器版的本地中继桥接。缺省时在真实浏览器环境创建；传 null 或注入了 webMcpEnv
+   * （测试用的模拟宿主）时不创建。
+   */
+  webMcpRelay?: WebMcpRelayBridge | null;
   navigate?: (path: string) => Promise<void> | void;
   onWriteNotify?: (info: AgentMcpWriteNotification) => void;
   onRecordActivity?: (entry: RecordAgentMcpActivityInput) => void;
@@ -60,6 +66,7 @@ export async function startAgentMcpRuntime(
 
   let desktopBridge: DesktopMcpBridge | null = null;
   let webMcpAdapter: WebMcpAdapter | null = null;
+  let webMcpRelay: WebMcpRelayBridge | null = null;
 
   if (electronMode && desktopApi) {
     desktopBridge = createDesktopMcpBridge({
@@ -75,6 +82,12 @@ export async function startAgentMcpRuntime(
       ...(options.onWebMcpStatusChange ? { onStatusChange: options.onWebMcpStatusChange } : {}),
       ...(options.webMcpEnv ? { env: options.webMcpEnv } : {}),
     });
+    webMcpRelay =
+      options.webMcpRelay !== undefined
+        ? options.webMcpRelay
+        : options.webMcpEnv
+          ? null
+          : createWebMcpRelayBridge();
   }
 
   activeDesktopBridge = desktopBridge;
@@ -95,7 +108,14 @@ export async function startAgentMcpRuntime(
   const syncWebMcp = async (): Promise<void> => {
     if (disposed || !webMcpAdapter) return;
     const cfg = settingsStore.agentMcp;
-    await webMcpAdapter.sync(cfg.webMcpEnabled);
+    if (cfg.webMcpEnabled) {
+      // 先让 document.modelContext 存在并接上本机中继，再注册工具
+      await webMcpRelay?.enable();
+      await webMcpAdapter.sync(true);
+    } else {
+      await webMcpAdapter.sync(false);
+      webMcpRelay?.disable();
+    }
   };
 
   const syncNow = async (): Promise<void> => {
@@ -114,6 +134,7 @@ export async function startAgentMcpRuntime(
       disposed = true;
       desktopBridge?.dispose();
       void webMcpAdapter?.unregisterAll();
+      webMcpRelay?.disable();
       if (activeDesktopBridge === desktopBridge) activeDesktopBridge = null;
       if (activeWebMcpAdapter === webMcpAdapter) activeWebMcpAdapter = null;
       if (activeRuntime === handle) activeRuntime = null;

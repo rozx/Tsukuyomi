@@ -7,7 +7,7 @@
       <li v-for="group in ctx.toolGroups.value" :key="group.category" class="group">
         <button
           type="button"
-          class="group-head"
+          class="amcp-disclosure group-head"
           :aria-expanded="isExpanded(group.category)"
           @click="ctx.toggleToolCategory(group.category)"
         >
@@ -33,7 +33,7 @@
       <li class="group">
         <button
           type="button"
-          class="group-head"
+          class="amcp-disclosure group-head"
           :aria-expanded="isExpanded(WORKFLOWS_KEY)"
           @click="ctx.toggleToolCategory(WORKFLOWS_KEY)"
         >
@@ -105,27 +105,6 @@ function badgeSeverity(tool: AgentMcpToolDescriptor): 'danger' | 'info' | 'warn'
 
 .group-head {
   width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--white-opacity-6);
-  background: var(--white-opacity-2-5);
-  color: var(--moon-50-opacity-92);
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.group-head:focus-visible {
-  outline: 2px solid var(--tsukuyomi-opacity-40);
-  outline-offset: 2px;
-}
-
-.group-head .pi {
-  font-size: 11px;
-  color: var(--moon-50-opacity-55);
 }
 
 .group-label {

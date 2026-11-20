@@ -8,3 +8,7 @@ src/__tests__/__snapshots__/
 # 脚本生成的产物：保持生成脚本写出的格式，避免与重新生成的结果互相打架
 src/services/ai/model-limits/catalog.json
 .fallow-baseline.json
+
+# 随应用分发的第三方构建产物：必须与 npm 包逐字节一致（有测试校验）
+public/webmcp-relay/embed.js
+public/webmcp-relay/widget.html

@@ -7,9 +7,9 @@ import type {
   DesktopMcpStartConfig,
 } from '../src/models/desktop-mcp';
 
-export const MODERN_MCP_PROTOCOL_VERSION = '2026-07-28';
-export const LEGACY_MCP_PROTOCOL_VERSION = '2025-03-26';
-export const SUPPORTED_MCP_PROTOCOL_VERSIONS = [
+const MODERN_MCP_PROTOCOL_VERSION = '2026-07-28';
+const LEGACY_MCP_PROTOCOL_VERSION = '2025-03-26';
+const SUPPORTED_MCP_PROTOCOL_VERSIONS = [
   MODERN_MCP_PROTOCOL_VERSION,
   LEGACY_MCP_PROTOCOL_VERSION,
 ] as const;

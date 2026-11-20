@@ -1,9 +1,9 @@
 import { isSymbolOnly } from 'src/utils/text-utils';
 
-export const MIN_ORIGINAL_TEXT_PREFIX_LENGTH = 3;
+const MIN_ORIGINAL_TEXT_PREFIX_LENGTH = 3;
 /** 以短词开头的段落（如「はい、…」），与原文开头一致时允许的最短前缀 */
-export const MIN_LEADING_WORD_PREFIX_LENGTH = 2;
-export const MAX_ORIGINAL_TEXT_PREFIX_LENGTH = 20;
+const MIN_LEADING_WORD_PREFIX_LENGTH = 2;
+const MAX_ORIGINAL_TEXT_PREFIX_LENGTH = 20;
 export const MAX_PARAGRAPH_ID_EDIT_DISTANCE = 2;
 
 /** 有效字符：字母 / 数字（含假名、汉字），与 isSymbolOnly 的判定口径一致 */

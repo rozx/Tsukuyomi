@@ -117,8 +117,7 @@ describe('useAgentMcpPage composable', () => {
     const ctx = getCtx();
 
     expect(ctx.isElectronEnv.value).toBe(false);
-    // 浏览器端没有需要粘贴到客户端的配置，接入指引由交接提示承担
-    expect(ctx.connectTabs.value).toEqual([]);
+    expect(ctx.connectTabs.value).toEqual(['relay-claude-code', 'relay-json']);
 
     const initialCount = ctx.exposedTools.value.length;
     expect(ctx.exposedTools.value.some((t) => t.name === 'submit_translations')).toBe(true);
@@ -169,13 +168,6 @@ describe('useAgentMcpPage composable', () => {
       webMcpEnv: () => ({ document: { modelContext: { registerTool: vi.fn() } }, navigator: {} }),
     });
     const syncSpy = vi.spyOn(getActiveWebMcpAdapter()!, 'sync');
-    // 浏览器提供了 WebMCP 接口，开关才可以打开
-    useAgentMcpStore().setWebMcpStatus({
-      availability: 'native-document',
-      registered: false,
-      registeredToolNames: [],
-      error: null,
-    });
     await ctx.toggleWebMcp(true);
     expect(useSettingsStore().agentMcp.webMcpEnabled).toBe(true);
     expect(syncSpy).not.toHaveBeenCalled();
@@ -236,100 +228,90 @@ describe('useAgentMcpPage composable', () => {
     expect(ctx.quickStartGuide.value).toContain('prompts/get');
     expect(ctx.quickStartGuide.value).toContain('check_book_updates');
 
+    // 「手动添加 MCP」默认收起：把指南交给 Agent 就不需要它；展开状态跨断点保留
+    expect(ctx.manualSetupOpen.value).toBe(false);
+    ctx.toggleManualSetup();
+    expect(ctx.manualSetupOpen.value).toBe(true);
+
     // 服务没开也可以先复制指南
     expect(ctx.connectionReady.value).toBe(false);
     await ctx.copyQuickStartGuide();
     expect(writeText).toHaveBeenCalledWith(ctx.quickStartGuide.value);
 
     await settings.setUiLocale('en-US');
-    expect(ctx.quickStartGuide.value).toMatch(/Quick start/i);
+    expect(ctx.quickStartGuide.value).toMatch(/quick start guide/i);
 
     unmount();
   });
 
-  it('浏览器不提供 WebMCP 接口时开关不可用且不会被打开；检测到接口后恢复可用', async () => {
+  it('浏览器端通过本地中继接入：给出带本页来源限制的客户端配置，随时可复制', async () => {
     platformState.isElectron = false;
     const settings = useSettingsStore();
     await settings.setUiLocale('zh-CN');
-    await settings.updateAgentMcpSettings({ webMcpEnabled: false });
-    const store = useAgentMcpStore();
-    store.setWebMcpStatus({
-      availability: 'unavailable',
-      registered: false,
-      registeredToolNames: [],
-      error: null,
-    });
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
 
     const { unmount, getCtx } = mountHarness();
     const ctx = getCtx();
 
-    expect(ctx.webMcpSupported.value).toBe(false);
-    expect(ctx.webMcpToggleOn.value).toBe(false);
-    // 状态只给一个结论，不再同时显示「未注册」与「未检测到」
-    expect(ctx.runtimeStatusLabel.value).toBe('浏览器不支持');
+    expect(ctx.connectTabs.value).toEqual(['relay-claude-code', 'relay-json']);
+    expect(ctx.activeConnectTab.value).toBe('relay-claude-code');
+    expect(ctx.activeSnippet.value).toContain('claude mcp add');
+    expect(ctx.activeSnippet.value).toContain('npx -y @mcp-b/webmcp-local-relay@latest');
+    // 只允许本页来源连接中继，避免其他网站借中继暴露工具
+    expect(ctx.activeSnippet.value).toContain(`--widget-origin ${window.location.origin}`);
+    expect(ctx.snippetPlacementHint.value).toContain('webmcp_list_sources');
 
-    // 不支持时打开开关不生效
-    await ctx.toggleWebMcp(true);
-    expect(settings.agentMcp.webMcpEnabled).toBe(false);
+    ctx.activeConnectTab.value = 'relay-json';
+    const parsed = JSON.parse(ctx.activeSnippet.value) as {
+      mcpServers: Record<string, { command: string; args: string[] }>;
+    };
+    expect(parsed.mcpServers['webmcp-local-relay']!.command).toBe('npx');
+    expect(parsed.mcpServers['webmcp-local-relay']!.args).toEqual([
+      '-y',
+      '@mcp-b/webmcp-local-relay@latest',
+      '--widget-origin',
+      window.location.origin,
+    ]);
 
-    // 之前已保存为开启的设置在不支持的浏览器里也显示为关，但仍允许关闭
-    await settings.updateAgentMcpSettings({ webMcpEnabled: true });
-    expect(ctx.webMcpToggleOn.value).toBe(false);
-    await ctx.toggleWebMcp(false);
-    expect(settings.agentMcp.webMcpEnabled).toBe(false);
+    // 中继配置不含令牌、不依赖本页开关，未开启时也可以先复制
+    expect(ctx.connectionReady.value).toBe(false);
+    await ctx.copyActiveSnippet();
+    expect(writeText).toHaveBeenCalledWith(ctx.activeSnippet.value);
 
-    // 检测到接口后开关可用
-    store.setWebMcpStatus({
+    // 状态只有「未开启 / 已开启」
+    expect(ctx.runtimeStatusLabel.value).toBe('未开启');
+    useAgentMcpStore().setWebMcpStatus({
       availability: 'native-document',
-      registered: false,
-      registeredToolNames: [],
+      registered: true,
+      registeredToolNames: ['list_books'],
       error: null,
     });
-    expect(ctx.webMcpSupported.value).toBe(true);
-    await ctx.toggleWebMcp(true);
-    expect(settings.agentMcp.webMcpEnabled).toBe(true);
-    expect(ctx.webMcpToggleOn.value).toBe(true);
-    expect(ctx.runtimeStatusLabel.value).toBe('未注册');
+    expect(ctx.runtimeStatusLabel.value).toBe('已开启');
 
     unmount();
   });
 
-  it('不支持 WebMCP 时按浏览器给出开启指南：默认匹配当前浏览器，可切换，并提示非安全页面', async () => {
+  it('页面不在安全上下文时 WebMCP 开关不可开启，但允许关闭', async () => {
     platformState.isElectron = false;
     const settings = useSettingsStore();
     await settings.setUiLocale('zh-CN');
-    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0',
-    );
-    const writeText = vi.fn(() => Promise.resolve());
-    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await settings.updateAgentMcpSettings({ webMcpEnabled: false });
     Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true });
 
     const { unmount, getCtx } = mountHarness();
     const ctx = getCtx();
 
-    // 默认选中检测到的浏览器
-    expect(ctx.webMcpGuideBrowser.value).toBe('edge');
-    expect(ctx.webMcpGuide.value.flagUrl).toBe('edge://flags');
-    expect(ctx.webMcpGuide.value.steps.length).toBeGreaterThanOrEqual(3);
-    expect(ctx.webMcpGuide.value.steps.join('\n')).toContain('WebMCP');
-
-    // 切到 Chrome：给出确切的实验开关地址，并可复制
-    ctx.webMcpGuideBrowser.value = 'chrome';
-    expect(ctx.webMcpGuide.value.flagUrl).toBe('chrome://flags/#enable-webmcp-testing');
-    expect(ctx.webMcpGuide.value.steps.join('\n')).toContain('WebMCP for testing');
-    await ctx.copyWebMcpFlagUrl();
-    expect(writeText).toHaveBeenCalledWith('chrome://flags/#enable-webmcp-testing');
-
-    // Firefox / Safari 没有可开的开关：不给地址，只说明出路
-    for (const browser of ['firefox', 'safari'] as const) {
-      ctx.webMcpGuideBrowser.value = browser;
-      expect(ctx.webMcpGuide.value.flagUrl).toBeNull();
-      expect(ctx.webMcpGuide.value.steps).toHaveLength(1);
-    }
-
-    // 页面不是 HTTPS / localhost 时单独提示
     expect(ctx.pageInsecure.value).toBe(true);
+    expect(ctx.runtimeStatusLabel.value).toBe('无法开启');
+    await ctx.toggleWebMcp(true);
+    expect(settings.agentMcp.webMcpEnabled).toBe(false);
+
+    await settings.updateAgentMcpSettings({ webMcpEnabled: true });
+    expect(ctx.webMcpToggleOn.value).toBe(false);
+    await ctx.toggleWebMcp(false);
+    expect(settings.agentMcp.webMcpEnabled).toBe(false);
 
     unmount();
     Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });

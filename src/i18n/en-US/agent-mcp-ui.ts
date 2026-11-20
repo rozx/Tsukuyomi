@@ -9,12 +9,9 @@ export default {
       starting: 'Starting',
       stopped: 'Stopped',
       error: 'Error',
-      registered: 'Registered',
-      unregistered: 'Unregistered',
-      nativeDocument: 'Native (document.modelContext)',
-      nativeNavigator: 'Compatible (navigator.modelContext)',
-      unsupported: 'Browser not supported',
-      unavailable: 'WebMCP not detected',
+      registered: 'On',
+      unregistered: 'Off',
+      unsupported: 'Unavailable',
     },
     steps: {
       desktopEnableTitle: 'Turn on the local MCP server',
@@ -22,36 +19,6 @@ export default {
       enableDesktop: 'Enable the local MCP server',
       endpoint: 'Server address',
       copyEndpoint: 'Copy address',
-      webEnableTitle: 'Turn on WebMCP',
-      webEnableHint:
-        'Exposes the tools to an in-browser agent in a browser or bridge extension that supports WebMCP.',
-      enableWebMcp: 'Enable WebMCP tool registration',
-      webUnsupportedLead:
-        'This browser does not provide the WebMCP interface, so this switch cannot be turned on. Enable it for your browser:',
-      webGuideTitle: 'Choose a browser',
-      copyFlagUrl: 'Copy address',
-      webGuideChrome1:
-        'Paste the address above into the address bar and open it (or open chrome://flags and search for WebMCP).',
-      webGuideChrome2:
-        'Set "WebMCP for testing" to Enabled, then click Relaunch at the bottom of the page.',
-      webGuideReload: 'Come back to this page, reload it, and turn on the switch above.',
-      webGuideChromeNote:
-        'This is an experimental feature. If the entry is missing, your version does not offer it yet; update Chrome or use a Canary or Dev build.',
-      webGuideEdge1:
-        'Paste the address above into the address bar, open it, and type WebMCP in the search box.',
-      webGuideEdge2: 'Set the WebMCP entry you find to Enabled, then restart the browser.',
-      webGuideEdgeNote:
-        'Support in Edge is still experimental. If no such entry appears, your version does not offer it yet; use Chrome instead.',
-      webGuideFirefox:
-        'Firefox has no native WebMCP support and no switch to turn on. Open this page in Chrome or Edge instead.',
-      webGuideSafari:
-        'Safari has no native WebMCP support and no switch to turn on (the same applies to every browser on iPhone and iPad). Open this page in Chrome or Edge on a computer instead.',
-      webGuideExtension:
-        'Alternatively, install a bridge extension that injects the WebMCP interface into pages (for example MCP-B), then reload this page.',
-      webGuideInsecure:
-        'This page was not opened over HTTPS or localhost. Browsers only provide the WebMCP interface on secure pages, so switch to an HTTPS address first.',
-      webUnsupportedDesktop:
-        'Use the desktop app if you want a local agent such as Claude Code; it connects through the local MCP server and does not depend on WebMCP.',
       clientTitle: 'Connect your agent client',
       clientHint: 'The current address and token are already filled in.',
       clientLocked: 'Turn on the server above before using this configuration.',
@@ -68,18 +35,30 @@ export default {
       waitingFirstCall:
         'No calls received yet. This will show as connected once the client sends its first instruction.',
       firstCallReceived: 'Connected: last call {tool} ({time})',
-      guideTitle: 'Give your agent a quick start guide',
+      webEnableTitle: 'Turn on WebMCP',
+      webEnableHint:
+        'Registers the tools on this page and connects to the WebMCP relay running on your computer, so local agents such as Claude Code can use them.',
+      enableWebMcp: 'Turn on WebMCP',
+      webInsecure:
+        'This page was not opened over HTTPS or localhost, and browsers do not allow WebMCP on such pages. Use an HTTPS address instead.',
+      webKeepOpen:
+        'Keep this page open while you work: the tools come from this tab, and the agent temporarily loses them when it is closed or reloaded.',
+      relayClientHint:
+        "Add the WebMCP local relay to your agent client. The relay only accepts connections from this page's address.",
+      tabRelayJson: 'Other clients (JSON)',
+      placeRelayClaudeCode:
+        'Run this command in a terminal (requires Node.js 22 or later), then restart Claude Code. Afterwards ask the agent to call webmcp_list_sources; seeing this page there means it is connected.',
+      placeRelayJson:
+        "Merge this into mcpServers in your client's MCP configuration (works for Cursor, Claude Desktop, Windsurf and others). Requires Node.js 22 or later.",
+      guideTitle: 'Hand the quick start guide to your agent',
       guideHint:
-        "Paste this guide to your agent, or put it in the agent's project instructions, so it knows which tools exist and how to use them.",
+        'Paste this guide to your agent: it will create a project folder for you, configure the MCP, and save the guide there as AGENTS.md. Afterwards, starting the agent in that folder is enough and you do not need to paste it again.',
       copyGuide: 'Copy guide',
+      manualToggle: 'Add the MCP manually',
+      manualHint:
+        'Expand this only if you prefer to add it to your agent client yourself instead of using the guide.',
     },
     guide: {
-      title: 'Tsukuyomi quick start guide',
-      intro:
-        "You are connected over MCP to Tsukuyomi, a novel translation tool (server name: tsukuyomi). Use its tools to read and write the user's library directly, and write results back into the app rather than only printing them in the chat.",
-      introWeb:
-        "This page is Tsukuyomi, a novel translation tool, and it exposes a set of tools to you through WebMCP. Use those tools to read and write the user's library directly, and write results back into the app rather than only printing them in the chat.",
-      overviewTitle: 'Get your bearings',
       overviewContext:
         'get_app_context: the book and chapter the user has open, and the interface language.',
       overviewLibrary:
@@ -88,26 +67,122 @@ export default {
         'The full procedure for each kind of task is in the MCP prompts translate-chapter, polish-chapter and import-and-translate; read the relevant one with prompts/get before starting.',
       overviewWorkflowsWeb:
         'Read the full procedure for each kind of task with get_workflow_guide; workflow can be "translate-chapter", "polish-chapter" or "import-and-translate".',
-      tasksTitle: 'Common tasks',
-      taskTranslate:
-        'Translate: get_translation_chunk (mode "untranslated") fetches a chunk; translate it paragraph by paragraph and write it back with submit_translations; repeat until remaining_untranslated_count is 0. Each chunk comes with preceding context, matched terms and characters, related memories and special instructions — follow them.',
-      taskPolish:
-        'Polish and proofread: get_translation_chunk (mode "all", task_type "polish") returns the source and current translation; call submit_translations only for paragraphs that need improvement and follow next_cursor to the end of the chapter.',
-      taskImport:
-        'Import a new book: import_book_from_url; when it returns has_more: true, call it again to fetch the remaining chapters. If the site is unsupported or fetching fails, fetch the text yourself and write it with create_book and add_chapters.',
-      taskUpdate:
-        'Follow an ongoing serial: check_book_updates shows new chapters on the source site, apply_book_updates imports them.',
-      taskConsistency:
-        'Keep wording consistent: check existing renderings with list_terms and list_characters first; record new names and proper nouns with upsert_terms and upsert_characters, and important plot points with upsert_memory.',
-      rulesTitle: 'Rules',
       ruleIds:
         'Submit strictly one translation per returned paragraph ID; do not merge, split or skip paragraphs.',
       ruleNoRepeat:
         'Do not submit different translations for the same paragraph repeatedly. If a submission is rejected, fix it using the returned reason and resubmit only the rejected paragraphs.',
+      overviewRelay:
+        'Call webmcp_list_sources first to confirm the Tsukuyomi page is connected. If the tools mentioned below are missing from your tool list, list them with webmcp_list_tools and call them by name with webmcp_call_tool.',
+      intro:
+        "This is the usage guide for Tsukuyomi, a novel translation tool. It provides tools through an MCP server (server name: tsukuyomi): use them to read and write the user's library directly, and write results back into the app rather than only printing them in the chat.",
+      introWeb:
+        "This is the usage guide for Tsukuyomi, a novel translation tool. It runs in the user's browser and provides tools through a local relay called webmcp-local-relay: use them to read and write the user's library directly, and write results back into the app rather than only printing them in the chat. The tools come from the open page and disappear temporarily when it is closed or reloaded.",
+      conceptsTitle: 'Data model',
+      conceptStructure:
+        'The hierarchy is book → volume → chapter → paragraph. Each book has one target language, and translations are for that language.',
+      conceptVersions:
+        'Each paragraph can hold several translation versions per language, one of which is the selected version. At most 5 versions are kept per language; beyond that the oldest version is removed.',
+      conceptWorld:
+        'Each book has a glossary of terms, character settings and memories (plot and world-building notes), and may have book-level and chapter-level special instructions. Follow them when translating.',
+      conceptIds:
+        'book_id, chapter_id and paragraph IDs all come from tool results; never invent them. When book_id is omitted the book the user has open is used; if no book is open you must pass it explicitly.',
+      overviewTitle: 'Get your bearings',
+      toolsTitle: 'Tool reference',
+      toolsNote:
+        'Tools marked "write" modify the user\'s data. Tools marked "danger" cannot be undone and are only available when the user has enabled full control.',
+      toolWriteMark: ' (write)',
+      toolDangerMark: ' (danger)',
+      toolSeparator: ': ',
+      workflowsTitle: 'Workflows',
+      workflowsNote:
+        'These are the steps for each kind of task. Before starting, read the corresponding full workflow as described under "Get your bearings".',
+      wfTranslateTitle: 'Translate a chapter',
+      wfTranslate1:
+        'Call get_translation_chunk with the chapter_id and mode set to "untranslated".',
+      wfTranslate2:
+        'In the result, paragraphs are the paragraphs to translate (with id and source text); context_before is the existing translation of the preceding text, for continuity; matched_terms and matched_characters are the terms and characters that occur in this chunk; memories are related notes; special_instructions are the special instructions; target_language is the target language.',
+      wfTranslate3:
+        'Translate paragraph by paragraph: one translated paragraph per source paragraph, with no merging, splitting or omission. Use the given renderings for terms and character names.',
+      wfTranslate4:
+        'Call submit_translations; each item in paragraphs has paragraph_id and translated_text. If the book has source-prefix validation enabled, also include original_text_prefix (the first few characters of the source paragraph). With the first chunk of a chapter you can also submit the translated chapter title as chapter_title_translation; put the name of the model you are using in model_label.',
+      wfTranslate5:
+        'Check failed_items in the result and fix and resubmit only those paragraphs. While remaining_untranslated_count is greater than 0, go back to step 1; when it reaches 0 the chapter is done.',
+      wfPolishTitle: 'Polish and proofread',
+      wfPolish1:
+        'Call get_translation_chunk with mode "all" and task_type "polish" (use "proofreading" for proofreading). Each paragraph then includes current_translation.',
+      wfPolish2:
+        'Call submit_translations only for paragraphs that really need improvement; do not submit unchanged paragraphs.',
+      wfPolish3:
+        'By default a new version is added and selected. Set write_mode to "overwrite" only when the user explicitly asks to rewrite the current version in place.',
+      wfPolish4:
+        'Use the returned next_cursor as the cursor of the next call until the chapter ends.',
+      wfImportTitle: 'Import a new book',
+      wfImport1:
+        'When you have a URL, call import_book_from_url. Each call fetches at most 20 chapters (adjust with max_chapters, up to 50); when has_more is true, call it again to continue.',
+      wfImport2:
+        'IMPORT_IN_PROGRESS means an import of the same URL is still running. Wait for it to finish instead of starting another one.',
+      wfImport3:
+        'If the site is unsupported or fetching fails, fetch the text yourself, create the book with create_book and write the chapters with add_chapters. If the error includes a book_id the book already exists: use add_chapters only and do not create it again.',
+      wfUpdateTitle: 'Follow an ongoing serial',
+      wfUpdate1: 'Call check_book_updates to see which chapters are new on the source site.',
+      wfUpdate2:
+        'Call apply_book_updates to import them; by default only new chapters are imported.',
+      wfUpdate3:
+        "include_updated applies text changes to chapters already imported and clears the translations of revised paragraphs. Get the user's consent before using it.",
+      wfUpdate4: 'After importing, handle the new chapters as described in "Translate a chapter".',
+      wfWorldTitle: 'Maintain terms, characters and memories',
+      wfWorld1:
+        'Before translating a book, check the existing renderings with list_terms and list_characters.',
+      wfWorld2:
+        'Record new proper nouns and names with upsert_terms and upsert_characters and use them consistently from then on.',
+      wfWorld3:
+        'Record important plot turns, relationships and world-building facts with upsert_memory; use search_memories when you need to recall earlier events.',
+      wfWorld4:
+        'When the user has a standing requirement about style or forms of address, write it as a book-level or chapter-level special instruction with update_special_instructions.',
+      rulesTitle: 'Rules',
+      ruleWriteBack:
+        'Write all translations and settings back to the app through the tools; do not only paste them in the conversation.',
       ruleConfirm:
-        'include_updated on apply_book_updates applies text changes to chapters already imported and clears the translations of revised paragraphs; confirm with the user before using it.',
+        "include_updated on apply_book_updates and delete_book destroy user data. Get the user's consent before using them.",
       ruleAsk:
-        'Ask the user when it is unclear which book or chapters to work on, report progress after each chapter, and stop to explain if a permission is missing or a tool fails.',
+        'Ask the user when it is unclear which book or chapters to work on, and report progress after each chapter.',
+      errorsTitle: 'When something fails',
+      errPermission:
+        'PERMISSION_DENIED: the current permission mode does not allow this operation. Tell the user to adjust the permission on the External Agent page; do not try to work around it.',
+      errNotReady:
+        'NOT_READY: the app has just started and the library is still loading. Wait a moment and try again.',
+      errBookRequired:
+        'BOOK_ID_REQUIRED: the user has no book open. Find the target with list_books and pass book_id explicitly.',
+      errNotFound:
+        'BOOK_NOT_FOUND, CHAPTER_NOT_FOUND: the identifier does not exist or was deleted. Fetch it again with list_books and get_book.',
+      errSource:
+        'UPDATE_SOURCE_MISSING, UPDATE_SOURCE_INVALID: the book has no usable update source. Ask the user to set it up or repair it in the app.',
+      errOther:
+        'Other errors: tell the user the error message exactly as the tool returned it; do not guess the cause and retry repeatedly.',
+      errRelay:
+        'No Tsukuyomi tools visible: call webmcp_list_sources to check whether the page is connected; if it is not, ask the user to confirm the page is open and WebMCP is turned on.',
+      title: 'Tsukuyomi quick start guide',
+      setupTitle: 'First-time setup (once only)',
+      setupIntro:
+        'The user handed you this guide so that you set things up for them. Complete the four steps below in order. If this guide already exists in the current folder and you can see the tools mentioned later, setup is already done: skip this section.',
+      setupFolder:
+        '**Create a project folder.** Ask the user where they want the translation project. If they have no preference, create a `tsukuyomi-translation` folder in their home directory. Do everything else inside this folder.',
+      setupMcp:
+        '**Configure the MCP in this folder.** If you are Claude Code, run this inside the folder:',
+      setupMcpOtherDesktop:
+        'Other clients: add an HTTP server to the project-level MCP configuration with the address {url} and the header Authorization: Bearer {token}.',
+      setupMcpOtherRelay:
+        'Other clients: write the following into the project-level MCP configuration:',
+      setupSave:
+        "**Save this guide as AGENTS.md in that folder.** Save the full contents unchanged. If you are Claude Code, also create a CLAUDE.md containing the single line `{'@'}AGENTS.md`. If the file already exists, append this guide as its own section and do not overwrite what is there; when you receive a newer version, replace only this section.",
+      setupFinish:
+        '**Tell the user what to do next.** Say where the project folder is, and ask them to restart or reload you inside that folder so the MCP takes effect. From then on, starting you in that folder is enough and the guide does not need to be pasted again.',
+      setupPrereqDesktop:
+        'Prerequisite: the user has turned on the local MCP server on the External Agent page of the Tsukuyomi desktop app. If you cannot connect, ask the user to confirm this first.',
+      setupPrereqWeb:
+        'Prerequisite: the user has the External Agent page of Tsukuyomi open in a browser with WebMCP turned on, and keeps that page open. Running the relay requires Node.js 22 or later. If you cannot connect, ask the user to confirm these points first.',
+      setupTokenWarning:
+        'Note: the command above and the saved file contain an access token. Do not commit this folder to a public repository.',
     },
     activity: {
       title: 'Call activity',

@@ -39,7 +39,7 @@
               <ToggleSwitch
                 v-else
                 :model-value="ctx.webMcpToggleOn.value"
-                :disabled="!ctx.webMcpSupported.value"
+                :disabled="ctx.pageInsecure.value"
                 :aria-label="t('agentMcp.steps.enableWebMcp')"
                 @update:model-value="ctx.toggleWebMcp"
               />
@@ -67,112 +67,18 @@
             </div>
           </template>
           <template v-else>
-            <!-- 支持时说明接口来源；不支持时只给一个结论和出路 -->
-            <div v-if="ctx.webMcpSupported.value" class="amcp-inline">
-              <Tag
-                :value="ctx.webAvailabilityLabel.value"
-                :severity="ctx.webAvailabilitySeverity.value"
-              />
+            <div v-if="ctx.pageInsecure.value" class="amcp-alert amcp-alert--error">
+              <i class="pi pi-exclamation-triangle" aria-hidden="true" />
+              <span>{{ t('agentMcp.steps.webInsecure') }}</span>
             </div>
-            <template v-else>
-              <div v-if="ctx.pageInsecure.value" class="amcp-alert amcp-alert--error">
-                <i class="pi pi-exclamation-triangle" aria-hidden="true" />
-                <span>{{ t('agentMcp.steps.webGuideInsecure') }}</span>
-              </div>
-              <div class="web-guide">
-                <p class="web-guide-lead">{{ t('agentMcp.steps.webUnsupportedLead') }}</p>
-                <div
-                  class="amcp-chips"
-                  role="tablist"
-                  :aria-label="t('agentMcp.steps.webGuideTitle')"
-                >
-                  <button
-                    v-for="browser in GUIDE_BROWSERS"
-                    :key="browser.value"
-                    type="button"
-                    role="tab"
-                    class="amcp-chip"
-                    :class="{ 'amcp-chip--active': ctx.webMcpGuideBrowser.value === browser.value }"
-                    :aria-selected="ctx.webMcpGuideBrowser.value === browser.value"
-                    @click="ctx.webMcpGuideBrowser.value = browser.value"
-                  >
-                    {{ browser.label }}
-                  </button>
-                </div>
-                <div v-if="ctx.webMcpGuide.value.flagUrl" class="amcp-inline">
-                  <code class="amcp-code">{{ ctx.webMcpGuide.value.flagUrl }}</code>
-                  <Button
-                    icon="pi pi-copy"
-                    text
-                    size="small"
-                    :aria-label="t('agentMcp.steps.copyFlagUrl')"
-                    :title="t('agentMcp.steps.copyFlagUrl')"
-                    @click="ctx.copyWebMcpFlagUrl"
-                  />
-                </div>
-                <ol v-if="ctx.webMcpGuide.value.steps.length > 1" class="web-guide-steps">
-                  <li v-for="step in ctx.webMcpGuide.value.steps" :key="step">{{ step }}</li>
-                </ol>
-                <p v-else class="web-guide-text">{{ ctx.webMcpGuide.value.steps[0] }}</p>
-                <p v-if="ctx.webMcpGuide.value.note" class="amcp-hint">
-                  {{ ctx.webMcpGuide.value.note }}
-                </p>
-                <p class="amcp-hint">{{ t('agentMcp.steps.webGuideExtension') }}</p>
-                <p class="amcp-hint">{{ t('agentMcp.steps.webUnsupportedDesktop') }}</p>
-              </div>
-            </template>
+            <p class="amcp-hint">{{ t('agentMcp.steps.webKeepOpen') }}</p>
           </template>
         </div>
       </li>
 
-      <!-- 第二步：把配置贴到客户端（仅桌面端需要） -->
-      <li v-if="ctx.connectTabs.value.length > 0" class="step">
-        <span class="step-index">2</span>
-        <div class="step-body">
-          <div class="amcp-row">
-            <div class="amcp-panel-copy">
-              <h3 class="step-title">{{ t('agentMcp.steps.clientTitle') }}</h3>
-              <p class="amcp-hint">
-                {{
-                  ctx.connectionReady.value
-                    ? t('agentMcp.steps.clientHint')
-                    : t('agentMcp.steps.clientLocked')
-                }}
-              </p>
-            </div>
-            <Button
-              :label="t('agentMcp.steps.copySnippet')"
-              icon="pi pi-copy"
-              size="small"
-              :disabled="!ctx.connectionReady.value"
-              @click="ctx.copyActiveSnippet"
-            />
-          </div>
-          <div class="amcp-chips" role="tablist">
-            <button
-              v-for="tab in ctx.connectTabs.value"
-              :key="tab"
-              type="button"
-              role="tab"
-              class="amcp-chip"
-              :class="{ 'amcp-chip--active': ctx.activeConnectTab.value === tab }"
-              :aria-selected="ctx.activeConnectTab.value === tab"
-              @click="ctx.activeConnectTab.value = tab"
-            >
-              {{ tabLabel(tab) }}
-            </button>
-          </div>
-          <pre
-            class="amcp-pre"
-            :class="{ 'snippet--locked': !ctx.connectionReady.value }"
-          ><code>{{ ctx.activeSnippet.value }}</code></pre>
-          <p class="amcp-hint">{{ ctx.snippetPlacementHint.value }}</p>
-        </div>
-      </li>
-
-      <!-- 最后一步：给 Agent 一份快速上手指南 -->
+      <!-- 第二步：把快速上手指南交给 Agent，由它完成项目文件夹、MCP 与 AGENTS.md 的设置 -->
       <li class="step">
-        <span class="step-index">{{ ctx.connectTabs.value.length > 0 ? 3 : 2 }}</span>
+        <span class="step-index">2</span>
         <div class="step-body">
           <div class="amcp-row">
             <div class="amcp-panel-copy">
@@ -187,6 +93,58 @@
             />
           </div>
           <pre class="amcp-pre amcp-pre--wrap"><code>{{ ctx.quickStartGuide.value }}</code></pre>
+
+          <!-- 手动添加 MCP：把指南交给 Agent 时不需要，默认收起 -->
+          <button
+            type="button"
+            class="amcp-disclosure manual-toggle"
+            :aria-expanded="ctx.manualSetupOpen.value"
+            @click="ctx.toggleManualSetup"
+          >
+            <i
+              class="pi"
+              :class="ctx.manualSetupOpen.value ? 'pi-chevron-down' : 'pi-chevron-right'"
+              aria-hidden="true"
+            />
+            <span>{{ t('agentMcp.steps.manualToggle') }}</span>
+            <span class="manual-toggle-hint">{{ t('agentMcp.steps.manualHint') }}</span>
+          </button>
+          <div v-if="ctx.manualSetupOpen.value" class="manual-body">
+            <div class="amcp-row">
+              <div class="amcp-panel-copy">
+                <h3 class="step-title">{{ t('agentMcp.steps.clientTitle') }}</h3>
+                <p class="amcp-hint">
+                  {{ clientHint }}
+                </p>
+              </div>
+              <Button
+                :label="t('agentMcp.steps.copySnippet')"
+                icon="pi pi-copy"
+                size="small"
+                :disabled="snippetLocked"
+                @click="ctx.copyActiveSnippet"
+              />
+            </div>
+            <div class="amcp-chips" role="tablist">
+              <button
+                v-for="tab in ctx.connectTabs.value"
+                :key="tab"
+                type="button"
+                role="tab"
+                class="amcp-chip"
+                :class="{ 'amcp-chip--active': ctx.activeConnectTab.value === tab }"
+                :aria-selected="ctx.activeConnectTab.value === tab"
+                @click="ctx.activeConnectTab.value = tab"
+              >
+                {{ tabLabel(tab) }}
+              </button>
+            </div>
+            <pre
+              class="amcp-pre"
+              :class="{ 'snippet--locked': snippetLocked }"
+            ><code>{{ ctx.activeSnippet.value }}</code></pre>
+            <p class="amcp-hint">{{ ctx.snippetPlacementHint.value }}</p>
+          </div>
         </div>
       </li>
     </ol>
@@ -213,25 +171,27 @@ import AgentMcpPanel from 'src/components/agent-mcp/AgentMcpPanel.vue';
 import {
   injectAgentMcpPage,
   type AgentMcpConnectTab,
-  type WebMcpGuideBrowser,
 } from 'src/composables/agent-mcp-page/useAgentMcpPage';
 
 const { t, locale } = useI18n();
 const ctx = injectAgentMcpPage();
 
-/** 浏览器名称是专有名词，不随界面语言翻译 */
-const GUIDE_BROWSERS: ReadonlyArray<{ value: WebMcpGuideBrowser; label: string }> = [
-  { value: 'chrome', label: 'Chrome' },
-  { value: 'edge', label: 'Edge' },
-  { value: 'firefox', label: 'Firefox' },
-  { value: 'safari', label: 'Safari' },
-];
-
 const TAB_LABEL_KEYS: Record<AgentMcpConnectTab, string> = {
   'claude-code': 'agentMcp.steps.tabClaudeCode',
   pi: 'agentMcp.steps.tabPi',
   antigravity: 'agentMcp.steps.tabAntigravity',
+  'relay-claude-code': 'agentMcp.steps.tabClaudeCode',
+  'relay-json': 'agentMcp.steps.tabRelayJson',
 };
+
+// 桌面端的配置含令牌和端口，服务没开时不可用；浏览器端的中继配置随时可用
+const snippetLocked = computed(() => ctx.isElectronEnv.value && !ctx.connectionReady.value);
+const clientHint = computed(() => {
+  if (!ctx.isElectronEnv.value) return t('agentMcp.steps.relayClientHint');
+  return ctx.connectionReady.value
+    ? t('agentMcp.steps.clientHint')
+    : t('agentMcp.steps.clientLocked');
+});
 
 function tabLabel(tab: AgentMcpConnectTab): string {
   return t(TAB_LABEL_KEYS[tab]);
@@ -303,34 +263,20 @@ const linkStatusText = computed(() => {
   color: var(--moon-50-opacity-100);
 }
 
-.web-guide {
+.manual-toggle {
+  flex-wrap: wrap;
+}
+
+.manual-toggle-hint {
+  font-size: 12px;
+  color: var(--moon-50-opacity-55);
+}
+
+.manual-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
-  border-radius: 10px;
-  border: 1px solid var(--tsukuyomi-opacity-25);
-  background: var(--tsukuyomi-opacity-8);
-}
-
-.web-guide-lead,
-.web-guide-text {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--moon-50-opacity-92);
-}
-
-.web-guide-steps {
-  margin: 0;
-  padding-left: 20px;
-  list-style: decimal;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--moon-50-opacity-92);
+  min-width: 0;
 }
 
 .snippet--locked {

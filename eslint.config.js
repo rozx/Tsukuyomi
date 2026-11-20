@@ -18,7 +18,8 @@ export default defineConfigWithVueTs(
     // `.kilo/worktrees/*` 和 `.claude/worktrees/*` 下是被各自代理维护的工作树副本，
     // 各自带独立的 .git。其中的 .ts/.vue 文件未被项目 tsconfig 包含，启用 type-checked
     // lint 会报 "parserOptions.project" 错误——整目录忽略即可。
-    ignores: ['.kilo/**', '.claude/**'],
+    // `public/webmcp-relay/*` 是随应用分发的第三方构建产物（@mcp-b/webmcp-local-relay），不参与 lint。
+    ignores: ['.kilo/**', '.claude/**', 'public/webmcp-relay/**'],
   },
 
   pluginQuasar.configs.recommended(),

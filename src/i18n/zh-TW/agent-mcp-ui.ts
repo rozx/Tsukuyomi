@@ -8,12 +8,9 @@ export default {
       starting: '啟動中',
       stopped: '已停止',
       error: '異常',
-      registered: '已註冊',
-      unregistered: '未註冊',
-      nativeDocument: '原生支援（document.modelContext）',
-      nativeNavigator: '相容支援（navigator.modelContext）',
-      unsupported: '瀏覽器不支援',
-      unavailable: '未偵測到 WebMCP',
+      registered: '已開啟',
+      unregistered: '未開啟',
+      unsupported: '無法開啟',
     },
     steps: {
       desktopEnableTitle: '開啟本機 MCP 服務',
@@ -21,33 +18,6 @@ export default {
       enableDesktop: '啟用本機 MCP 服務',
       endpoint: '服務位址',
       copyEndpoint: '複製位址',
-      webEnableTitle: '開啟 WebMCP',
-      webEnableHint: '在支援 WebMCP 的瀏覽器或橋接擴充功能中，把工具開放給瀏覽器裡的 Agent。',
-      enableWebMcp: '啟用 WebMCP 工具註冊',
-      webUnsupportedLead:
-        '目前的瀏覽器沒有提供 WebMCP 介面，所以這個開關無法開啟。依你的瀏覽器開啟它：',
-      webGuideTitle: '選擇瀏覽器',
-      copyFlagUrl: '複製位址',
-      webGuideChrome1: '把上面的位址貼到網址列並開啟（也可以開啟 chrome://flags 後搜尋 WebMCP）。',
-      webGuideChrome2:
-        '把「WebMCP for testing」設為 Enabled，然後點擊頁面底部的 Relaunch 重新啟動瀏覽器。',
-      webGuideReload: '回到本頁並重新整理，再開啟上面的開關。',
-      webGuideChromeNote:
-        '這是實驗性功能。搜尋不到這一項時，表示目前的版本還沒有提供，請升級 Chrome 或改用 Canary / Dev 版本。',
-      webGuideEdge1: '把上面的位址貼到網址列並開啟，在搜尋框裡輸入 WebMCP。',
-      webGuideEdge2: '把搜尋到的 WebMCP 相關項目設為 Enabled，然後重新啟動瀏覽器。',
-      webGuideEdgeNote:
-        'Edge 的支援仍是實驗性的。搜尋不到相關項目時，表示目前的版本還沒有提供，可以改用 Chrome。',
-      webGuideFirefox:
-        'Firefox 目前沒有原生的 WebMCP 支援，也沒有可以開啟的開關。請改用 Chrome 或 Edge 開啟本頁。',
-      webGuideSafari:
-        'Safari 目前沒有原生的 WebMCP 支援，也沒有可以開啟的開關（iPhone 和 iPad 上的所有瀏覽器同樣如此）。請在電腦上改用 Chrome 或 Edge 開啟本頁。',
-      webGuideExtension:
-        '另一種辦法是安裝會向頁面注入 WebMCP 介面的橋接擴充功能（例如 MCP-B），安裝後重新整理本頁。',
-      webGuideInsecure:
-        '本頁不是透過 HTTPS 或 localhost 開啟的。瀏覽器只在安全頁面上提供 WebMCP 介面，請先改用 HTTPS 位址存取。',
-      webUnsupportedDesktop:
-        '想用 Claude Code 等本機 Agent 的話，改用桌面版，它透過本機 MCP 服務連線，不依賴 WebMCP。',
       clientTitle: '接入你的 Agent 用戶端',
       clientHint: '設定裡已填入目前的位址與權杖。',
       clientLocked: '先開啟上面的服務，設定才能使用。',
@@ -61,41 +31,138 @@ export default {
         '把這段設定合併到 Antigravity 的 MCP 設定檔的 mcpServers 中，具體位置請見 Antigravity 的文件。',
       waitingFirstCall: '還沒有收到呼叫。用戶端發出第一條指令後，這裡會顯示已連通。',
       firstCallReceived: '已連通：最近一次呼叫 {tool}（{time}）',
-      guideTitle: '給 Agent 一份快速上手指南',
-      guideHint: '把這份指南貼給 Agent，或放進它的專案說明檔，它就知道有哪些工具、該怎麼用。',
+      webEnableTitle: '開啟 WebMCP',
+      webEnableHint:
+        '在本頁註冊工具，並連線到你電腦上執行的 WebMCP 中繼，讓 Claude Code 等本機 Agent 可以使用。',
+      enableWebMcp: '開啟 WebMCP',
+      webInsecure:
+        '本頁不是透過 HTTPS 或 localhost 開啟的，瀏覽器不允許在這樣的頁面上提供 WebMCP。請改用 HTTPS 位址存取。',
+      webKeepOpen:
+        '使用期間請保持本頁開啟：工具來自這個分頁，關閉或重新整理後 Agent 會暫時看不到它們。',
+      relayClientHint: '在 Agent 用戶端裡加入 WebMCP 本機中繼。中繼只接受來自本頁位址的連線。',
+      tabRelayJson: '其他用戶端（JSON）',
+      placeRelayClaudeCode:
+        '在終端機執行這條指令（需要 Node.js 22 或更高版本），然後重新啟動 Claude Code。之後讓 Agent 呼叫 webmcp_list_sources，能看到本頁就表示已連線。',
+      placeRelayJson:
+        '把這段設定合併到用戶端 MCP 設定的 mcpServers 中（Cursor、Claude Desktop、Windsurf 等通用），需要 Node.js 22 或更高版本。',
+      guideTitle: '把快速上手指南交給 Agent',
+      guideHint:
+        '把這份指南貼給 Agent：它會幫你建好專案資料夾、設定好 MCP，並把指南存為那裡的 AGENTS.md。以後在這個資料夾裡啟動 Agent，就不用再貼上。',
       copyGuide: '複製指南',
+      manualToggle: '手動加入 MCP',
+      manualHint: '不使用指南、想自己在 Agent 用戶端裡加入時再展開。',
     },
     guide: {
-      title: 'Tsukuyomi 快速上手指南',
-      intro:
-        '你已透過 MCP 連線到小說翻譯工具 Tsukuyomi（服務名稱 tsukuyomi）。用它提供的工具直接讀寫使用者的書庫，結果寫回應用程式，不要只輸出在對話裡。',
-      introWeb:
-        '目前的頁面是小說翻譯工具 Tsukuyomi，已透過 WebMCP 向你開放一組工具。用這些工具直接讀寫使用者的書庫，結果寫回應用程式，不要只輸出在對話裡。',
-      overviewTitle: '先了解現狀',
       overviewContext: 'get_app_context：使用者目前開啟的書、章節，以及介面語言。',
       overviewLibrary: 'list_books 列出書庫；get_book 查看一本書的章節列表與各章翻譯進度。',
       overviewWorkflows:
         '每類任務的完整流程在 MCP 提示詞 translate-chapter、polish-chapter、import-and-translate 裡，開工前用 prompts/get 讀取。',
       overviewWorkflowsWeb:
         '每類任務的完整流程用 get_workflow_guide 讀取，workflow 可取 "translate-chapter"、"polish-chapter"、"import-and-translate"。',
-      tasksTitle: '常見任務',
-      taskTranslate:
-        '翻譯：get_translation_chunk（mode 為 "untranslated"）取一塊，逐段翻譯後用 submit_translations 寫回，循環到回傳的 remaining_untranslated_count 為 0。每一塊都附帶了前文、命中的術語與角色、相關記憶和特殊指令，照著用。',
-      taskPolish:
-        '潤飾校對：get_translation_chunk（mode 為 "all"，task_type 為 "polish"）讀取原文與現有譯文，只對需要改進的段落呼叫 submit_translations，按 next_cursor 推進到章末。',
-      taskImport:
-        '匯入新書：import_book_from_url；回傳 has_more 為 true 時再次呼叫以續抓剩餘章節。站點不受支援或抓取失敗時，自行取得正文，用 create_book 和 add_chapters 寫入。',
-      taskUpdate: '跟進連載：check_book_updates 查看來源站點的新章節，apply_book_updates 匯入。',
-      taskConsistency:
-        '保持譯法一致：先用 list_terms、list_characters 查已有譯法；遇到新的人名或專有名詞用 upsert_terms、upsert_characters 記錄，重要劇情用 upsert_memory 記下。',
-      rulesTitle: '規則',
       ruleIds: '嚴格按回傳的段落 ID 一一對應提交，不要合併、拆分或省略段落。',
       ruleNoRepeat:
         '同一段不要重複提交不同的譯文；提交被拒絕時按回傳的原因修正，只重提被拒絕的段落。',
+      overviewRelay:
+        '先呼叫 webmcp_list_sources 確認 Tsukuyomi 頁面已連線。如果在工具列表裡看不到下面提到的工具，用 webmcp_list_tools 列出它們，再用 webmcp_call_tool 按名稱呼叫。',
+      intro:
+        '這是小說翻譯工具 Tsukuyomi 的使用說明。它透過 MCP 服務（服務名稱 tsukuyomi）提供工具：用這些工具直接讀寫使用者的書庫，結果寫回應用程式，不要只輸出在對話裡。',
+      introWeb:
+        '這是小說翻譯工具 Tsukuyomi 的使用說明。它執行在使用者的瀏覽器裡，透過 webmcp-local-relay 這個本機中繼提供工具：用這些工具直接讀寫使用者的書庫，結果寫回應用程式，不要只輸出在對話裡。工具來自開啟中的頁面，頁面被關閉或重新整理時會暫時消失。',
+      conceptsTitle: '資料模型',
+      conceptStructure:
+        '層級是 書籍 → 卷 → 章節 → 段落。每本書有一個目標語言，譯文都針對這個語言。',
+      conceptVersions:
+        '每個段落在每種語言下可以有多個譯文版本，其中一個是目前選用的版本。每種語言最多保留 5 個版本，超出時最早的版本會被移除。',
+      conceptWorld:
+        '每本書有術語表、角色設定和記憶（劇情與世界觀要點），還可以有書籍層級和章節層級的特殊指令。翻譯時必須遵守它們。',
+      conceptIds:
+        'book_id、chapter_id 和段落 ID 都來自工具的回傳值，不要自己編造。省略 book_id 時使用使用者目前開啟的書；使用者沒有開啟任何書時必須明確傳入。',
+      overviewTitle: '先了解現狀',
+      toolsTitle: '工具一覽',
+      toolsNote:
+        '標註「寫入」的工具會修改使用者的資料；標註「危險」的工具無法復原，並且只在使用者開啟完全控制權限時可用。',
+      toolWriteMark: '（寫入）',
+      toolDangerMark: '（危險）',
+      toolSeparator: '：',
+      workflowsTitle: '工作流程',
+      workflowsNote:
+        '下面是每類任務的步驟。開始之前按「先了解現狀」裡的方式讀取對應的完整工作流程。',
+      wfTranslateTitle: '翻譯一章',
+      wfTranslate1: '呼叫 get_translation_chunk，傳入 chapter_id，mode 設為 "untranslated"。',
+      wfTranslate2:
+        '回傳的 paragraphs 是待翻譯段落（含 id 與原文）；context_before 是前文已有的譯文，用來銜接語氣；matched_terms、matched_characters 是這一塊命中的術語和角色，memories 是相關記憶，special_instructions 是特殊指令，target_language 是目標語言。',
+      wfTranslate3:
+        '逐段翻譯：一個原文段落對應一個譯文段落，不合併、不拆分、不省略；術語和角色名使用給出的譯法。',
+      wfTranslate4:
+        '呼叫 submit_translations，paragraphs 裡每項包含 paragraph_id 和 translated_text。書籍啟用了原文前綴校驗時，還要帶上 original_text_prefix（對應原文開頭的幾個字元）。翻譯章節第一塊時可以同時用 chapter_title_translation 提交章節標題譯文；model_label 填你使用的模型名稱。',
+      wfTranslate5:
+        '查看回傳的 failed_items：只修正並重提失敗的段落。remaining_untranslated_count 大於 0 時回到第 1 步，等於 0 時本章完成。',
+      wfPolishTitle: '潤飾校對',
+      wfPolish1:
+        '呼叫 get_translation_chunk，mode 設為 "all"，task_type 設為 "polish"（校對用 "proofreading"）。每個段落會帶上 current_translation。',
+      wfPolish2: '只對確實需要改進的段落呼叫 submit_translations，沒有改動的段落不要提交。',
+      wfPolish3:
+        '預設會新增一個譯文版本並選用它；只有使用者明確要求直接改寫目前版本時才把 write_mode 設為 "overwrite"。',
+      wfPolish4: '用回傳的 next_cursor 作為下一次呼叫的 cursor，直到章節結束。',
+      wfImportTitle: '匯入新書',
+      wfImport1:
+        '有網址時呼叫 import_book_from_url。每次呼叫最多抓取 20 章（可用 max_chapters 調整，上限 50）；回傳 has_more 為 true 時再次呼叫以繼續。',
+      wfImport2:
+        '回傳 IMPORT_IN_PROGRESS 表示同一網址的匯入還在進行，等它完成後再試，不要重複發起。',
+      wfImport3:
+        '站點不受支援或抓取失敗時，自行取得正文，用 create_book 建書，再用 add_chapters 寫入章節。錯誤裡帶有 book_id 時表示書已存在，只需要 add_chapters，不要重新建書。',
+      wfUpdateTitle: '跟進連載更新',
+      wfUpdate1: '呼叫 check_book_updates 查看來源站點的新章節。',
+      wfUpdate2: '呼叫 apply_book_updates 匯入，預設只匯入新章節。',
+      wfUpdate3:
+        'include_updated 會套用已匯入章節的正文改動，並清除被改段落的譯文，使用前必須先得到使用者同意。',
+      wfUpdate4: '匯入完成後按「翻譯一章」處理新章節。',
+      wfWorldTitle: '維護術語、角色與記憶',
+      wfWorld1: '開始翻譯一本書之前，先用 list_terms 和 list_characters 了解已有的譯法。',
+      wfWorld2:
+        '遇到新的專有名詞或人名時，用 upsert_terms、upsert_characters 記錄下來，之後全書沿用。',
+      wfWorld3:
+        '重要的劇情轉折、人物關係和世界觀設定用 upsert_memory 記下；需要回憶前文時用 search_memories。',
+      wfWorld4:
+        '使用者對文風或稱呼有長期要求時，用 update_special_instructions 寫成書籍層級或章節層級的特殊指令。',
+      rulesTitle: '規則',
+      ruleWriteBack: '所有譯文和設定都透過工具寫回應用程式，不要只貼在對話裡。',
       ruleConfirm:
-        'apply_book_updates 的 include_updated 會套用已匯入章節的正文改動，並清除被改段落的譯文，使用前先向使用者確認。',
-      ruleAsk:
-        '不確定要處理哪本書、哪些章節時先問使用者；每完成一章回報進度；遇到權限不足或工具報錯時停下來說明。',
+        'apply_book_updates 的 include_updated 和 delete_book 會遺失使用者的資料，使用前必須先得到使用者同意。',
+      ruleAsk: '不確定要處理哪本書、哪些章節時先問使用者；每完成一章回報進度。',
+      errorsTitle: '出錯時',
+      errPermission:
+        'PERMISSION_DENIED：目前的權限模式不允許這個操作。告訴使用者需要在「外部 Agent」頁面調整權限，不要嘗試繞過。',
+      errNotReady: 'NOT_READY：應用程式剛啟動，書庫還沒載入完，稍等片刻再試。',
+      errBookRequired:
+        'BOOK_ID_REQUIRED：使用者沒有開啟任何書，先用 list_books 找到目標並明確傳入 book_id。',
+      errNotFound:
+        'BOOK_NOT_FOUND、CHAPTER_NOT_FOUND：識別碼不存在或已被刪除，用 list_books、get_book 重新取得。',
+      errSource:
+        'UPDATE_SOURCE_MISSING、UPDATE_SOURCE_INVALID：這本書沒有可用的更新來源，請使用者在應用程式裡設定或修復。',
+      errOther: '其他錯誤：把工具回傳的錯誤訊息原樣告訴使用者，不要猜測原因後反覆重試。',
+      errRelay:
+        '看不到任何 Tsukuyomi 工具：呼叫 webmcp_list_sources 檢查頁面是否已連線；沒有連線時請使用者確認頁面開著並且 WebMCP 已開啟。',
+      title: 'Tsukuyomi 快速上手指南',
+      setupTitle: '首次設定（只需做一次）',
+      setupIntro:
+        '使用者把這份指南交給你，是希望你替他把環境準備好。依序完成下面四步；如果目前的資料夾裡已經有這份指南，並且你能看到後面提到的工具，表示已經設定過，跳過這一節。',
+      setupFolder:
+        '**建立專案資料夾。** 詢問使用者想把翻譯專案放在哪裡；使用者沒有偏好時，在他的家目錄下新建 `tsukuyomi-translation` 資料夾。之後的操作都在這個資料夾裡進行。',
+      setupMcp: '**在這個資料夾裡設定 MCP。** 如果你是 Claude Code，在該資料夾下執行：',
+      setupMcpOtherDesktop:
+        '其他用戶端：在它的專案層級 MCP 設定裡加入一個 HTTP 服務，位址為 {url}，請求標頭為 Authorization: Bearer {token}。',
+      setupMcpOtherRelay: '其他用戶端：把下面的內容寫入它的專案層級 MCP 設定：',
+      setupSave:
+        "**把這份指南保存為該資料夾裡的 AGENTS.md。** 原樣保存全部內容。如果你是 Claude Code，再建一個 CLAUDE.md，內容只寫一行 `{'@'}AGENTS.md`。檔案已經存在時，把這份指南作為單獨一節追加進去，不要覆蓋已有內容；以後拿到新版本時只替換這一節。",
+      setupFinish:
+        '**告訴使用者接下來怎麼做。** 說明專案資料夾的位置，並請他在這個資料夾裡重新啟動或重新載入你，讓 MCP 生效。以後只要在這個資料夾裡啟動，就不用再貼上這份指南。',
+      setupPrereqDesktop:
+        '前提：使用者已在 Tsukuyomi 桌面版的「外部 Agent」頁面開啟本機 MCP 服務。連不上時先請使用者確認這一點。',
+      setupPrereqWeb:
+        '前提：使用者已在瀏覽器裡開啟 Tsukuyomi 的「外部 Agent」頁面並開啟 WebMCP，且保持該頁面開啟；執行中繼需要 Node.js 22 或更高版本。連不上時先請使用者確認這幾點。',
+      setupTokenWarning:
+        '注意：上面的指令和保存下來的檔案裡包含存取權杖，不要把這個資料夾提交到公開儲存庫。',
     },
     activity: {
       title: '呼叫活動',

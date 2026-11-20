@@ -2,57 +2,242 @@ import { translateText } from 'src/i18n/translate';
 import type { MessageKey } from 'src/i18n/types';
 import type { ExternalAgentChannel } from 'src/models/agent-mcp';
 import type { AppLocale } from 'src/models/locale';
+import {
+  buildDesktopClaudeCommand,
+  buildRelayClaudeCommand,
+  buildRelayJsonConfig,
+  TOKEN_PLACEHOLDER,
+} from './client-config';
+import { agentMcpBookUpdateTools } from './tools/book-updates';
+import { agentMcpContextTools } from './tools/context';
+import { agentMcpLibraryTools } from './tools/library';
+import { agentMcpTranslationTools } from './tools/translation';
+import { agentMcpWorldbuildingTools } from './tools/worldbuilding';
+import type { AgentMcpToolCategory, AgentMcpToolSpec } from './types';
+
+/** 指南里「如何添加 MCP」一节需要的连接信息 */
+export type AgentQuickStartConnection =
+  | { kind: 'desktop'; endpointUrl: string; token: string }
+  | { kind: 'relay'; pageOrigin: string };
 
 export interface AgentQuickStartOptions {
   locale: AppLocale;
   channel: ExternalAgentChannel;
+  connection: AgentQuickStartConnection;
 }
+
+// 直接取各工具模块而不是 ./index，避免与内核入口形成循环依赖
+const GUIDE_TOOLS: readonly AgentMcpToolSpec[] = [
+  ...agentMcpContextTools,
+  ...agentMcpLibraryTools,
+  ...agentMcpBookUpdateTools,
+  ...agentMcpTranslationTools,
+  ...agentMcpWorldbuildingTools,
+];
+
+const CATEGORY_ORDER: ReadonlyArray<{ category: AgentMcpToolCategory; labelKey: MessageKey }> = [
+  { category: 'context', labelKey: 'agentMcp.catalog.categoryContext' },
+  { category: 'library', labelKey: 'agentMcp.catalog.categoryLibrary' },
+  { category: 'translation', labelKey: 'agentMcp.catalog.categoryTranslation' },
+  { category: 'worldbuilding', labelKey: 'agentMcp.catalog.categoryWorldbuilding' },
+];
+
+const CONCEPT_KEYS: readonly MessageKey[] = [
+  'agentMcp.guide.conceptStructure',
+  'agentMcp.guide.conceptVersions',
+  'agentMcp.guide.conceptWorld',
+  'agentMcp.guide.conceptIds',
+];
 
 const OVERVIEW_KEYS: readonly MessageKey[] = [
   'agentMcp.guide.overviewContext',
   'agentMcp.guide.overviewLibrary',
 ];
 
-const TASK_KEYS: readonly MessageKey[] = [
-  'agentMcp.guide.taskTranslate',
-  'agentMcp.guide.taskPolish',
-  'agentMcp.guide.taskImport',
-  'agentMcp.guide.taskUpdate',
-  'agentMcp.guide.taskConsistency',
+/** 各工作流的标题与分步说明 */
+const WORKFLOWS: ReadonlyArray<{ titleKey: MessageKey; stepKeys: readonly MessageKey[] }> = [
+  {
+    titleKey: 'agentMcp.guide.wfTranslateTitle',
+    stepKeys: [
+      'agentMcp.guide.wfTranslate1',
+      'agentMcp.guide.wfTranslate2',
+      'agentMcp.guide.wfTranslate3',
+      'agentMcp.guide.wfTranslate4',
+      'agentMcp.guide.wfTranslate5',
+    ],
+  },
+  {
+    titleKey: 'agentMcp.guide.wfPolishTitle',
+    stepKeys: [
+      'agentMcp.guide.wfPolish1',
+      'agentMcp.guide.wfPolish2',
+      'agentMcp.guide.wfPolish3',
+      'agentMcp.guide.wfPolish4',
+    ],
+  },
+  {
+    titleKey: 'agentMcp.guide.wfImportTitle',
+    stepKeys: ['agentMcp.guide.wfImport1', 'agentMcp.guide.wfImport2', 'agentMcp.guide.wfImport3'],
+  },
+  {
+    titleKey: 'agentMcp.guide.wfUpdateTitle',
+    stepKeys: [
+      'agentMcp.guide.wfUpdate1',
+      'agentMcp.guide.wfUpdate2',
+      'agentMcp.guide.wfUpdate3',
+      'agentMcp.guide.wfUpdate4',
+    ],
+  },
+  {
+    titleKey: 'agentMcp.guide.wfWorldTitle',
+    stepKeys: [
+      'agentMcp.guide.wfWorld1',
+      'agentMcp.guide.wfWorld2',
+      'agentMcp.guide.wfWorld3',
+      'agentMcp.guide.wfWorld4',
+    ],
+  },
 ];
 
 const RULE_KEYS: readonly MessageKey[] = [
+  'agentMcp.guide.ruleWriteBack',
   'agentMcp.guide.ruleIds',
   'agentMcp.guide.ruleNoRepeat',
   'agentMcp.guide.ruleConfirm',
   'agentMcp.guide.ruleAsk',
 ];
 
+const ERROR_KEYS: readonly MessageKey[] = [
+  'agentMcp.guide.errPermission',
+  'agentMcp.guide.errNotReady',
+  'agentMcp.guide.errBookRequired',
+  'agentMcp.guide.errNotFound',
+  'agentMcp.guide.errSource',
+  'agentMcp.guide.errOther',
+];
+
+function codeBlock(language: string, code: string): string[] {
+  return ['```' + language, code, '```'];
+}
+
 /**
- * 生成给外部 Agent 的快速上手指南（Markdown）：说明已连接的服务、如何了解现状、
- * 各类常见任务用哪些工具，以及必须遵守的规则。它是通用说明而不是某个具体任务，
- * 可以直接粘贴到对话里，也可以放进 Agent 的项目说明文件。
- * 桌面 MCP 通道引用 Prompt，WebMCP 通道改用工作流指南工具。
+ * 生成给外部 Agent 的快速上手指南（Markdown）。开头的「首次设置」让 Agent 替用户建好项目
+ * 文件夹、在其中配置 MCP、把指南存为该文件夹里的 AGENTS.md，之后用户不用再粘贴；随后
+ * 依次是数据模型、如何了解现状、全部工具、分步工作流、规则与出错处理。
+ * 它是通用说明而不是某个具体任务。
+ *
+ * 桌面通道直连本地 MCP 服务并引用 Prompt；浏览器通道经 webmcp-local-relay 连接，
+ * 改用工作流指南工具，并说明中继自带的管理工具。工具一览直接由已注册的工具生成。
  */
 export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): string {
-  const { locale, channel } = options;
+  const { locale, channel, connection } = options;
   const isWeb = channel === 'webmcp';
   const text = (key: MessageKey): string => translateText(locale, key);
   const bullets = (keys: readonly MessageKey[]): string[] => keys.map((key) => `- ${text(key)}`);
+  const numbered = (keys: readonly MessageKey[]): string[] =>
+    keys.map((key, index) => `${index + 1}. ${text(key)}`);
+
+  // 首次设置：让 Agent 替用户建好项目文件夹、在其中配置 MCP、把本指南存为 AGENTS.md
+  // 列表项内的续行与代码块缩进三格；多行内容逐行缩进
+  const indent = (lines: string[]): string[] =>
+    lines.flatMap((entry) => entry.split('\n')).map((line) => (line ? `   ${line}` : line));
+  const mcpSetup =
+    connection.kind === 'desktop'
+      ? [
+          ...codeBlock(
+            'bash',
+            buildDesktopClaudeCommand(connection.endpointUrl, connection.token, {
+              projectScope: true,
+            }),
+          ),
+          translateText(locale, 'agentMcp.guide.setupMcpOtherDesktop', {
+            url: connection.endpointUrl,
+            token: connection.token || TOKEN_PLACEHOLDER,
+          }),
+        ]
+      : [
+          ...codeBlock(
+            'bash',
+            buildRelayClaudeCommand(connection.pageOrigin, { projectScope: true }),
+          ),
+          text('agentMcp.guide.setupMcpOtherRelay'),
+          ...codeBlock('json', buildRelayJsonConfig(connection.pageOrigin)),
+        ];
+  const setup = [
+    text('agentMcp.guide.setupIntro'),
+    '',
+    `1. ${text('agentMcp.guide.setupFolder')}`,
+    `2. ${text('agentMcp.guide.setupMcp')}`,
+    ...indent(mcpSetup),
+    `3. ${text('agentMcp.guide.setupSave')}`,
+    `4. ${text('agentMcp.guide.setupFinish')}`,
+    '',
+    text(
+      connection.kind === 'desktop'
+        ? 'agentMcp.guide.setupPrereqDesktop'
+        : 'agentMcp.guide.setupPrereqWeb',
+    ),
+    // 桌面端的连接命令里带有访问令牌
+    ...(connection.kind === 'desktop' ? ['', text('agentMcp.guide.setupTokenWarning')] : []),
+  ];
+
+  // 工具一览：按类别列出该通道的全部工具，说明取自界面文案，标出写入与危险工具
+  const channelTools = GUIDE_TOOLS.filter((tool) => !tool.webMcpOnly || isWeb);
+  const toolReference = CATEGORY_ORDER.flatMap(({ category, labelKey }) => {
+    const tools = channelTools.filter((tool) => tool.category === category);
+    if (tools.length === 0) return [];
+    return [
+      '',
+      `**${text(labelKey)}**`,
+      ...tools.map((tool) => {
+        const mark =
+          tool.permission === 'full'
+            ? text('agentMcp.guide.toolDangerMark')
+            : tool.readOnlyHint
+              ? ''
+              : text('agentMcp.guide.toolWriteMark');
+        const description = translateText(locale, `agentMcp.tools.${tool.name}` as MessageKey);
+        return `- \`${tool.name}\`${mark}${text('agentMcp.guide.toolSeparator')}${description}`;
+      }),
+    ];
+  });
+
+  const workflows = WORKFLOWS.flatMap(({ titleKey, stepKeys }) => [
+    '',
+    `### ${text(titleKey)}`,
+    ...numbered(stepKeys),
+  ]);
 
   return [
     `# ${text('agentMcp.guide.title')}`,
     '',
     text(isWeb ? 'agentMcp.guide.introWeb' : 'agentMcp.guide.intro'),
     '',
+    `## ${text('agentMcp.guide.setupTitle')}`,
+    ...setup,
+    '',
+    `## ${text('agentMcp.guide.conceptsTitle')}`,
+    ...bullets(CONCEPT_KEYS),
+    '',
     `## ${text('agentMcp.guide.overviewTitle')}`,
+    // 经本地中继连接时，先确认页面已连上，并说明看不到工具时的调用方式
+    ...(isWeb ? bullets(['agentMcp.guide.overviewRelay']) : []),
     ...bullets(OVERVIEW_KEYS),
     `- ${text(isWeb ? 'agentMcp.guide.overviewWorkflowsWeb' : 'agentMcp.guide.overviewWorkflows')}`,
     '',
-    `## ${text('agentMcp.guide.tasksTitle')}`,
-    ...bullets(TASK_KEYS),
+    `## ${text('agentMcp.guide.toolsTitle')}`,
+    text('agentMcp.guide.toolsNote'),
+    ...toolReference,
+    '',
+    `## ${text('agentMcp.guide.workflowsTitle')}`,
+    text('agentMcp.guide.workflowsNote'),
+    ...workflows,
     '',
     `## ${text('agentMcp.guide.rulesTitle')}`,
     ...bullets(RULE_KEYS),
+    '',
+    `## ${text('agentMcp.guide.errorsTitle')}`,
+    ...bullets(ERROR_KEYS),
+    ...(isWeb ? bullets(['agentMcp.guide.errRelay']) : []),
   ].join('\n');
 }

@@ -15,9 +15,7 @@ import { TodoListService } from 'src/services/todo-list-service';
 import type { AppLocale } from 'src/models/locale';
 import { getLanguageTranslation } from 'src/services/localization/selection';
 import {
-  MAX_ORIGINAL_TEXT_PREFIX_LENGTH,
   MAX_PARAGRAPH_ID_EDIT_DISTANCE,
-  MIN_ORIGINAL_TEXT_PREFIX_LENGTH,
   findBestParagraphIdMatch,
   prefixMatchesOriginal,
   validatePrefixLength,

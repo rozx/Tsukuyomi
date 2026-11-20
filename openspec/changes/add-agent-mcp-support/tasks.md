@@ -32,7 +32,11 @@
 - [x] 5.4 按使用顺序重新设计 `/mcp` 工作台：用 `AgentMcpPanel` / `AgentMcpSetupSteps` / `AgentMcpActivityLog` / `AgentMcpPermissionPanel` / `AgentMcpConnectionSettings` / `AgentMcpToolCatalog` 取代原三张卡片；服务未运行时配置不可复制；新增 `src/services/agent-mcp/agent-quick-start.ts` 生成可直接粘贴给 Agent 的快速上手指南（通用说明，不按任务或书籍定制）；权限选项带后果说明与工具数量，切换到 `full` 与重新生成令牌需二次确认；通过 `src/__tests__/agent-mcp-quick-start.test.ts` 与 `src/__tests__/use-agent-mcp-page.test.ts` 验证。
 - [x] 5.5 新增 `check_book_updates` 与 `apply_book_updates`（`src/services/agent-mcp/tools/book-updates.ts`，复用 `BookSyncService`），加入长操作清单并补齐三语工具说明与帮助文档；通过 `src/__tests__/agent-mcp-book-update-tools.test.ts` 验证检查结果、默认只导入新章节、显式应用正文改动、限定范围、来源缺失/失效与权限拦截。
 
-- [x] 5.6 浏览器不支持 WebMCP 时禁用开关、合并为单一状态，并按浏览器（Chrome / Edge / Firefox / Safari）给出开启指南与非安全页面提示；新增 `src/utils/browser-kind.ts`，通过 `src/__tests__/browser-kind.test.ts` 与 `src/__tests__/use-agent-mcp-page.test.ts` 验证。
+- [x] 5.6（已被 5.7 取代）浏览器不支持 WebMCP 时禁用开关、合并为单一状态，并按浏览器（Chrome / Edge / Firefox / Safari）给出开启指南与非安全页面提示；新增 `src/utils/browser-kind.ts`，通过 `src/__tests__/browser-kind.test.ts` 与 `src/__tests__/use-agent-mcp-page.test.ts` 验证。
+
+- [x] 5.7 浏览器版改用 WebMCP 本地中继：新增依赖 `@mcp-b/global`（动态加载）与开发依赖 `@mcp-b/webmcp-local-relay`，把 `embed.js` / `widget.html` 复制到 `public/webmcp-relay/`；新增 `src/services/agent-mcp/webmcp-relay.ts` 并接入运行时的开启/关闭顺序；页面第二步在浏览器端给出带 `--widget-origin` 的中继配置，移除按浏览器的实验开关指南与 `browser-kind` 工具；快速上手指南的浏览器版改为说明中继；通过 `src/__tests__/agent-mcp-webmcp-relay.test.ts`、`agent-mcp-runtime-relay.test.ts`、`use-agent-mcp-page.test.ts`、`agent-mcp-quick-start.test.ts` 验证，并用真实浏览器加本机中继做过端到端检查。
+
+- [x] 5.8 扩展快速上手指南：以「首次设置」开头，让 Agent 替用户建立项目文件夹、以项目级方式配置 MCP、把指南保存为该文件夹的 AGENTS.md；补充数据模型、工具一览、分步工作流与出错处理；页面改为两步，客户端配置收进默认折叠的「手动添加 MCP」；连接配置抽到 `src/services/agent-mcp/client-config.ts` 与页面片段共用；通过 `src/__tests__/agent-mcp-quick-start.test.ts` 验证。
 
 ## 6. 集成验证与代码质量门禁
 
