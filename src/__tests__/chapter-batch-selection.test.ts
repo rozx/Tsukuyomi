@@ -169,6 +169,50 @@ describe('createChapterBatch · 确认入队', () => {
   });
 });
 
+describe('createChapterBatch · 继续翻译跳过已完成章节', () => {
+  it('入队时跳过已全部翻译的章节，并在结果里说明无需翻译；完成度未知的章节照常加入', async () => {
+    const { createApp, defineComponent, h } = await import('vue');
+    const { default: ToastService } = await import('primevue/toastservice');
+    const { createChapterBatch } = await import('src/composables/book-details/useChapterBatch');
+    const { useSettingsStore } = await import('src/stores/settings');
+    const { useToastHistoryStore } = await import('src/stores/toast-history');
+    const { configureTaskQueue, resetTaskQueueConfig } = await import('src/stores/task-queue');
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    configureTaskQueue({ locks: undefined, watchLibrary: false, runItem: () => new Promise(() => {}) });
+    await useSettingsStore().loadSettings();
+    await useSettingsStore().updateSettings({ uiLocale: 'zh-CN' });
+    const book = ref<Novel | undefined>(novel([volume('v1', ['c1', 'c2', 'c3'])]));
+    const seed = new Map([
+      ['c1', { total: 2, translated: 2 }],
+      ['c2', { total: 2, translated: 1 }],
+    ]);
+    let batch!: ReturnType<typeof createChapterBatch>;
+    const app = createApp(
+      defineComponent({
+        setup() {
+          batch = createChapterBatch(book, () => seed, {
+            load: () => new Promise(() => {}),
+          });
+          return () => h('div');
+        },
+      }),
+    );
+    app.use(pinia).use(ToastService).mount(document.createElement('div'));
+    const queue = useTaskQueueStore();
+    await queue.ensureStarted();
+    await queue.pause();
+    batch.selection.enter();
+    for (const id of ['c1', 'c2', 'c3']) batch.selection.toggle(id);
+    await batch.confirm({ kind: 'translation', mode: 'continue', position: 'back' });
+    expect(queue.queuedItems.map((item) => item.chapterId)).toEqual(['c2', 'c3']);
+    expect(useToastHistoryStore().historyItems[0]?.summary).toBe('已加入 2 章，1 章无需翻译，已跳过');
+    app.unmount();
+    queue.dispose();
+    resetTaskQueueConfig();
+  });
+});
+
 describe('createChapterBatch · 展开卷的完成度', () => {
   it('进入多选后只为已展开卷的章节计算完成度，展开新卷时补算', async () => {
     const { createApp, defineComponent, h, ref: vueRef } = await import('vue');
@@ -240,8 +284,37 @@ describe('createChapterBatch · 对话框预估', () => {
     await queue.enqueue([{ bookId: 'b', chapterId: 'c5', kind: 'polish', origin: 'manual' }], { position: 'back' });
     batch.selection.enter();
     for (const id of ['c1', 'c2', 'c3', 'c4', 'c5', 'c6']) batch.selection.toggle(id);
-    expect(batch.preview('polish')).toEqual({ add: 3, duplicate: 1, notApplicable: 2 });
-    expect(batch.preview('translation')).toEqual({ add: 6, duplicate: 0, notApplicable: 0 });
+    expect(batch.preview('polish')).toMatchObject({ add: 3, duplicate: 1, notApplicable: 2 });
+    // 继续翻译：已全部翻译的章节（c1、c5、c6）跳过；全部重新翻译仍包含它们
+    expect(batch.preview('translation')).toMatchObject({ add: 3, duplicate: 0, notApplicable: 3 });
+    expect(
+      batch.preview('translation', 'continue').items.map((i) => `${i.chapterId}:${i.status}`),
+    ).toEqual([
+      'c1:notApplicable',
+      'c2:add',
+      'c3:add',
+      'c4:add',
+      'c5:notApplicable',
+      'c6:notApplicable',
+    ]);
+    expect(batch.preview('translation', 'retranslate')).toMatchObject({ add: 6, notApplicable: 0 });
+    // 每章的状态与将处理的段落数：润色只处理已有译文的段落
+    const polish = batch.preview('polish');
+    expect(polish.items.map((i) => `${i.chapterId}:${i.status}:${i.paragraphs}`)).toEqual([
+      'c1:add:2',
+      'c2:notApplicable:0',
+      'c3:add:1',
+      'c4:notApplicable:0',
+      'c5:duplicate:2',
+      'c6:add:2',
+    ]);
+    expect(polish.paragraphs).toBe(5);
+    expect(polish.items[0]?.title).toBe('c1');
+    // 继续翻译只处理未翻译段落；全部重新翻译处理全部段落
+    expect(batch.preview('translation', 'continue').items.map((i) => i.paragraphs)).toEqual([
+      0, 2, 1, 2, 0, 0,
+    ]);
+    expect(batch.preview('translation', 'retranslate').paragraphs).toBe(12);
     app.unmount();
     queue.dispose();
     resetTaskQueueConfig();

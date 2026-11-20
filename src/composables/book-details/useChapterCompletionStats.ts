@@ -72,7 +72,10 @@ export function createChapterCompletionStats(
     },
   );
 
-  return { loading, ensure, percent, isComplete, hasTranslation, reset };
+  /** 已译 / 总段数；尚未计算返回 undefined */
+  const counts = (chapterId: string) => lookup(chapterId);
+
+  return { loading, ensure, percent, isComplete, hasTranslation, counts, reset };
 }
 
 export type ChapterCompletionStats = ReturnType<typeof createChapterCompletionStats>;

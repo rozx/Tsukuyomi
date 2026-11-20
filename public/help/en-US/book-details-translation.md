@@ -111,13 +111,12 @@ Choose "Select" in the chapter list to enter selection mode. On desktop and tabl
 - "Select untranslated" selects every chapter in the book that is below 100%.
 - Drag ordering and inline edit/delete are hidden while selecting. Click ✕ or press Esc to exit.
 
-Then choose "Polish", "Proofread", or "Translate N chapters" at the bottom. In the confirmation dialog, choose:
+Then choose "Polish", "Proofread", or "Translate N chapters" at the bottom. A confirmation dialog opens; its title names the task and the number of chapters. On the left it lists the selected chapters by volume, each with the number of paragraphs it will process or the reason it is skipped: "Already queued"; "No translation" when polishing or proofreading; or "Nothing to translate" when translating untranslated paragraphs only, so fully translated chapters are not queued, plus a total such as "5 chapters · 24 paragraphs to process". On the right you only choose:
 
-- Task: translation, polishing, or proofreading
-- Scope (translation only): "Only untranslated paragraphs (continue translation)" or "Retranslate everything"
-- Queue position: "In chapter order, after the current queue" or "At the front of the queue"
+- Scope (translation only): "Untranslated paragraphs only" (paragraphs that already have a translation are skipped) or "Retranslate everything" (every paragraph gets a new translation; the old ones stay in its history)
+- Queue position: "End of the queue" (in chapter order, after the tasks already queued) or "Front of the queue" (ahead of every queued task, so these start next)
 
-The dialog shows the model to be used, the current concurrency with running and queued counts, and how many items will be added. For polishing and proofreading, it also says how many chapters have no translation and will be skipped. After you choose "Add to queue", the chapters are queued in book order and a message reports the result, for example "Added 5 chapters; 2 chapters are already in the queue".
+If no model is available, the dialog says so. Below the options, a line shows the model and the current queue, and the confirm button says how many chapters will be added (for example "Add 5 chapters"). After you confirm, the chapters are queued in book order and a message reports the result, for example "Added 5 chapters; 2 chapters are already in the queue".
 
 Batch tasks do not show a message for each chapter. AI action notices, such as new terms or characters, go only to message history. When the whole batch ends, one "Batch tasks finished" summary shows the done, failed, and cancelled counts.
 

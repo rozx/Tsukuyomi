@@ -67,6 +67,24 @@ describe('planEnqueue', () => {
     expect(plan.skippedDuplicate).toBe(2);
   });
 
+  it('按请求顺序列出被跳过的章节及原因', () => {
+    const existing = [item({ chapterId: 'c2', kind: 'polish', mode: undefined, status: 'queued' })];
+    const plan = planEnqueue(
+      existing,
+      [
+        req('c1', { kind: 'polish', mode: undefined }),
+        req('c2', { kind: 'polish', mode: undefined }),
+        req('c3', { kind: 'polish', mode: undefined }),
+      ],
+      { position: 'back', now: 1, newId, isApplicable: (r) => r.chapterId !== 'c3' },
+    );
+    expect(plan.added.map((i) => i.chapterId)).toEqual(['c1']);
+    expect(plan.skipped).toEqual([
+      { chapterId: 'c2', reason: 'duplicate' },
+      { chapterId: 'c3', reason: 'notApplicable' },
+    ]);
+  });
+
   it('同一章节不同任务类型可以并存', () => {
     const existing = [item({ chapterId: 'c1', kind: 'translation' })];
     const plan = planEnqueue(existing, [req('c1', { kind: 'proofreading', mode: undefined })], { position: 'back', now: 1, newId });

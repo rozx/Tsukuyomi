@@ -12,12 +12,16 @@ describe('任务队列英文文案的单复数', () => {
     expect(en('taskQueueUi.batch.actionTranslate', 1)).toBe('Translate 1 chapter');
     expect(en('taskQueueUi.batch.selectedCount', 1)).toBe('1 chapter selected');
     expect(en('taskQueueUi.batch.dialogTitle', 1)).toBe('Translation 1 chapter');
-    expect(en('taskQueueUi.batch.addCount', 1)).toBe('1 item will be added');
+    expect(en('taskQueueUi.batch.confirm', 1)).toBe('Add 1 chapter');
+    expect(en('taskQueueUi.batch.confirm', 3)).toBe('Add 3 chapters');
     expect(en('taskQueueUi.batch.notApplicable', 1)).toBe(
       '1 chapter has no translation and will be skipped',
     );
     expect(en('taskQueueUi.batch.resultNotApplicable', 1)).toBe(
       '1 chapter has no translation and was skipped',
+    );
+    expect(en('taskQueueUi.batch.resultNothing', 1)).toBe(
+      '1 chapter needs no translation and was skipped',
     );
     expect(en('taskQueueUi.miniRunning', 1)).toBe('1 task running');
     expect(en('taskQueueUi.stoppedAll', 1)).toBe('Stopped 1 task');

@@ -21,6 +21,8 @@ export interface EnqueuePlan {
   skippedDuplicate: number;
   /** 润色 / 校对时章节没有译文等不适用而跳过的数量 */
   skippedNotApplicable: number;
+  /** 被跳过的请求及原因（按请求顺序），供确认界面逐章说明 */
+  skipped: { chapterId: string; reason: 'duplicate' | 'notApplicable' }[];
 }
 
 const dedupeKey = (value: { chapterId: string; kind: TaskQueueKind }) =>
@@ -51,16 +53,19 @@ export function planEnqueue(
     existing.filter((entry) => isTaskQueueItemPending(entry.status)).map(dedupeKey),
   );
   const accepted: EnqueueRequest[] = [];
+  const skipped: EnqueuePlan['skipped'] = [];
   let skippedDuplicate = 0;
   let skippedNotApplicable = 0;
   for (const request of requests) {
     const key = dedupeKey(request);
     if (pending.has(key)) {
       skippedDuplicate += 1;
+      skipped.push({ chapterId: request.chapterId, reason: 'duplicate' });
       continue;
     }
     if (options.isApplicable && !options.isApplicable(request)) {
       skippedNotApplicable += 1;
+      skipped.push({ chapterId: request.chapterId, reason: 'notApplicable' });
       continue;
     }
     pending.add(key);
@@ -88,7 +93,7 @@ export function planEnqueue(
     aiTaskIds: [],
     enqueuedAt: options.now,
   }));
-  return { added, skippedDuplicate, skippedNotApplicable };
+  return { added, skippedDuplicate, skippedNotApplicable, skipped };
 }
 
 /** 调度判定的上下文；以后加每模型上限只需扩展这里 */

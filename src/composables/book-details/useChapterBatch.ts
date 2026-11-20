@@ -18,6 +18,7 @@ import { translateText } from 'src/i18n/translate';
 import { createChapterBatchSelection } from './useChapterBatchSelection';
 import { createChapterCompletionStats } from './useChapterCompletionStats';
 import { planEnqueue, type EnqueueRequest } from 'src/services/chapter-task/task-queue-logic';
+import { getChapterDisplayTitle } from 'src/utils';
 
 export interface BatchConfirmOptions {
   kind: TaskQueueKind;
@@ -129,24 +130,79 @@ export function createChapterBatch(
       origin: 'batch' as const,
     }));
   };
-  /** 润色 / 校对要求章节已有目标语言译文 */
-  const applicability = (kind: TaskQueueKind) =>
-    kind === 'translation'
-      ? {}
-      : { isApplicable: (request: EnqueueRequest) => stats.hasTranslation(request.chapterId) };
+  /** 继续翻译时章节还有未翻译的段落；完成度尚未算出时按需要处理 */
+  const hasUntranslated = (chapterId: string) => {
+    const value = stats.counts(chapterId);
+    return !value || value.translated < value.total;
+  };
+  /**
+   * 哪些章节值得入队：
+   * - 继续翻译：还有未翻译的段落（已全部翻译的跳过，记为「无需翻译」）
+   * - 全部重新翻译：全部
+   * - 润色 / 校对：已有目标语言译文
+   */
+  const applicability = (kind: TaskQueueKind, mode: TaskQueueTranslationMode) => {
+    if (kind !== 'translation') {
+      return { isApplicable: (request: EnqueueRequest) => stats.hasTranslation(request.chapterId) };
+    }
+    return mode === 'continue'
+      ? { isApplicable: (request: EnqueueRequest) => hasUntranslated(request.chapterId) }
+      : {};
+  };
 
-  /** 对话框预估：将新增、已在队列、不适用的数量（与真正入队同一套判定） */
-  const preview = (kind: TaskQueueKind) => {
-    const plan = planEnqueue(queue.items, buildRequests(kind, 'continue'), {
+  /** 书中章节 id → 章节与所属卷（用于确认框显示标题与分卷） */
+  const chapterById = computed(
+    () =>
+      new Map(
+        (book.value?.volumes ?? []).flatMap((volume) =>
+          (volume.chapters ?? []).map((chapter) => [chapter.id, { chapter, volume }] as const),
+        ),
+      ),
+  );
+
+  /** 该章本次会处理的段落数；完成度尚未算出时为 null */
+  const paragraphsFor = (
+    chapterId: string,
+    kind: TaskQueueKind,
+    mode: TaskQueueTranslationMode,
+  ): number | null => {
+    const value = stats.counts(chapterId);
+    if (!value) return null;
+    if (kind !== 'translation') return value.translated;
+    return mode === 'retranslate' ? value.total : value.total - value.translated;
+  };
+
+  /**
+   * 对话框预估（与真正入队同一套判定）：逐章的状态与将处理的段落数，
+   * 以及新增 / 已在队列 / 不适用的数量和新增章节的段落总数。
+   */
+  const preview = (kind: TaskQueueKind, mode: TaskQueueTranslationMode = 'continue') => {
+    const plan = planEnqueue(queue.items, buildRequests(kind, mode), {
       position: 'back',
       now: 0,
       newId: () => '',
-      ...applicability(kind),
+      ...applicability(kind, mode),
     });
+    const skippedReason = new Map(plan.skipped.map((entry) => [entry.chapterId, entry.reason]));
+    const items = selection.orderedIds.value.map((chapterId) => {
+      const entry = chapterById.value.get(chapterId);
+      return {
+        chapterId,
+        volumeId: entry?.volume.id ?? '',
+        title: entry ? getChapterDisplayTitle(entry.chapter, book.value) : chapterId,
+        status: skippedReason.get(chapterId) ?? ('add' as const),
+        paragraphs: paragraphsFor(chapterId, kind, mode),
+      };
+    });
+    const paragraphs = items
+      .filter((item) => item.status === 'add')
+      .reduce((sum, item) => sum + (item.paragraphs ?? 0), 0);
     return {
       add: plan.added.length,
       duplicate: plan.skippedDuplicate,
       notApplicable: plan.skippedNotApplicable,
+      paragraphs,
+      items,
     };
   };
 
@@ -155,7 +211,7 @@ export function createChapterBatch(
     if (!book.value?.id) return;
     const result = await queue.enqueue(buildRequests(options.kind, options.mode), {
       position: options.position,
-      ...applicability(options.kind),
+      ...applicability(options.kind, options.mode),
     });
     const locale = settings.uiLocale;
     const parts = [
@@ -169,11 +225,12 @@ export function createChapterBatch(
       );
     }
     if (result.skippedNotApplicable > 0) {
-      parts.push(
-        translateText(locale, 'taskQueueUi.batch.resultNotApplicable', {
-          count: result.skippedNotApplicable,
-        }),
-      );
+      // 翻译跳过的是已全部翻译的章节；润色 / 校对跳过的是没有译文的章节
+      const key =
+        options.kind === 'translation'
+          ? 'taskQueueUi.batch.resultNothing'
+          : 'taskQueueUi.batch.resultNotApplicable';
+      parts.push(translateText(locale, key, { count: result.skippedNotApplicable }));
     }
     toast.add({
       severity: result.added.length > 0 ? 'success' : 'info',
@@ -199,6 +256,8 @@ export function createChapterBatch(
 }
 
 export type ChapterBatch = ReturnType<typeof createChapterBatch>;
+/** 确认对话框中的一行：选中的章节及本次会处理的段落数 / 跳过原因 */
+export type BatchPreviewRow = ReturnType<ChapterBatch['preview']>['items'][number];
 
 const CHAPTER_BATCH_KEY: InjectionKey<ChapterBatch> = Symbol('chapter-batch');
 
