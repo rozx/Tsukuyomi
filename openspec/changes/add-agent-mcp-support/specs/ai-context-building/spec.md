@@ -48,3 +48,31 @@
 #### Scenario: 没有近似写法
 - **WHEN** 原文中不存在与任何术语或角色名接近的写法
 - **THEN** 上下文中不出现「可能相关」一节
+
+## MODIFIED Requirements
+
+### Requirement: Chapter summary is not injected automatically
+
+The system SHALL NOT inject chapter summaries into AI task prompts. The previous-chapter summary and the current-chapter summary context blocks are removed. Previous-chapter context is limited to verbatim continuity material: the previous chapter's title, the translated titles of the most recent chapters, and the last few translated paragraphs of the previous chapter.
+
+#### Scenario: Previous chapter context minimized to title only
+
+- **GIVEN** a translation chunk is being built for chapter N
+- **WHEN** the previous chapter (N-1) exists but has no translated paragraphs, and no earlier chapter has a translated title
+- **THEN** the prompt MAY include only the previous chapter's title for continuity awareness
+- **AND** the prompt MUST NOT include any summary text for the previous chapter
+
+#### Scenario: Previous chapter continuity material
+
+- **GIVEN** a translation chunk is being built for chapter N
+- **WHEN** the previous chapter (N-1) has translated paragraphs, or earlier chapters have translated titles
+- **THEN** the prompt MAY additionally include the source and translated titles of the most recent chapters that already have a translated title, and the last few translated paragraphs of the previous chapter (source text and translation), so that tone, punctuation habits, fixed closing phrases and title format carry over
+- **AND** paragraphs that are empty, contain only symbols, or have no translation MUST NOT be used as continuity material
+- **AND** the prompt MUST NOT include any summary text for the previous chapter
+
+#### Scenario: Single-paragraph default context excludes chapter summary
+
+- **GIVEN** a single-paragraph polish or proofread task is being prepared
+- **WHEN** the default context is assembled
+- **THEN** the context MUST NOT include a chapter-summary section
+- **AND** the existing terminology / character / surrounding-paragraphs sections are unaffected

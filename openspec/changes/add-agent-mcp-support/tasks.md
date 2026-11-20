@@ -62,6 +62,8 @@
 
 - [x] 5.20 近似匹配去重：精确匹配已认出的条目不再列为「可能相关」，片段里夹着标点或空白的不算。通过 `text-matcher-near.test.ts`、`agent-mcp-translation-tools.test.ts` 验证。
 
+- [x] 5.21 站内工具与外部工具共用查询层：新增 `src/services/library-query/`（`keyword-match.ts`、`paragraph-scan.ts`、`help-search.ts`、`chunk-context.ts`），站内 `search_terms_by_keywords` / `search_characters_by_keywords` / `get_occurrences_by_keywords` / `search_help_docs`、站内翻译的分块上下文与前一章节信息，以及外部对应工具都改为调用它；站内相应工具新增 `fuzzy` 参数，站内翻译带上与上一章的衔接；修正站内词频把原始抓取文本重复统计的问题。通过 `library-query-*.test.ts`、`entity-keyword-search-fuzzy.test.ts`、`occurrences-tool-shared.test.ts`、`help-docs-tool-shared.test.ts`、`context-builder-near-matches.test.ts` 及既有工具测试验证。
+
 ## 6. 集成验证与代码质量门禁
 
 - [x] 6.1 运行完整代码质量检查与全量测试：`bun run lint && bun run type-check && bun run test:coverage && bun run quality-check`，确认零 ESLint/TypeScript/Fallow/i18n 错误且全部单元测试通过。

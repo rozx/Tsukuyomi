@@ -153,6 +153,24 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
   - `get_book` 增加 `include_description: false`，可省略较长的简介。
   - 前文衔接（`context_before` 与 `previous_chapter_tail`）跳过只有符号的段落（章末分隔线等），不让它们占用名额。章末的作者感言无法可靠识别，仍由 Agent 调大 `context_before` 解决。
 
+### 4.3 站内工具与外部工具共用查询层
+
+最初只有底层服务是共用的，工具这一层站内（`src/services/ai/tools/`）与外部（`src/services/agent-mcp/tools/`）各写了一套：外部实现时重写了简化版，而不是把站内的核心逻辑抽出来。4.2 里的两个 bug（记忆被稀释、角色匹配过于简单）和「模糊搜索只加在一边」都由此而来。现把核心逻辑抽到 `src/services/library-query/`，两套工具只做适配（参数解析、权限或操作上报、返回格式）：
+
+- **`keyword-match.ts`**：关键词匹配。精确（不区分大小写的子串）与模糊（Fuse.js）在两边是同一个意思；任一关键词命中即算，精确保持原顺序，模糊按接近程度排序。使用方只需给出每个条目参与匹配的文字。站内 `search_terms_by_keywords` / `search_characters_by_keywords` 与外部 `list_terms` / `list_characters` / `get_chapter_paragraphs` 共用。
+- **`paragraph-scan.ts`**：跨章节扫描段落，提供搜索与词频统计。站内 `get_occurrences_by_keywords` 与外部 `search_paragraphs` / `count_occurrences` / `replace_in_translations` 共用。
+- **`help-search.ts`**：使用文档搜索（标题、简介、使用文档的正文；更新日志只按标题和简介）。站内与外部的 `search_help_docs` 共用。
+- **`chunk-context.ts`**：一段原文涉及的术语与角色（确切命中与「可能相关」），以及与上一章的衔接。站内翻译任务的分块上下文、前一章节信息，与外部 `get_translation_chunk` 共用。
+
+站内因此得到的行为变化：
+
+- 术语 / 角色搜索、词频统计、帮助文档搜索新增可选的 `fuzzy` 参数，默认行为不变。
+- 帮助文档搜索开始搜索使用文档的正文并返回命中片段。
+- 翻译任务的前一章节信息从「只带标题」扩展为带上最近章节的标题译名与上一章末尾的已译段落（至多 3 段）。这改动了既有规格 `ai-context-building` 里「前一章只带标题」的约定，已写成 MODIFIED；仍然不注入章节摘要。
+- **修掉一个既有问题**：站内词频统计原先在统计段落之外，还会把章节上保留的原始抓取文本（`originalContent`）再统计一遍，同步导入的章节因此被算成两倍。共用实现只统计段落。原实现每个关键词扫一遍全书，现在一次扫描统计全部关键词。`TerminologyService` 里不再被使用的统计代码已删除。
+
+**没有合并的部分**：站内的段落搜索（`find_paragraph_by_keywords`、`search_paragraphs_by_regex`）仍走 `FullTextIndexService`（Fuse 全文索引）加 `ChapterService` 的线性回退。它带有外部工具没有的语义（原文关键词与译文关键词组合、「搜索到指定章节为止」的范围、附带相关记忆），并且已经是模糊匹配；与外部的线性扫描合并需要先统一这些语义，这次没有做。
+
 ### 5. 外部译文 `aiModelId` 约定与兼容渲染
 - **决策**：
   - `Translation.aiModelId` 保持现有 `string` 类型不变，不修改 IndexedDB / Gist 同步数据格式。

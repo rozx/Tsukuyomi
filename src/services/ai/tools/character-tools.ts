@@ -1,3 +1,4 @@
+import { matchByKeywords } from 'src/services/library-query/keyword-match';
 import { singleIdToolParameters } from './tool-localization';
 import { bookToolContext, fuzzyMatches } from './tool-feedback';
 import { toolDefinition } from './tool-localization';
@@ -479,6 +480,10 @@ export const characterTools: ToolDefinition[] = [
             'search_characters_by_keywords.parameters.properties.include_memory',
           ),
         },
+        fuzzy: {
+          type: 'boolean',
+          description: describeTool('search_characters_by_keywords.parameters.properties.fuzzy'),
+        },
       },
       required: ['keywords'],
     }),
@@ -488,8 +493,14 @@ export const characterTools: ToolDefinition[] = [
         keywords: string[];
         translation_only?: boolean;
         include_memory?: boolean;
+        fuzzy?: boolean;
       }>(args);
-      const { keywords, translation_only = false, include_memory = true } = parsedArgs;
+      const {
+        keywords,
+        translation_only = false,
+        include_memory = true,
+        fuzzy = false,
+      } = parsedArgs;
       const validKeywords = requireValidKeywords(keywords);
 
       const book = resolveBookSync(bookId);
@@ -506,37 +517,23 @@ export const characterTools: ToolDefinition[] = [
         });
       }
 
-      const allCharacters = book.characterSettings || [];
-      const keywordsLower = validKeywords.map((k) => k.toLowerCase());
-
-      const filteredCharacters = allCharacters.filter((char) => {
-        // 搜索角色名称
-        const nameMatch = keywordsLower.some((keyword) =>
-          char.name.toLowerCase().includes(keyword),
-        );
-        // 搜索翻译
-        const translationMatch = keywordsLower.some((keyword) =>
-          getNameTranslation(char, language)?.translation.toLowerCase().includes(keyword),
-        );
-        // 搜索别名
-        const aliasMatch = char.aliases?.some((alias) =>
-          keywordsLower.some(
-            (keyword) =>
-              alias.name.toLowerCase().includes(keyword) ||
-              getNameTranslation(alias, language)?.translation.toLowerCase().includes(keyword),
-          ),
-        );
-
-        if (translation_only) {
-          // 如果设置了只返回有翻译的，则必须同时有翻译且匹配
-          return (
-            (translationMatch || aliasMatch) && getNameTranslation(char, language)?.translation
-          );
-        }
-
-        // 否则只要名称、翻译或别名匹配任一关键词即可（OR 逻辑）
-        return nameMatch || translationMatch || aliasMatch;
-      });
+      // 名称、译名或别名匹配任一关键词即可（OR 逻辑）；translation_only 时不看原名，
+      // 并且角色本身必须有译名。匹配规则与外部 Agent 的工具共用 matchByKeywords。
+      const filteredCharacters = matchByKeywords(
+        book.characterSettings || [],
+        (char) => {
+          const translation = getNameTranslation(char, language)?.translation ?? '';
+          const aliasTexts = (char.aliases ?? []).flatMap((alias) => [
+            alias.name,
+            getNameTranslation(alias, language)?.translation ?? '',
+          ]);
+          return translation_only
+            ? [translation, ...aliasTexts]
+            : [char.name, translation, ...aliasTexts];
+        },
+        validKeywords,
+        { fuzzy },
+      ).filter((char) => !translation_only || getNameTranslation(char, language)?.translation);
 
       // 搜索相关记忆
       let relatedMemories: Array<{ id: string; summary: string }> = [];

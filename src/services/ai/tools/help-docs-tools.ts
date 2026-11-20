@@ -4,6 +4,7 @@ import type { ToolDefinition, ToolContext } from './types';
 import type { AppLocale } from 'src/models/locale';
 import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
 import { HelpService, resolveHelpSection } from 'src/services/help-service';
+import { searchHelpDocs } from 'src/services/library-query/help-search';
 import { LocalizedError } from 'src/utils/localized-error';
 
 function helpHandler(
@@ -46,19 +47,25 @@ export const helpDocsTools: ToolDefinition[] = [
   {
     definition: toolDefinition('search_help_docs', {
       type: 'object',
-      properties: { query: stringToolParameter('search_help_docs.parameters.properties.query') },
+      properties: {
+        query: stringToolParameter('search_help_docs.parameters.properties.query'),
+        fuzzy: {
+          type: 'boolean',
+          description: describeTool('search_help_docs.parameters.properties.fuzzy'),
+        },
+      },
       required: ['query'],
     }),
     handler: helpHandler(async (args, { onAction }, locale) => {
       const { query } = args;
       if (!validToolQuery(query, 'HelpDocs'))
         return toolErrorJson('HELP_QUERY_REQUIRED', 'helpFeedback.queryRequired');
-      const docs = await HelpService.getIndex(locale);
-      const lower = query.toLowerCase();
-      const matched = docs.filter(
-        (doc) =>
-          doc.title.toLowerCase().includes(lower) || doc.description.toLowerCase().includes(lower),
-      );
+      // 搜索与外部 Agent 的工具共用 library-query/help-search；站内保留按标题找更新日志的能力
+      const hits = await searchHelpDocs(locale, query, {
+        fuzzy: args.fuzzy === true,
+        includeReleaseNotes: true,
+      });
+      const matched = hits.map((hit) => hit.doc);
       onAction?.({
         type: 'search',
         entity: 'help_doc',
@@ -73,12 +80,13 @@ export const helpDocsTools: ToolDefinition[] = [
         success: true,
         data: {
           query,
-          total: matched.length,
-          docs: matched.map((doc) => ({
+          total: hits.length,
+          docs: hits.map(({ doc, snippet }) => ({
             id: doc.id,
             title: doc.title,
             category: doc.category,
             description: doc.description,
+            ...(snippet !== undefined ? { snippet } : {}),
           })),
         },
       });

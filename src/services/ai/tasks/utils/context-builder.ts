@@ -32,12 +32,17 @@ import { getPostToolCallReminder } from './todo-helper';
 import { getCurrentStatusInfo } from '../prompts/common';
 import { useBooksStore } from 'src/stores/books';
 import {
-  findNearCharactersInText,
   findNearTermsInText,
   findUniqueCharactersInText,
   findUniqueTermsInText,
   type NearNameMatch,
 } from 'src/utils/text-matcher';
+import {
+  collectChunkEntities,
+  collectPreviousChapterTail,
+  collectRecentChapterTitles,
+  listChaptersBefore,
+} from 'src/services/library-query/chunk-context';
 import { splitTextForEmbedding } from 'src/utils/embedding-text-segments';
 import { MEMORY_EMBEDDING_VERSION } from 'src/utils/memory-embedding-lookup';
 import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
@@ -112,17 +117,64 @@ export function buildChapterContextSection(chapterId?: string, chapterTitle?: st
  * @param title 前一章节标题
  * @returns 格式化的前文信息,无 title 时返回空字符串
  */
-export function buildPreviousChapterSection(title?: string): string {
+export function buildPreviousChapterSection(
+  title?: string,
+  continuity?: PreviousChapterContinuity,
+): string {
   if (!title) return '';
-  return (
-    '\n\n[' +
-    agentText('aiContext.previous') +
-    ']\n' +
-    agentText('aiContext.previousTitle') +
-    ': ' +
-    title +
-    '\n'
+  const lines = [agentText('aiContext.previousTitle') + ': ' + title];
+  if (continuity && continuity.recentTitles.length > 0) {
+    lines.push(agentText('aiContext.recentTitles') + ':');
+    for (const recent of continuity.recentTitles) {
+      lines.push('  - ' + recent.original + ' → ' + recent.translation);
+    }
+  }
+  if (continuity && continuity.tail.length > 0) {
+    lines.push(agentText('aiContext.previousTail') + ':');
+    for (const paragraph of continuity.tail) {
+      lines.push(
+        '  ' + agentText('aiContext.original') + ': ' + paragraph.original,
+        '  ' + agentText('aiContext.translation') + ': ' + paragraph.translation,
+      );
+    }
+  }
+  return '\n\n[' + agentText('aiContext.previous') + ']\n' + lines.join('\n') + '\n';
+}
+
+/** 与上一章的衔接：最近几章的标题译名，以及上一章末尾的已译段落 */
+export interface PreviousChapterContinuity {
+  recentTitles: Array<{ original: string; translation: string }>;
+  tail: Array<{ original: string; translation: string }>;
+}
+
+/** 前一章节 section 里带上多少段上一章末尾的已译段落 */
+const PREVIOUS_CHAPTER_TAIL_COUNT = 3;
+
+/**
+ * 读取与上一章的衔接，供前一章节 section 使用。与外部 Agent 的翻译块共用
+ * library-query/chunk-context：语气、标点习惯、章末固定用语与标题格式由此延续到新的一章。
+ */
+export async function loadPreviousChapterContinuity(
+  book: Novel,
+  chapterId: string,
+  targetLanguage: AppLocale,
+): Promise<PreviousChapterContinuity> {
+  const previous = listChaptersBefore(book, chapterId);
+  const tail = await collectPreviousChapterTail(
+    previous[previous.length - 1],
+    PREVIOUS_CHAPTER_TAIL_COUNT,
+    targetLanguage,
   );
+  return {
+    recentTitles: collectRecentChapterTitles(previous, targetLanguage).map((title) => ({
+      original: title.original,
+      translation: title.translation,
+    })),
+    tail: (tail?.paragraphs ?? []).map((paragraph) => ({
+      original: paragraph.original,
+      translation: paragraph.translation,
+    })),
+  };
 }
 
 /**
@@ -666,8 +718,8 @@ async function buildCurrentChunkContext(
   const book = booksStore.getBookById(bookId);
   if (!book) return '';
 
-  const terms = findUniqueTermsInText(chunkText, book.terminologies || []);
-  const characters = findUniqueCharactersInText(chunkText, book.characterSettings || []);
+  // 与外部 Agent 的翻译块共用同一套匹配（library-query/chunk-context）
+  const { terms, characters, nearTerms, nearCharacters } = collectChunkEntities(book, chunkText);
   const chapter = chapterId
     ? book.volumes
         ?.flatMap((volume) => volume.chapters ?? [])
@@ -675,21 +727,11 @@ async function buildCurrentChunkContext(
     : undefined;
   const semanticQueryContext = buildChapterSemanticQuery(chapter, languages.targetLanguage);
 
-  const allTerms = book.terminologies || [];
-  const allCharacters = book.characterSettings || [];
   const contextParts = [
     buildChunkTermsSection(terms, languages),
     buildChunkCharactersSection(characters, languages),
-    buildNearMatchSection(
-      'aiContext.possibleTerms',
-      findNearTermsInText(chunkText, allTerms, allCharacters),
-      languages,
-    ),
-    buildNearMatchSection(
-      'aiContext.possibleCharacters',
-      findNearCharactersInText(chunkText, allCharacters, allTerms),
-      languages,
-    ),
+    buildNearMatchSection('aiContext.possibleTerms', nearTerms, languages),
+    buildNearMatchSection('aiContext.possibleCharacters', nearCharacters, languages),
   ].filter(Boolean);
 
   let currentChunkContext = '';

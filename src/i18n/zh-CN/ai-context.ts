@@ -16,6 +16,8 @@ export default {
     chapterId: '当前章节 ID',
     chapterTitle: '当前章节标题',
     previousTitle: '前一章节标题',
+    recentTitles: '最近章节的标题译名（新标题的格式与它们保持一致）',
+    previousTail: '前一章节末尾的原文与译文（语气、标点习惯与章末固定用语与它保持一致）',
     previous: '前文信息',
     special: '特殊指令（用户自定义）',
     previousParagraphs: '前文段落',

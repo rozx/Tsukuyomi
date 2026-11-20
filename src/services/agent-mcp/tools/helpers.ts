@@ -1,4 +1,3 @@
-import Fuse from 'fuse.js';
 import { translateText } from 'src/i18n/translate';
 import type { AppLocale } from 'src/models/locale';
 import type { Chapter, CharacterSetting, Novel, Paragraph, Terminology } from 'src/models/novel';
@@ -8,7 +7,6 @@ import { titleOriginal } from 'src/services/localization/title-edit';
 import { useBooksStore } from 'src/stores/books';
 import { useContextStore } from 'src/stores/context';
 import { useSettingsStore } from 'src/stores/settings';
-import { FUZZY_MATCH_THRESHOLD } from 'src/utils/text-matcher';
 import { agentMcpError, type AgentMcpExecutionContext, type AgentMcpToolError } from '../types';
 
 export function resolveDefaultVolumeTitle(): string {
@@ -143,29 +141,6 @@ export const FUZZY_PROPERTY = {
   description:
     'Fuzzy matching (default false = exact substring). When true, text that differs slightly from the query also matches: about one differing character per 4 characters of query, so typos and variant spellings are found. Queries shorter than 4 characters still need an exact match.',
 };
-
-/**
- * 模糊匹配：返回命中条目的序号，最接近的排在前面。
- * getTexts 给出每个条目参与匹配的文字（任一命中即算）。
- */
-export function fuzzyMatchIndexes<T>(
-  items: readonly T[],
-  getTexts: (item: T) => readonly string[],
-  query: string,
-  options: { caseSensitive?: boolean } = {},
-): number[] {
-  if (!query || items.length === 0) return [];
-  const fuse = new Fuse(
-    items.map((item) => ({ texts: getTexts(item).filter((text) => text.length > 0) })),
-    {
-      keys: ['texts'],
-      threshold: FUZZY_MATCH_THRESHOLD,
-      ignoreLocation: true,
-      isCaseSensitive: options.caseSensitive === true,
-    },
-  );
-  return fuse.search(query).map((result) => result.refIndex);
-}
 
 /** 读取字符串数组参数：去掉首尾空白、空项与重复项 */
 export function readStringList(value: unknown): string[] {

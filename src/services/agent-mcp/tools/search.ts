@@ -2,14 +2,20 @@ import type { AppLocale } from 'src/models/locale';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { AgentMcpWriteMode } from 'src/models/settings';
 import { BookService } from 'src/services/book-service';
-import { ChapterContentService } from 'src/services/chapter-content-service';
 import { ChapterEmbeddingService } from 'src/services/chapter-embedding-service';
+import {
+  InvalidSearchPatternError,
+  countKeywordOccurrences,
+  scanChapters,
+  searchParagraphs,
+  selectedTranslationText,
+  type ParagraphSearchTarget,
+} from 'src/services/library-query/paragraph-scan';
 import { EmbeddingService } from 'src/services/embedding-service';
 import type {
   ChapterTranslationEditGroup,
   ParagraphTranslationEdit,
 } from 'src/services/localization/paragraph-edit';
-import { getLanguageTranslation } from 'src/services/localization/selection';
 import { titleOriginal } from 'src/services/localization/title-edit';
 import { useSettingsStore } from 'src/stores/settings';
 import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
@@ -23,7 +29,6 @@ import {
 import {
   findChapterInBook,
   FUZZY_PROPERTY,
-  fuzzyMatchIndexes,
   parseLimit,
   parseNonNegativeInt,
   readStringList,
@@ -33,10 +38,6 @@ import {
 } from './helpers';
 import { buildEditForParagraph } from './translation';
 
-type SearchTarget = 'original' | 'translation' | 'both';
-
-/** 每批从存储读取的章节数：全书扫描时分批读，避免一次把整本书的正文都放进内存 */
-const CHAPTER_LOAD_BATCH = 40;
 const MAX_KEYWORDS = 20;
 const MAX_CHAPTERS_PER_KEYWORD = 20;
 const REPLACE_SAMPLE_COUNT = 10;
@@ -71,68 +72,12 @@ function resolveScanScope(
   return { ok: true, scope: { book, targetLanguage, chapters } };
 }
 
-/** 按顺序逐章给出段落；正文不在内存里的章节分批从存储读取 */
-async function* scanChapters(
-  chapters: readonly Chapter[],
-): AsyncGenerator<{ chapter: Chapter; paragraphs: Paragraph[] }> {
-  for (let start = 0; start < chapters.length; start += CHAPTER_LOAD_BATCH) {
-    const batch = chapters.slice(start, start + CHAPTER_LOAD_BATCH);
-    const missingIds = batch.filter((ch) => ch.content === undefined).map((ch) => ch.id);
-    const loaded =
-      missingIds.length > 0
-        ? await ChapterContentService.loadChapterContentsBatch(missingIds)
-        : new Map<string, Paragraph[] | undefined>();
-    for (const chapter of batch) {
-      yield { chapter, paragraphs: chapter.content ?? loaded.get(chapter.id) ?? [] };
-    }
-  }
-}
-
-function parseSearchTarget(value: unknown, fallback: SearchTarget): SearchTarget {
+function parseSearchTarget(value: unknown, fallback: ParagraphSearchTarget): ParagraphSearchTarget {
   return value === 'original' || value === 'translation' || value === 'both' ? value : fallback;
-}
-
-function selectedTranslationText(paragraph: Paragraph, language: AppLocale): string {
-  return getLanguageTranslation(paragraph, language)?.translation ?? '';
 }
 
 function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/** 统计 needle 在 text 中不重叠出现的次数（不区分大小写；两者需已转为小写） */
-function countOccurrences(text: string, needle: string): number {
-  let count = 0;
-  let from = text.indexOf(needle);
-  while (from !== -1) {
-    count += 1;
-    from = text.indexOf(needle, from + needle.length);
-  }
-  return count;
-}
-
-function buildTextMatcher(
-  query: string,
-  useRegex: boolean,
-  caseSensitive: boolean,
-): { ok: true; test: (text: string) => boolean } | { ok: false; error: AgentMcpToolError } {
-  if (useRegex) {
-    try {
-      const pattern = new RegExp(query, caseSensitive ? '' : 'i');
-      return { ok: true, test: (text) => pattern.test(text) };
-    } catch (error) {
-      return {
-        ok: false,
-        error: agentMcpError(
-          'INVALID_REGEX',
-          `Invalid regular expression: ${error instanceof Error ? error.message : String(error)}`,
-        ),
-      };
-    }
-  }
-  if (caseSensitive) return { ok: true, test: (text) => text.includes(query) };
-  const lowered = query.toLowerCase();
-  return { ok: true, test: (text) => text.toLowerCase().includes(lowered) };
 }
 
 async function executeSearchParagraphs(
@@ -146,62 +91,30 @@ async function executeSearchParagraphs(
   if (fuzzy && useRegex) {
     return agentMcpError('INVALID_ARGS', 'fuzzy and regex cannot be used together.');
   }
-  const caseSensitive = args.case_sensitive === true;
-  const matcher = buildTextMatcher(query, useRegex, caseSensitive);
-  if (!matcher.ok) return matcher.error;
 
   const resolved = resolveScanScope(args, ctx);
   if (!resolved.ok) return resolved.error;
   const { book, targetLanguage, chapters } = resolved.scope;
 
   const searchIn = parseSearchTarget(args.search_in, 'both');
-  const limit = parseLimit(args.limit, 20, 100);
   const offset = parseNonNegativeInt(args.offset, 0);
-
-  const matches: Array<Record<string, unknown>> = [];
-  let matchedSoFar = 0;
-  let hasMore = false;
-
-  scan: for await (const { chapter, paragraphs } of scanChapters(chapters)) {
-    // 模糊搜索按章节一次算出命中的段落；精确搜索逐段判断
-    const fuzzyHits = fuzzy
-      ? new Set(
-          fuzzyMatchIndexes(
-            paragraphs,
-            (paragraph) => [
-              searchIn !== 'translation' ? paragraph.text : '',
-              searchIn !== 'original' ? selectedTranslationText(paragraph, targetLanguage) : '',
-            ],
-            query,
-            { caseSensitive },
-          ),
-        )
-      : null;
-    for (let index = 0; index < paragraphs.length; index++) {
-      const paragraph = paragraphs[index]!;
-      const translation = selectedTranslationText(paragraph, targetLanguage);
-      const hit = fuzzyHits
-        ? fuzzyHits.has(index)
-        : (searchIn !== 'translation' && matcher.test(paragraph.text)) ||
-          (searchIn !== 'original' && translation.length > 0 && matcher.test(translation));
-      if (!hit) continue;
-
-      matchedSoFar += 1;
-      if (matchedSoFar <= offset) continue;
-      // 多找到一条就够判断「还有更多」，不必扫完全书
-      if (matches.length >= limit) {
-        hasMore = true;
-        break scan;
-      }
-      matches.push({
-        chapter_id: chapter.id,
-        chapter_title: titleOriginal(chapter.title),
-        index,
-        id: paragraph.id,
-        text: paragraph.text,
-        translation: translation || null,
-      });
+  let result: Awaited<ReturnType<typeof searchParagraphs>>;
+  try {
+    // 搜索本身与站内工具共用 library-query/paragraph-scan
+    result = await searchParagraphs(chapters, targetLanguage, {
+      query,
+      regex: useRegex,
+      fuzzy,
+      caseSensitive: args.case_sensitive === true,
+      searchIn,
+      limit: parseLimit(args.limit, 20, 100),
+      offset,
+    });
+  } catch (error) {
+    if (error instanceof InvalidSearchPatternError) {
+      return agentMcpError('INVALID_REGEX', error.message);
     }
+    throw error;
   }
 
   return {
@@ -212,35 +125,17 @@ async function executeSearchParagraphs(
     fuzzy,
     search_in: searchIn,
     searched_chapter_count: chapters.length,
-    matches,
-    has_more: hasMore,
-    next_offset: hasMore ? offset + matches.length : null,
+    matches: result.hits.map((hit) => ({
+      chapter_id: hit.chapter.id,
+      chapter_title: titleOriginal(hit.chapter.title),
+      index: hit.index,
+      id: hit.paragraph.id,
+      text: hit.paragraph.text,
+      translation: hit.translation || null,
+    })),
+    has_more: result.hasMore,
+    next_offset: result.hasMore ? offset + result.hits.length : null,
   };
-}
-
-interface KeywordTally {
-  keyword: string;
-  lowered: string;
-  totalCount: number;
-  paragraphCount: number;
-  perChapter: Map<string, { title: string; count: number }>;
-}
-
-/**
- * 一章里各命中段落的出现次数。精确统计数的是不重叠的出现次数；
- * 模糊统计无法可靠地数出同一段里的多处近似写法，每个命中段落计 1 次。
- */
-function countPerParagraph(
-  sources: readonly string[],
-  tally: KeywordTally,
-  fuzzy: boolean,
-): number[] {
-  if (fuzzy) {
-    return fuzzyMatchIndexes(sources, (source) => [source], tally.keyword).map(() => 1);
-  }
-  return sources
-    .map((source) => (source ? countOccurrences(source.toLowerCase(), tally.lowered) : 0))
-    .filter((count) => count > 0);
 }
 
 async function executeCountOccurrences(
@@ -262,30 +157,12 @@ async function executeCountOccurrences(
   const searchIn = args.search_in === 'translation' ? 'translation' : 'original';
   const fuzzy = args.fuzzy === true;
 
-  const tallies: KeywordTally[] = keywords.map((keyword) => ({
-    keyword,
-    lowered: keyword.toLowerCase(),
-    totalCount: 0,
-    paragraphCount: 0,
-    perChapter: new Map(),
-  }));
-
-  for await (const { chapter, paragraphs } of scanChapters(chapters)) {
-    const sources = paragraphs.map((paragraph) =>
-      searchIn === 'original' ? paragraph.text : selectedTranslationText(paragraph, targetLanguage),
-    );
-    for (const tally of tallies) {
-      const counts = countPerParagraph(sources, tally, fuzzy);
-      if (counts.length === 0) continue;
-      const chapterTotal = counts.reduce((sum, count) => sum + count, 0);
-      tally.totalCount += chapterTotal;
-      tally.paragraphCount += counts.length;
-      tally.perChapter.set(chapter.id, {
-        title: titleOriginal(chapter.title),
-        count: chapterTotal,
-      });
-    }
-  }
+  // 统计本身与站内工具共用 library-query/paragraph-scan
+  const tallies = await countKeywordOccurrences(chapters, targetLanguage, {
+    keywords,
+    searchIn,
+    fuzzy,
+  });
 
   return {
     book_id: book.id,
@@ -297,15 +174,15 @@ async function executeCountOccurrences(
       keyword: tally.keyword,
       total_count: tally.totalCount,
       paragraph_count: tally.paragraphCount,
-      chapter_count: tally.perChapter.size,
+      chapter_count: tally.chapters.length,
       // 出现最多的章节排在前面；次数相同时保持章节顺序
-      chapters: [...tally.perChapter.entries()]
-        .map(([chapterId, entry]) => ({
-          chapter_id: chapterId,
-          chapter_title: entry.title,
-          count: entry.count,
+      chapters: tally.chapters
+        .map(({ chapter, count }) => ({
+          chapter_id: chapter.id,
+          chapter_title: titleOriginal(chapter.title),
+          count,
         }))
-        .sort((a, b) => b.count - a.count)
+        .sort((x, y) => y.count - x.count)
         .slice(0, MAX_CHAPTERS_PER_KEYWORD),
     })),
   };

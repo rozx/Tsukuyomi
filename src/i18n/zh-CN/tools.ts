@@ -35,10 +35,14 @@ export default {
       '是否只返回有翻译的术语（默认 false）',
     search_terms_by_keywords__parameters__properties__include_memory:
       '是否在响应中包含相关的记忆信息（默认 true）',
+    search_terms_by_keywords__parameters__properties__fuzzy:
+      '是否模糊匹配（默认 false，即精确包含）。为 true 时写法略有出入也算命中：关键词每 4 个字大约容许 1 处不同，适合记不清确切写法或原文可能有错字、异写时使用；不足 4 个字的关键词仍需完全一致。结果按接近程度排序。',
     get_occurrences_by_keywords:
       '根据提供的关键词获取其在书籍各章节中的出现次数。用于统计特定词汇在文本中的分布情况，帮助理解词汇的使用频率和上下文。',
     get_occurrences_by_keywords__parameters__properties__keywords:
       '关键词数组，可以包含一个或多个关键词',
+    get_occurrences_by_keywords__parameters__properties__fuzzy:
+      '是否模糊统计（默认 false，即只统计完全一致的写法）。为 true 时写法略有出入的也计入（关键词每 4 个字大约容许 1 处不同），适合统计原文里可能有错字、异写的词；此时每个命中的段落计 1 次。',
     create_character:
       "创建新角色设定。[警告] 重要：在创建新角色之前，必须使用 list_characters 或 get_character 工具检查该角色是否已存在，或者是否应该是已存在角色的别名。如果发现该角色实际上是已存在角色的别名，应该使用 update_character 工具将新名称添加为别名，而不是创建新角色。[禁止] **错误处理**：如果尝试创建的角色名称已存在（作为其他角色的主名称），将抛出错误 \"角色 {'{'}name{'}'} 已存在\"，操作将失败。",
     create_character__parameters__properties__name:
@@ -92,6 +96,8 @@ export default {
       '是否只返回有翻译的角色（默认 false）',
     search_characters_by_keywords__parameters__properties__include_memory:
       '是否在响应中包含相关的记忆信息（默认 true）',
+    search_characters_by_keywords__parameters__properties__fuzzy:
+      '是否模糊匹配（默认 false，即精确包含）。为 true 时写法略有出入也算命中：关键词每 4 个字大约容许 1 处不同，适合记不清确切写法或原文可能有错字、异写时使用；不足 4 个字的关键词仍需完全一致。结果按接近程度排序。',
     list_characters:
       '列出角色设定。可以通过 chapter_id 参数指定章节（只返回该章节中出现的角色），或设置 all_chapters=true 列出所有章节的角色。如果不提供 chapter_id 且 all_chapters 为 false，则返回所有角色。在翻译开始前，可以使用此工具获取相关角色，以便在翻译时保持一致性。',
     list_characters__parameters__properties__chapter_id:
@@ -389,8 +395,10 @@ export default {
     add_translation_batch__parameters__properties__paragraphs__items__properties__translated_text:
       '翻译/润色/校对后的文本',
     search_help_docs:
-      '根据关键词搜索应用的帮助文档。在标题和描述中进行模糊匹配。当用户询问应用的使用方法、功能介绍、操作指南等问题时，使用此工具搜索相关帮助文档。',
+      '根据关键词搜索应用的帮助文档。在标题、描述和使用文档的正文中匹配，正文命中时返回命中位置附近的片段。当用户询问应用的使用方法、功能介绍、操作指南等问题时，使用此工具搜索相关帮助文档。',
     search_help_docs__parameters__properties__query: '搜索关键词，可以是功能名称、操作描述等',
+    search_help_docs__parameters__properties__fuzzy:
+      '是否模糊匹配（默认 false，即精确包含）。为 true 时搜索词写得略有出入也能找到，结果按接近程度排序。',
     get_help_doc:
       '获取指定帮助文档的完整内容。需要传入文档 ID（doc_id，可通过 search_help_docs 或 list_help_docs 获取）。返回文档的标题、分类和 Markdown 格式的完整内容。',
     get_help_doc__parameters__properties__doc_id:

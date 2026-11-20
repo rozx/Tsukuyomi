@@ -1,5 +1,6 @@
+import { fuzzyMatchIndexes } from 'src/services/library-query/keyword-match';
 import type { AppLocale } from 'src/models/locale';
-import type { Chapter, Novel, Paragraph } from 'src/models/novel';
+import type { Chapter, Paragraph } from 'src/models/novel';
 import type { AgentMcpWriteMode } from 'src/models/settings';
 import {
   buildChunks,
@@ -22,19 +23,20 @@ import { titleOriginal } from 'src/services/localization/title-edit';
 import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
 import {
-  findNearCharactersInText,
-  findNearTermsInText,
-  findUniqueCharactersInText,
-  findUniqueTermsInText,
-} from 'src/utils/text-matcher';
-import { isEmptyOrSymbolOnly, isEmptyParagraph } from 'src/utils/text-utils';
+  collectChunkEntities,
+  collectPreviousChapterTail,
+  collectRecentChapterTitles,
+  collectTranslatedBefore,
+  listChaptersBefore,
+  type ChapterTitleRef,
+} from 'src/services/library-query/chunk-context';
+import { isEmptyParagraph } from 'src/utils/text-utils';
 import { buildExternalTranslationModelId } from 'src/utils/translation-model-label';
 import { agentMcpError, type AgentMcpExecutionContext, type AgentMcpToolSpec } from '../types';
 import {
   formatCharacterSummary,
   formatTermSummary,
   FUZZY_PROPERTY,
-  fuzzyMatchIndexes,
   loadChapterParagraphs,
   parseLimit,
   parseNonNegativeInt,
@@ -119,30 +121,6 @@ function collectCandidateParagraphs(
   return { candidates, indexById };
 }
 
-function collectContextBefore(
-  allParagraphs: readonly Paragraph[],
-  firstOriginalIdx: number,
-  count: number,
-  targetLanguage: AppLocale,
-) {
-  const contextBefore: Array<{ index: number; id: string; original: string; translation: string }> =
-    [];
-  for (let i = firstOriginalIdx - 1; i >= 0 && contextBefore.length < count; i--) {
-    const p = allParagraphs[i]!;
-    // 空段落和只有符号的段落（分隔线等）不算正文，不占衔接的名额
-    if (isEmptyOrSymbolOnly(p.text)) continue;
-    const tr = getLanguageTranslation(p, targetLanguage);
-    if (!tr || !tr.translation.trim()) continue;
-    contextBefore.unshift({
-      index: i,
-      id: p.id,
-      original: p.text,
-      translation: tr.translation,
-    });
-  }
-  return contextBefore;
-}
-
 function findNextCursor(
   allParagraphs: readonly Paragraph[],
   lastOriginalIdx: number,
@@ -163,46 +141,12 @@ function getChapterTitleTranslation(chapter: Chapter, language: AppLocale): stri
   return getNameTranslation(chapter.title, language)?.translation ?? '';
 }
 
-/** 新章节取标题格式参考时，带上之前多少章的标题 */
-const RECENT_TITLE_COUNT = 5;
-
-/** 按卷章顺序排在指定章节之前的全部章节 */
-function chaptersBefore(book: Novel, chapterId: string): Chapter[] {
-  const all = (book.volumes ?? []).flatMap((volume) => volume.chapters ?? []);
-  const index = all.findIndex((chapter) => chapter.id === chapterId);
-  return index > 0 ? all.slice(0, index) : [];
-}
-
-function describeChapterTitle(chapter: Chapter, language: AppLocale) {
+function formatChapterTitle(title: ChapterTitleRef) {
   return {
-    chapter_id: chapter.id,
-    title_original: titleOriginal(chapter.title),
-    title_translation: getChapterTitleTranslation(chapter, language),
+    chapter_id: title.chapter.id,
+    title_original: title.original,
+    title_translation: title.translation,
   };
-}
-
-/** 之前最近几章里已有译名的标题，供新章节对齐标题格式（数字全半角、「话」的写法等） */
-function collectRecentChapterTitles(previous: readonly Chapter[], language: AppLocale) {
-  return previous
-    .map((chapter) => describeChapterTitle(chapter, language))
-    .filter((title) => title.title_translation.length > 0)
-    .slice(-RECENT_TITLE_COUNT);
-}
-
-/**
- * 本章还没有已译前文时，取上一章末尾的已译段落作衔接，让语气、标点习惯与
- * 章末固定用语能延续下去。上一章不存在或没有译文时返回 null。
- */
-async function collectPreviousChapterTail(
-  previous: Chapter | undefined,
-  count: number,
-  language: AppLocale,
-) {
-  if (!previous || count <= 0) return null;
-  const paragraphs = await loadChapterParagraphs(previous);
-  const tail = collectContextBefore(paragraphs, paragraphs.length, count, language);
-  if (tail.length === 0) return null;
-  return { ...describeChapterTitle(previous, language), paragraphs: tail };
 }
 
 function resolveBatchItemId(
@@ -406,7 +350,8 @@ async function executeGetTranslationChunk(
     ));
   }
 
-  const previousChapters = chaptersBefore(book, chapter.id);
+  // 与上一章的衔接、命中的术语和角色都与站内翻译共用 library-query/chunk-context
+  const previousChapters = listChaptersBefore(book, chapter.id);
   const basePayload = {
     book_id: book.id,
     chapter_id: chapter.id,
@@ -419,7 +364,9 @@ async function executeGetTranslationChunk(
     chapter_total_count: progress.total,
     chapter_translated_count: progress.translated,
     remaining_untranslated_count: progress.remainingUntranslated,
-    recent_chapter_titles: collectRecentChapterTitles(previousChapters, targetLanguage),
+    recent_chapter_titles: collectRecentChapterTitles(previousChapters, targetLanguage).map(
+      formatChapterTitle,
+    ),
   };
 
   if (candidates.length === 0) {
@@ -450,10 +397,12 @@ async function executeGetTranslationChunk(
 
   // 与站内翻译用同一套匹配（姓名拆分、注音归一化），并且只把本块命中的术语和角色交给记忆打分：
   // 关键词得分是「命中数 ÷ 传入的实体数」，传全书的设定会把得分稀释到阈值以下
-  const allTerms = book.terminologies ?? [];
-  const allCharacters = book.characterSettings ?? [];
-  const matchedTerms = findUniqueTermsInText(chunkText, allTerms);
-  const matchedCharacters = findUniqueCharactersInText(chunkText, allCharacters);
+  const {
+    terms: matchedTerms,
+    characters: matchedCharacters,
+    nearTerms,
+    nearCharacters,
+  } = collectChunkEntities(book, chunkText);
   const selectedMemories = await selectRelevantMemoriesForChunk(
     book.id,
     chunkText,
@@ -463,12 +412,20 @@ async function executeGetTranslationChunk(
     targetLanguage,
   );
 
-  const contextBefore = collectContextBefore(
+  const contextBefore = collectTranslatedBefore(
     allParagraphs,
     firstOriginalIdx,
     contextBeforeCount,
     targetLanguage,
   );
+  const previousTail =
+    contextBefore.length === 0
+      ? await collectPreviousChapterTail(
+          previousChapters[previousChapters.length - 1],
+          contextBeforeCount,
+          targetLanguage,
+        )
+      : null;
 
   return {
     ...basePayload,
@@ -482,29 +439,22 @@ async function executeGetTranslationChunk(
         : {}),
     })),
     context_before: contextBefore,
-    previous_chapter_tail:
-      contextBefore.length === 0
-        ? await collectPreviousChapterTail(
-            previousChapters[previousChapters.length - 1],
-            contextBeforeCount,
-            targetLanguage,
-          )
-        : null,
+    previous_chapter_tail: previousTail
+      ? { ...formatChapterTitle(previousTail.title), paragraphs: previousTail.paragraphs }
+      : null,
     matched_terms: matchedTerms.map((term) => formatTermSummary(term, targetLanguage)),
     matched_characters: matchedCharacters.map((char) =>
       formatCharacterSummary(char, targetLanguage),
     ),
     // 原文写法与名称接近但不完全相同（错字、异写）：不是确定命中，由 Agent 自行确认
-    possible_terms: findNearTermsInText(chunkText, allTerms, allCharacters).map((match) => ({
+    possible_terms: nearTerms.map((match) => ({
       ...formatTermSummary(match.item, targetLanguage),
       text_in_source: match.matchedText,
     })),
-    possible_characters: findNearCharactersInText(chunkText, allCharacters, allTerms).map(
-      (match) => ({
-        ...formatCharacterSummary(match.item, targetLanguage),
-        text_in_source: match.matchedText,
-      }),
-    ),
+    possible_characters: nearCharacters.map((match) => ({
+      ...formatCharacterSummary(match.item, targetLanguage),
+      text_in_source: match.matchedText,
+    })),
     memories: selectedMemories.memories.map((m) => ({
       id: m.id,
       summary: m.summary,

@@ -1,17 +1,10 @@
+import { isUsageHelpDoc, searchHelpDocs } from 'src/services/library-query/help-search';
 import type { HelpDocument } from 'src/models/help';
 import { HelpService } from 'src/services/help-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { localizedErrorCode } from 'src/utils/localized-error';
 import { agentMcpError, type AgentMcpToolSpec } from '../types';
-import { FUZZY_PROPERTY, fuzzyMatchIndexes, readTrimmedString } from './helpers';
-
-/** 正文命中时，片段在命中位置前后各保留的字符数 */
-const SNIPPET_RADIUS = 80;
-
-/** 更新日志不是使用说明，不参与「怎么用」的检索 */
-function isUsageDoc(doc: HelpDocument): boolean {
-  return doc.path !== 'releaseNotes' && doc.categoryId !== 'release-notes';
-}
+import { FUZZY_PROPERTY, readTrimmedString } from './helpers';
 
 function summarizeDoc(doc: HelpDocument) {
   return {
@@ -20,15 +13,6 @@ function summarizeDoc(doc: HelpDocument) {
     category: doc.category,
     description: doc.description,
   };
-}
-
-function buildSnippet(markdown: string, lowerQuery: string): string | null {
-  const at = markdown.toLowerCase().indexOf(lowerQuery);
-  if (at < 0) return null;
-  const start = Math.max(0, at - SNIPPET_RADIUS);
-  const end = Math.min(markdown.length, at + lowerQuery.length + SNIPPET_RADIUS);
-  const body = markdown.slice(start, end).replace(/\s+/g, ' ').trim();
-  return `${start > 0 ? '…' : ''}${body}${end < markdown.length ? '…' : ''}`;
 }
 
 export const agentMcpHelpTools: AgentMcpToolSpec[] = [
@@ -52,43 +36,22 @@ export const agentMcpHelpTools: AgentMcpToolSpec[] = [
     },
     execute: async (args) => {
       const locale = useSettingsStore().uiLocale;
-      const docs = (await HelpService.getIndex(locale)).filter(isUsageDoc);
       const query = readTrimmedString(args.query);
       if (!query) {
+        const docs = (await HelpService.getIndex(locale)).filter(isUsageHelpDoc);
         return { locale, query: '', total: docs.length, docs: docs.map(summarizeDoc) };
       }
-
-      const lowerQuery = query.toLowerCase();
-      // 个别文档读取失败时只按标题和简介判断，不让整次搜索失败
-      const loaded = await Promise.all(
-        docs.map(async (doc) => ({
-          doc,
-          markdown: await HelpService.getDocument(doc.id, locale)
-            .then(({ markdown }) => markdown)
-            .catch(() => ''),
+      // 搜索本身与站内工具共用 library-query/help-search
+      const hits = await searchHelpDocs(locale, query, { fuzzy: args.fuzzy === true });
+      return {
+        locale,
+        query,
+        total: hits.length,
+        docs: hits.map(({ doc, snippet }) => ({
+          ...summarizeDoc(doc),
+          ...(snippet !== undefined ? { snippet } : {}),
         })),
-      );
-      const describe = ({ doc, markdown }: (typeof loaded)[number]) => {
-        // 片段只在正文里有确切写法时给出
-        const snippet = buildSnippet(markdown, lowerQuery);
-        return { ...summarizeDoc(doc), ...(snippet !== null ? { snippet } : {}) };
       };
-
-      const matched =
-        args.fuzzy === true
-          ? // 模糊匹配按接近程度排序
-            fuzzyMatchIndexes(
-              loaded,
-              ({ doc, markdown }) => [doc.title, doc.description, markdown],
-              query,
-            ).map((index) => loaded[index]!)
-          : loaded.filter(
-              ({ doc, markdown }) =>
-                doc.title.toLowerCase().includes(lowerQuery) ||
-                doc.description.toLowerCase().includes(lowerQuery) ||
-                markdown.toLowerCase().includes(lowerQuery),
-            );
-      return { locale, query, total: matched.length, docs: matched.map(describe) };
     },
   },
   {

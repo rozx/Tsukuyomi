@@ -1,3 +1,4 @@
+import { matchByKeywords } from 'src/services/library-query/keyword-match';
 import type { AppLocale } from 'src/models/locale';
 import type { Memory } from 'src/models/memory';
 import { CharacterSettingService } from 'src/services/character-setting-service';
@@ -11,7 +12,6 @@ import {
   formatCharacterSummary,
   formatTermSummary,
   FUZZY_PROPERTY,
-  fuzzyMatchIndexes,
   paginate,
   parseLimit,
   readOptionalTrimmedString,
@@ -273,11 +273,6 @@ function deleteIdsSchema(idsKey: string, noun: string) {
   };
 }
 
-function matchesKeyword(keyword: string, texts: readonly string[]): boolean {
-  if (!keyword) return true;
-  return texts.some((value) => value.toLowerCase().includes(keyword));
-}
-
 /** 设定很多的书一次列出全部会很大：支持分页，精简输出只保留翻译时认名字需要的字段 */
 const LIST_PAGING_PROPERTIES = {
   fuzzy: FUZZY_PROPERTY,
@@ -312,14 +307,10 @@ function executeListEntity<T extends object>(
   if (!resolved.ok) return resolved.error;
   const { book, targetLanguage } = resolved;
   const keyword = readTrimmedString(args.keyword);
-  const all = listItems(book, targetLanguage);
-  let matched = all;
-  if (keyword && args.fuzzy === true) {
-    // 模糊匹配按接近程度排序，最像的在前
-    matched = fuzzyMatchIndexes(all, searchTexts, keyword).map((index) => all[index]!);
-  } else if (keyword) {
-    matched = all.filter((item) => matchesKeyword(keyword.toLowerCase(), searchTexts(item)));
-  }
+  // 与站内工具共用同一套匹配：精确保持原有顺序，模糊按接近程度排序
+  const matched = matchByKeywords(listItems(book, targetLanguage), searchTexts, [keyword], {
+    fuzzy: args.fuzzy === true,
+  });
   const { page, ...paging } = paginate(matched, args, { defaultLimit: null, maxLimit: 500 });
   const entries =
     args.compact === true
