@@ -153,14 +153,32 @@ describe('buildAgentQuickStartGuide', () => {
       expect(guide).toContain(field);
     // 模糊搜索是可选项
     expect(guide).toMatch(/默认都是精确匹配[^\n]*fuzzy: true/);
-    // 每章都要遵守的规范放特殊指令，而不是记忆
-    expect(guide).toMatch(/翻译规范[^\n]*update_special_instructions/);
+    // 用户的长期要求写进特殊指令；可复用的翻译决定放记忆，由相关性自动带出
+    expect(guide).toMatch(/长期要求[^\n]*update_special_instructions/);
+    expect(guide).toMatch(/翻译决定[^\n]*upsert_memory/);
   });
 
   it('浏览器通道说明来源数为 0 时怎么排查', () => {
     const guide = webGuide();
     expect(guide).toMatch(/0 个来源/);
     expect(guide).toContain('--widget-origin');
+  });
+
+  it('包含与站内翻译相同的翻译规则：标点、格式、敬语、术语与角色、记忆', () => {
+    const guide = desktopGuide();
+    expect(guide).toMatch(/^## 翻译规则/m);
+    for (const sentence of [
+      '原文的「」『』在译文中原样保留',
+      '原文中黑点・及重复中黑点必须原样保留',
+      '严禁自动将带敬语姓名添加为角色别名',
+      '术语表放概念、技能、地名、物品等非人名内容，禁止放人名',
+      '每个术语只用一个目标译名',
+      '严禁保存故事设定、背景、世界观、剧情及情节发展',
+    ])
+      expect(guide).toContain(sentence);
+    // 指南不再让 Agent 把剧情记进记忆
+    expect(guide).not.toMatch(/剧情转折[^\n]*upsert_memory/);
+    expect(guide).not.toContain('剧情与世界观要点');
   });
 
   it('是通用说明而不是具体任务：不包含书名或待填占位', () => {
@@ -175,7 +193,7 @@ describe('buildAgentQuickStartGuide', () => {
       h3: text.match(/^### /gm)?.length,
     });
     const reference = sections(desktopGuide('zh-CN'));
-    expect(reference.h2).toBe(7);
+    expect(reference.h2).toBe(8);
     expect(reference.h3).toBe(6);
     for (const locale of ['zh-CN', 'zh-TW', 'en-US'] as const) {
       expect(sections(desktopGuide(locale))).toEqual(reference);

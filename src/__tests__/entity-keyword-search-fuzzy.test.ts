@@ -92,6 +92,9 @@ describe('站内术语 / 角色关键词搜索的模糊选项', () => {
     expect(await names({ keywords: ['サンドラ妃殿下'], fuzzy: true })).toEqual(['アレクサンドラ']);
     // 精确搜索的既有行为不变：名称、译名、别名任一包含关键词
     expect(await names({ keywords: ['サンドラ'] })).toEqual(['アレクサンドラ']);
-    expect(await names({ keywords: ['米娜', '桑德拉'] })).toEqual(['アレクサンドラ', 'ミナ']);
+    // 多个关键词取并集；精确搜索保持书里原有的存放顺序，这里不假定它
+    expect((await names({ keywords: ['米娜', '桑德拉'] })).sort()).toEqual(
+      ['アレクサンドラ', 'ミナ'].sort(),
+    );
   });
 });

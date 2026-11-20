@@ -1,3 +1,4 @@
+import { buildExternalTaskRules } from './task-rules';
 import type { AgentMcpPromptDescriptor, AgentMcpPromptResult } from './types';
 
 export type AgentMcpPromptName = 'translate-chapter' | 'polish-chapter' | 'import-and-translate';
@@ -43,6 +44,9 @@ const PROMPT_DESCRIPTORS: readonly AgentMcpPromptDescriptor[] = [
   },
 ];
 
+/** 模板后面附上的规则与站内翻译 / 润色 / 校对任务是同一份文字（见 task-rules.ts） */
+const RULES_HEADING = '翻译时必须遵守以下规则（与 Tsukuyomi 内置翻译相同）：';
+
 export function listAgentMcpPrompts(): AgentMcpPromptDescriptor[] {
   return PROMPT_DESCRIPTORS.map((item) => ({
     ...item,
@@ -75,13 +79,16 @@ export function getAgentMcpPrompt(
               type: 'text',
               text: [
                 `请在 Tsukuyomi 中翻译 ${bookHint} 的 ${chapterHint}。严格按以下工作流执行：`,
-                '1. 调用 `get_translation_chunk`（`mode: "untranslated"`）拉取第一块未翻译段落，以及打包好的前文衔接、命中术语、相关角色设定、相关剧情记忆、书/章级特殊指令和目标语言。',
+                '1. 调用 `get_translation_chunk`（`mode: "untranslated"`）拉取第一块未翻译段落，以及打包好的前文衔接、命中术语、相关角色设定、相关记忆（可复用的翻译决定）、书/章级特殊指令和目标语言。',
                 '2. 逐段精准翻译：每个原文段落一一对应一个译文段落，严禁合并、删减或自行总结；严格遵循术语译法、角色称谓与说话风格、以及特殊指令。',
                 `3. 调用 \`submit_translations\` 批量提交本块译文（若首块且章节标题未译，可同时传入 \`chapter_title_translation\`）。${modelHint}`,
                 '4. 若书籍启用了原文前缀校验，每个提交项必须提供准确的 `original_text_prefix`（取对应原文开头 3~12 个字符）。',
                 '5. 注意每段每种语言最多保留 5 个历史版本，不要对同一段落反复提交不同译文；若返回 `failed_items`，仅重试失败项。',
-                '6. 若本块出现重要新术语、新角色或关键剧情节点，调用 `upsert_terms` / `upsert_characters` / `upsert_memory` 及时回写设定。',
+                '6. 若本块出现作品特有的新术语或新角色，调用 `upsert_terms` / `upsert_characters` 回写；可复用的翻译决定（称呼、术语、文风）用 `upsert_memory` 记下，剧情与世界观不要写进记忆。',
                 '7. 检查 `submit_translations` 返回的 `remaining_untranslated_count`，只要大于 0 就继续调用 `get_translation_chunk` 循环，直至整章翻译完成。',
+                '',
+                RULES_HEADING,
+                buildExternalTaskRules(['translation']),
               ].join('\n'),
             },
           },
@@ -105,6 +112,9 @@ export function getAgentMcpPrompt(
                 `3. 调用 \`submit_translations\`（\`write_mode: "${writeMode}"\`）提交改进后的段落，避免无改动段落重复写入。`,
                 '4. 如校对过程中发现需要统一的术语或角色译法，调用 `upsert_terms` / `upsert_characters` 同步更新设定。',
                 '5. 按返回的 `next_cursor` 顺序推进，直至整章校对完毕并汇报主要改动点。',
+                '',
+                RULES_HEADING,
+                buildExternalTaskRules(['polish', 'proofreading']),
               ].join('\n'),
             },
           },

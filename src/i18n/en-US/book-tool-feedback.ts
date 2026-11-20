@@ -1,5 +1,17 @@
 export default {
   aiBookFeedback: {
+    moveChapterIdsRequired: 'chapter_ids is required',
+    moveDuplicateChapter: 'chapter_ids contains a duplicate chapter: {id}',
+    moveVolumeMissing: 'Target volume not found: {id}',
+    moveAnchorMissing: 'The chapter used for positioning was not found: {id}',
+    moveAnchorIsMoved: 'A chapter being moved cannot be used for positioning: {id}',
+    moveTargetConflict:
+      'Conflicting positioning: use only one of before_chapter_id, after_chapter_id and new_volume_title, and target_volume_id must be the volume of the positioning chapter',
+    moveTargetRequired:
+      'The chapters come from different volumes; say where they go with target_volume_id, before_chapter_id, after_chapter_id or new_volume_title',
+    chaptersMoved: 'Moved {count} chapters',
+    chaptersUnchanged: 'The chapters are already in that position; nothing changed',
+    moveFailed: 'Failed to move chapters',
     instructionScopeInvalid: 'scope must be book or chapter',
     instructionTaskInvalid: 'task must be translation, polish, or proofreading',
     instructionModeInvalid: 'mode must be append or replace',

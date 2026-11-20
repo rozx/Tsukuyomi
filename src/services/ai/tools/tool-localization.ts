@@ -20,7 +20,33 @@ export function singleIdToolParameters(
   };
 }
 
-function toolDescription(path: string, catalogName: DescriptionCatalog): string {
+/**
+ * 工具说明的使用方。部分说明由站内工具与外部 Agent（MCP）的工具共用同一份文字，
+ * 只有其中提到的工具名与参数写法因使用方而异（见 tools.ts 里的 audience__* 片段）。
+ */
+export type ToolAudience = 'builtin' | 'external';
+
+const AUDIENCE_FRAGMENTS = [
+  'entityLookup',
+  'historyTool',
+  'chapterReadTool',
+  'instructionScope',
+] as const;
+
+function audienceFragments(audience: ToolAudience): Record<string, string> {
+  return Object.fromEntries(
+    AUDIENCE_FRAGMENTS.map((name) => [
+      name,
+      agentText(`aiTools.audience__${audience}__${name}` as AgentMessageKey),
+    ]),
+  );
+}
+
+function toolDescription(
+  path: string,
+  catalogName: DescriptionCatalog,
+  audience: ToolAudience = 'builtin',
+): string {
   const key = path.replaceAll('.', '__');
   const catalog = messages['zh-CN'][catalogName] as Record<string, string>;
   if (typeof catalog[key] !== 'string') throw new Error('MISSING_TOOL_DESCRIPTION: ' + path);
@@ -28,11 +54,12 @@ function toolDescription(path: string, catalogName: DescriptionCatalog): string 
     max: TRANSLATION_BATCH_LIMITS.normal,
     tolerance: TRANSLATION_BATCH_LIMITS.withTolerance,
     doubleMax: TRANSLATION_BATCH_LIMITS.remaining,
+    ...(catalogName === 'aiTools' ? audienceFragments(audience) : {}),
   });
 }
 
-export function describeTool(path: string): string {
-  return toolDescription(path, 'aiTools');
+export function describeTool(path: string, audience: ToolAudience = 'builtin'): string {
+  return toolDescription(path, 'aiTools', audience);
 }
 
 /** 普通工具共用的字符串参数声明。 */

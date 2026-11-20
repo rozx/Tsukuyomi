@@ -1,3 +1,11 @@
+import {
+  moveChapters,
+  moveChaptersParameters,
+  readMoveChaptersRequest,
+  type MoveChaptersFailureCode,
+} from 'src/services/library-structure/move-chapters';
+import { describeTool } from 'src/services/ai/tools/tool-localization';
+import { withBuiltinGuidance } from './shared-descriptions';
 import { v4 } from 'uuid';
 import type { AppLocale } from 'src/models/locale';
 import { isAppLocale } from 'src/models/locale';
@@ -15,10 +23,10 @@ import {
   resolveBookFromArgs,
 } from './helpers';
 import {
-  buildParagraphs,
   countChaptersInVolumes,
   createEmptyVolume,
-  splitTextToParagraphLines,
+  linesToParagraphs,
+  textToParagraphs,
 } from './library-helpers';
 import { importBookFromUrlTool } from './url-import';
 
@@ -50,8 +58,9 @@ function parseChapterInputs(raw: unknown): ChapterInput[] | null {
     const rec = item as Record<string, unknown>;
     const title = readTrimmedString(rec.title);
     if (!title) return null;
+    // 空字符串是空行，与站内导入一样保留
     const paragraphs = Array.isArray(rec.paragraphs)
-      ? rec.paragraphs.filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+      ? rec.paragraphs.filter((p): p is string => typeof p === 'string')
       : undefined;
     const text = typeof rec.text === 'string' ? rec.text : undefined;
     if (!paragraphs && text === undefined) return null;
@@ -67,11 +76,10 @@ function parseChapterInputs(raw: unknown): ChapterInput[] | null {
 }
 
 function buildChapterEntity(input: ChapterInput, now: Date): Chapter {
-  const lines =
+  const content =
     input.paragraphs && input.paragraphs.length > 0
-      ? input.paragraphs
-      : splitTextToParagraphLines(input.text ?? '');
-  const content = buildParagraphs(lines);
+      ? linesToParagraphs(input.paragraphs)
+      : textToParagraphs(input.text ?? '');
   return {
     id: generateShortId(),
     title: {
@@ -85,6 +93,20 @@ function buildChapterEntity(input: ChapterInput, now: Date): Chapter {
     lastEdited: now,
   };
 }
+
+const MOVE_CHAPTERS_ERRORS: Record<MoveChaptersFailureCode, string> = {
+  BOOK_NOT_FOUND: 'Book not found.',
+  CHAPTER_IDS_REQUIRED: 'chapter_ids must be a non-empty array of chapter IDs.',
+  CHAPTER_NOT_FOUND: 'A chapter in chapter_ids does not exist in this book.',
+  DUPLICATE_CHAPTER: 'chapter_ids contains the same chapter more than once.',
+  VOLUME_NOT_FOUND: 'target_volume_id does not exist in this book.',
+  ANCHOR_NOT_FOUND: 'The chapter given in before_chapter_id / after_chapter_id does not exist.',
+  ANCHOR_IS_MOVED: 'A chapter being moved cannot be used as before_chapter_id / after_chapter_id.',
+  TARGET_CONFLICT:
+    'Conflicting positioning: use only one of before_chapter_id, after_chapter_id and new_volume_title, and target_volume_id must be the volume of the positioning chapter.',
+  TARGET_REQUIRED:
+    'The chapters come from different volumes: say where they go with target_volume_id, before_chapter_id, after_chapter_id or new_volume_title.',
+};
 
 /** 决定 get_book 要列出哪些章节：可限定某一卷、只取末尾若干章，或完全不列 */
 function selectListedChapters(
@@ -403,12 +425,14 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
               title: { type: 'string' },
               text: {
                 type: 'string',
-                description: 'Raw chapter text split into paragraphs by line breaks.',
+                description:
+                  'Raw chapter text. Every line becomes one paragraph and nothing is trimmed: blank lines stay as empty paragraphs and leading indentation is kept, exactly as the built-in import does. Pass the text as it is in the source.',
               },
               paragraphs: {
                 type: 'array',
                 items: { type: 'string' },
-                description: 'Pre-split array of paragraph strings.',
+                description:
+                  'Pre-split paragraphs, one string per line of the source. Kept verbatim; use an empty string for a blank line.',
               },
               web_url: { type: 'string' },
             },
@@ -477,8 +501,10 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'update_book',
-    description:
+    description: withBuiltinGuidance(
+      'update_book',
       "Update a book's author, description, tags, or alternate titles. Only the fields you pass are changed; pass an empty string or empty array to clear a field. The title and chapters are not affected.",
+    ),
     category: 'library',
     permission: 'translate_and_edit',
     readOnlyHint: false,
@@ -526,6 +552,62 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
         description: updated.description ?? '',
         tags: updated.tags ?? [],
         alternate_titles: updated.alternateTitles ?? [],
+      };
+    },
+  },
+  {
+    name: 'move_chapters',
+    // 说明、参数与移动逻辑都与站内同名工具共用
+    description: withBuiltinGuidance(
+      'move_chapters',
+      'Reorder chapters within a volume or move them to another volume (optionally a new one). Returns the new position of each moved chapter.',
+    ),
+    category: 'library',
+    permission: 'translate_and_edit',
+    readOnlyHint: false,
+    requiresBookStore: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        book_id: {
+          type: 'string',
+          description: 'Target book ID (optional if a book is currently open).',
+        },
+        ...moveChaptersParameters((name) =>
+          describeTool(`move_chapters.parameters.properties.${name}`),
+        ),
+      },
+      required: ['chapter_ids'],
+    },
+    execute: async (args, ctx) => {
+      const bookRes = resolveBookFromArgs(args, ctx);
+      if (!bookRes.ok) return bookRes.error;
+      const result = await moveChapters(bookRes.book.id, readMoveChaptersRequest(args));
+      if (!result.ok) {
+        return agentMcpError(
+          result.code,
+          MOVE_CHAPTERS_ERRORS[result.code],
+          result.id !== undefined ? { id: result.id } : undefined,
+        );
+      }
+      const book = useBooksStore().getBookById(bookRes.book.id) ?? bookRes.book;
+      const titles = new Map(
+        (book.volumes ?? []).flatMap((vol) =>
+          (vol.chapters ?? []).map((ch) => [ch.id, titleOriginal(ch.title)] as const),
+        ),
+      );
+      return {
+        book_id: book.id,
+        target_volume_id: result.targetVolumeId,
+        created_volume: result.createdVolume,
+        unchanged: result.unchanged,
+        moved: result.moved.map((entry) => ({
+          chapter_id: entry.chapterId,
+          title_original: titles.get(entry.chapterId) ?? '',
+          from_volume_id: entry.fromVolumeId,
+          to_volume_id: entry.toVolumeId,
+          index: entry.index,
+        })),
       };
     },
   },

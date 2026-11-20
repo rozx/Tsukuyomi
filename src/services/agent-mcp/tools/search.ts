@@ -1,3 +1,4 @@
+import { withBuiltinGuidance } from './shared-descriptions';
 import type { AppLocale } from 'src/models/locale';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import type { AgentMcpWriteMode } from 'src/models/settings';
@@ -414,8 +415,10 @@ export const agentMcpSearchTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'count_occurrences',
-    description:
+    description: withBuiltinGuidance(
+      'count_occurrences',
       'Count how often each keyword appears across the whole book (or one chapter), with paragraph count and per-chapter distribution. Counts the original text by default; set search_in="translation" to count the currently selected translations (e.g. how many places still use an old rendering).',
+    ),
     category: 'translation',
     permission: 'read_only',
     readOnlyHint: true,
@@ -503,8 +506,10 @@ export const agentMcpSearchTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'search_chapters',
-    description:
+    description: withBuiltinGuidance(
+      'search_chapters',
       'Find the chapters most relevant to a natural-language question (semantic + keyword ranking), e.g. "the chapter where they first reach the tower". Requires local embedding to be enabled in Tsukuyomi; otherwise use search_paragraphs.',
+    ),
     category: 'library',
     permission: 'read_only',
     readOnlyHint: true,

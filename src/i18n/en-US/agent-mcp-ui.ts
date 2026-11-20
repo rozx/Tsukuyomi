@@ -107,7 +107,7 @@ export default {
       conceptVersions:
         'Each paragraph can hold several translation versions per language, one of which is the selected version. At most 5 versions are kept per language; beyond that the oldest version is removed.',
       conceptWorld:
-        'Each book has a glossary of terms, character settings and memories (plot and world-building notes), and may have book-level and chapter-level special instructions. Follow them when translating.',
+        'Each book has a term list, character settings and memories (reusable translation decisions: forms of address, term renderings, style), and may also have book-level and chapter-level special instructions. Follow them when translating.',
       conceptIds:
         'book_id, chapter_id and paragraph IDs all come from tool results; never invent them. When book_id is omitted the book the user has open is used; if no book is open you must pass it explicitly.',
       overviewTitle: 'Get your bearings',
@@ -158,11 +158,11 @@ export default {
       wfWorld1:
         'Before translating a book, check the existing renderings with list_terms and list_characters.',
       wfWorld2:
-        'Record new proper nouns and names with upsert_terms and upsert_characters and use them consistently from then on.',
+        'When you meet a new term or character specific to the work, record it with upsert_terms and upsert_characters so the whole book uses it. Do not create terms for ordinary vocabulary; personal names go in the character list, not the term list; before creating a character, make sure it is not an alias of an existing one.',
       wfWorld3:
-        'Record important plot turns, relationships and world-building facts with upsert_memory; use search_memories when you need to recall earlier events. Results are ranked by relevance and carry a score; judge for yourself which are useful.',
+        'Record reusable translation decisions (how a form of address is rendered, the fixed rendering of a word, style preferences, fixed phrases) with upsert_memory; they are brought back automatically by relevance when you fetch a translation chunk. Do not store plot, background or world-building in memories. Use search_memories to look things up; results are ranked by relevance and carry a score.',
       wfWorld4:
-        'When the user has a standing requirement about style or forms of address, and for translation conventions every chapter must follow (forms of address, fixed phrases, how to render sound effects), write a book-level or chapter-level special instruction with update_special_instructions: special instructions come with every translation chunk, while memories only appear when they are relevant to the current text.',
+        'When the user has a standing requirement about style or forms of address, write it as a book-level or chapter-level special instruction with update_special_instructions: special instructions come with every translation chunk.',
       wfWorld5:
         'list_memories pages through every memory. Remove outdated or duplicate entries with delete_terms, delete_characters and delete_memories, and confirm with the user before deleting.',
       wfRenameTitle: 'Rename a term everywhere',
@@ -176,6 +176,9 @@ export default {
         'When the preview looks right, call it again without dry_run. While has_more is true, keep calling until it is false. By default each changed paragraph gets a new version and the old one is kept.',
       wfRename5:
         'Finally run count_occurrences again to confirm nothing is left, and tell the user how many places changed.',
+      translationRulesTitle: 'Translation rules',
+      translationRulesNote:
+        'The rules below are the same ones the built-in Tsukuyomi translator uses (they are written in Chinese). Follow them when translating, polishing and proofreading.',
       rulesTitle: 'Rules',
       ruleWriteBack:
         'Write all translations and settings back to the app through the tools; do not only paste them in the conversation.',
@@ -312,6 +315,8 @@ export default {
       create_book: 'Create a new book in the local library with optional initial chapters.',
       add_chapters: 'Batch-add chapters from plain text or paragraph arrays to a volume.',
       update_book: "Edit a book's author, description, tags and alternate titles.",
+      move_chapters:
+        'Reorder chapters within a volume or move them to another volume (optionally a new one).',
       import_book_from_url:
         'Fetch and import or incrementally update a book and its chapter contents from a supported URL.',
       check_book_updates:
@@ -339,8 +344,9 @@ export default {
       list_characters: 'List all character settings, aliases, and speaking styles for a book.',
       upsert_characters: 'Batch create or update character settings and alias translations.',
       search_memories:
-        'Search book plot memories via hybrid semantic + keyword retrieval, or list recent memories when no query is given.',
-      upsert_memory: 'Create or update a book plot memory entry.',
+        "Search a book's memories (reusable translation decisions) via hybrid semantic + keyword retrieval, ranked by relevance; lists recent memories when no query is given.",
+      upsert_memory:
+        'Create or update a memory: reusable translation decisions only (forms of address, term renderings, style), not story notes.',
       list_memories: "List all of a book's memories page by page, optionally with full content.",
       delete_terms: 'Delete terms by ID.',
       delete_characters: 'Delete character settings by ID.',

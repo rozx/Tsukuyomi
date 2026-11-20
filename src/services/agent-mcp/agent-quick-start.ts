@@ -8,6 +8,7 @@ import {
   buildRelayJsonConfig,
   TOKEN_PLACEHOLDER,
 } from './client-config';
+import { buildExternalTaskRules } from './task-rules';
 import { ALL_AGENT_MCP_TOOLS } from './tools/all-tools';
 import type { AgentMcpToolCategory } from './types';
 
@@ -232,6 +233,12 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
     `## ${text('agentMcp.guide.workflowsTitle')}`,
     text('agentMcp.guide.workflowsNote'),
     ...workflows,
+    '',
+    `## ${text('agentMcp.guide.translationRulesTitle')}`,
+    text('agentMcp.guide.translationRulesNote'),
+    '',
+    // 与站内翻译 / 润色 / 校对任务的系统提示词是同一份文字；给模型读的规则固定用简体中文
+    buildExternalTaskRules(['translation', 'polish', 'proofreading']),
     '',
     `## ${text('agentMcp.guide.rulesTitle')}`,
     ...bullets(RULE_KEYS),

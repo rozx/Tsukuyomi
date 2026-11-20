@@ -11,12 +11,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { mapConcurrent } from 'src/utils/map-concurrent';
 import { agentMcpError, type AgentMcpToolSpec } from '../types';
 import { describeChapters, loadChapterParagraphs, readTrimmedString } from './helpers';
-import {
-  buildParagraphs,
-  countChaptersInVolumes,
-  createEmptyVolume,
-  splitTextToParagraphLines,
-} from './library-helpers';
+import { countChaptersInVolumes, createEmptyVolume, textToParagraphs } from './library-helpers';
 
 const DEFAULT_IMPORT_MAX_CHAPTERS = 20;
 const MAX_IMPORT_CHAPTERS_PER_CALL = 50;
@@ -121,7 +116,7 @@ async function fetchChapterTargets(
   await mapConcurrent(selected, concurrency, async (target) => {
     try {
       const text = await scraper.fetchChapterContent(target.webUrl);
-      fetchedByChapterId.set(target.chapterId, buildParagraphs(splitTextToParagraphLines(text)));
+      fetchedByChapterId.set(target.chapterId, textToParagraphs(text));
     } catch (error) {
       failedChapters.push({
         title: target.title,

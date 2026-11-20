@@ -200,6 +200,9 @@ async function scenario(locale: AppLocale): Promise<{ name: string; content: str
 
   await run('get_book_info', {});
   await run('update_book_info', { description: 'Updated', tags: ['tag'] });
+  await run('move_chapters', { chapter_ids: ['c2'], before_chapter_id: 'c' });
+  await run('move_chapters', { chapter_ids: ['c2'], after_chapter_id: 'c' });
+  await run('move_chapters', { chapter_ids: ['missing-chapter'] });
   await run('list_chapters', {});
   await run('list_chapters_by_volume', { volume_ids: ['fixture-volume'] });
   await run('list_chapters_by_volume', { volume_ids: ['missing-volume'] });

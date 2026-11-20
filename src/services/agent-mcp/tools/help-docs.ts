@@ -1,3 +1,4 @@
+import { withBuiltinGuidance } from './shared-descriptions';
 import { isUsageHelpDoc, searchHelpDocs } from 'src/services/library-query/help-search';
 import type { HelpDocument } from 'src/models/help';
 import { HelpService } from 'src/services/help-service';
@@ -18,8 +19,10 @@ function summarizeDoc(doc: HelpDocument) {
 export const agentMcpHelpTools: AgentMcpToolSpec[] = [
   {
     name: 'search_help_docs',
-    description:
+    description: withBuiltinGuidance(
+      'search_help_docs',
       "Search the built-in Tsukuyomi user guide (in the user's UI language) by title, description and content; omit query to list every guide. Use this, then get_help_doc, whenever the user asks how to do something in Tsukuyomi instead of answering from memory.",
+    ),
     category: 'context',
     permission: 'read_only',
     readOnlyHint: true,

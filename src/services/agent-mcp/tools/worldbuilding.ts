@@ -1,5 +1,11 @@
+import { withBuiltinGuidance } from './shared-descriptions';
 import { matchByKeywords } from 'src/services/library-query/keyword-match';
 import type { AppLocale } from 'src/models/locale';
+import {
+  getDataManagementRules,
+  getMemoryWorkflowRules,
+} from 'src/services/ai/tasks/prompts/common';
+import { describeTool, stringToolParameter } from 'src/services/ai/tools/tool-localization';
 import type { Memory } from 'src/models/memory';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { MemoryService } from 'src/services/memory-service';
@@ -357,8 +363,11 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'upsert_terms',
-    description:
+    // 何时该建术语、每个术语只留一个译名等要求，取自站内 create_term 的同一份说明
+    description: withBuiltinGuidance(
+      'upsert_terms',
       'Batch-create or idempotently update terminology entries (matched by id or exact name).',
+    ),
     category: 'worldbuilding',
     permission: 'translate_and_edit',
     readOnlyHint: false,
@@ -373,10 +382,10 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
           items: {
             type: 'object',
             properties: {
-              id: { type: 'string' },
-              name: { type: 'string' },
-              translation: { type: 'string' },
-              description: { type: 'string' },
+              id: { type: 'string', description: 'Existing term ID (omit to match by name).' },
+              name: stringToolParameter('create_term.parameters.properties.name'),
+              translation: stringToolParameter('create_term.parameters.properties.translation'),
+              description: stringToolParameter('create_term.parameters.properties.description'),
             },
             required: ['name', 'translation'],
           },
@@ -423,8 +432,8 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'upsert_characters',
-    description:
-      'Batch-create or idempotently update character settings (matched by id or exact name).',
+    // 术语与角色如何分工、全名与别名怎么放等要求，取自站内的数据管理规则
+    description: `Batch-create or idempotently update character settings (matched by id or exact name). ${getDataManagementRules('external')}`,
     category: 'worldbuilding',
     permission: 'translate_and_edit',
     readOnlyHint: false,
@@ -439,19 +448,34 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
           items: {
             type: 'object',
             properties: {
-              id: { type: 'string' },
-              name: { type: 'string' },
-              translation: { type: 'string' },
-              sex: { type: 'string', enum: ['male', 'female', 'other'] },
-              description: { type: 'string' },
-              speaking_style: { type: 'string' },
+              id: { type: 'string', description: 'Existing character ID (omit to match by name).' },
+              name: stringToolParameter('create_character.parameters.properties.name'),
+              translation: stringToolParameter(
+                'create_character.parameters.properties.translation',
+              ),
+              sex: {
+                type: 'string',
+                enum: ['male', 'female', 'other'],
+                description: describeTool('create_character.parameters.properties.sex'),
+              },
+              description: stringToolParameter(
+                'create_character.parameters.properties.description',
+              ),
+              speaking_style: stringToolParameter(
+                'create_character.parameters.properties.speaking_style',
+              ),
               aliases: {
                 type: 'array',
+                description: describeTool('create_character.parameters.properties.aliases'),
                 items: {
                   type: 'object',
                   properties: {
-                    name: { type: 'string' },
-                    translation: { type: 'string' },
+                    name: stringToolParameter(
+                      'create_character.parameters.properties.aliases.items.properties.name',
+                    ),
+                    translation: stringToolParameter(
+                      'create_character.parameters.properties.aliases.items.properties.translation',
+                    ),
                   },
                   required: ['name', 'translation'],
                 },
@@ -467,8 +491,10 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'search_memories',
-    description:
+    description: withBuiltinGuidance(
+      'search_memories',
       'Search book memories using Tsukuyomi hybrid semantic + keyword retrieval, ranked by relevance with a score per result (or list recent memories when query is omitted). Returns every memory with some match, best first; judge relevance from the score and content.',
+    ),
     category: 'worldbuilding',
     permission: 'read_only',
     readOnlyHint: true,
@@ -524,7 +550,8 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'upsert_memory',
-    description: 'Create a new book memory or update an existing memory by memory_id.',
+    // 记忆只记可复用的翻译决定、不记剧情等要求，取自站内的记忆管理规则
+    description: `Create a new book memory or update an existing memory by memory_id. ${getMemoryWorkflowRules('external')}`,
     category: 'worldbuilding',
     permission: 'translate_and_edit',
     readOnlyHint: false,
@@ -537,8 +564,8 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
           type: 'string',
           description: 'Existing memory ID to update (omit to create new).',
         },
-        summary: { type: 'string', description: 'Short summary of the plot point or world fact.' },
-        content: { type: 'string', description: 'Detailed memory content.' },
+        summary: stringToolParameter('create_memory.parameters.properties.summary'),
+        content: stringToolParameter('create_memory.parameters.properties.content'),
       },
       required: ['summary', 'content'],
     },
@@ -611,8 +638,10 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'delete_terms',
-    description:
+    description: withBuiltinGuidance(
+      'delete_terms',
       'Delete terminology entries by ID (get IDs from list_terms). Existing translations are not changed. Confirm with the user before deleting.',
+    ),
     category: 'worldbuilding',
     permission: 'translate_and_edit',
     readOnlyHint: false,
@@ -645,8 +674,10 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'delete_memories',
-    description:
+    description: withBuiltinGuidance(
+      'delete_memories',
       'Delete book memories by ID (get IDs from list_memories or search_memories). Confirm with the user before deleting.',
+    ),
     category: 'worldbuilding',
     permission: 'translate_and_edit',
     readOnlyHint: false,
@@ -665,8 +696,10 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'get_special_instructions',
-    description:
+    description: withBuiltinGuidance(
+      'get_special_instructions',
       'Read book-level and optional chapter-level translation, polish, and proofreading special instructions.',
+    ),
     category: 'worldbuilding',
     permission: 'read_only',
     readOnlyHint: true,
@@ -714,8 +747,10 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   },
   {
     name: 'update_special_instructions',
-    description:
+    description: withBuiltinGuidance(
+      'update_special_instructions',
       'Update book-level (or chapter-level when chapter_id is provided) translation, polish, or proofreading special instructions.',
+    ),
     category: 'worldbuilding',
     permission: 'translate_and_edit',
     readOnlyHint: false,

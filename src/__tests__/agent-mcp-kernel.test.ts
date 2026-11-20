@@ -205,6 +205,23 @@ describe('AgentMcpKernel', () => {
     expect(failed.resultSummary).toBeUndefined();
   });
 
+  it('工作流模板带上与站内相同的规则，并且不再让 Agent 把剧情记进记忆', () => {
+    const kernel = createAgentMcpKernel({ tools: [] });
+    const text = (name: string) =>
+      kernel.getPrompt(name, { chapter_id: 'ch-1' })!.messages[0]!.content.text;
+
+    const translate = text('translate-chapter');
+    expect(translate).toContain('原文的「」『』在译文中原样保留');
+    expect(translate).toContain('严禁自动将带敬语姓名添加为角色别名');
+    expect(translate).toContain('严禁保存故事设定、背景、世界观、剧情及情节发展');
+    expect(translate).not.toContain('关键剧情节点');
+
+    const polish = text('polish-chapter');
+    expect(polish).toContain('摆脱翻译腔');
+    expect(polish).toContain('【校对检查项】');
+    expect(polish).toContain('原文中黑点・及重复中黑点必须原样保留');
+  });
+
   it('提供 3 个内置翻译工作流模板并支持按参数渲染', () => {
     const list = listAgentMcpPrompts();
     expect(list.map((p) => p.name)).toEqual([

@@ -99,7 +99,7 @@ export default {
       conceptVersions:
         '每個段落在每種語言下可以有多個譯文版本，其中一個是目前選用的版本。每種語言最多保留 5 個版本，超出時最早的版本會被移除。',
       conceptWorld:
-        '每本書有術語表、角色設定和記憶（劇情與世界觀要點），還可以有書籍層級和章節層級的特殊指令。翻譯時必須遵守它們。',
+        '每本書有術語表、角色設定和記憶（可重複使用的翻譯決定：稱呼、術語譯法、文風），還可以有書籍層級和章節層級的特殊指令。翻譯時必須遵守它們。',
       conceptIds:
         'book_id、chapter_id 和段落 ID 都來自工具的回傳值，不要自己編造。省略 book_id 時使用使用者目前開啟的書；使用者沒有開啟任何書時必須明確傳入。',
       overviewTitle: '先了解現狀',
@@ -146,11 +146,11 @@ export default {
       wfWorldTitle: '維護術語、角色與記憶',
       wfWorld1: '開始翻譯一本書之前，先用 list_terms 和 list_characters 了解已有的譯法。',
       wfWorld2:
-        '遇到新的專有名詞或人名時，用 upsert_terms、upsert_characters 記錄下來，之後全書沿用。',
+        '遇到作品特有的新術語或新角色時，用 upsert_terms、upsert_characters 記錄下來，之後全書沿用。通用詞彙不建術語；人名放角色表，不放術語表；建角色前先確認它不是既有角色的別名。',
       wfWorld3:
-        '重要的劇情轉折、人物關係和世界觀設定用 upsert_memory 記下；需要回憶前文時用 search_memories，結果依相關度排序並帶有分數，由你自己判斷哪些有用。',
+        '可重複使用的翻譯決定（稱呼怎麼譯、某個詞固定怎麼譯、文風偏好、固定用語）用 upsert_memory 記下，取翻譯塊時會依相關度自動帶出；劇情、背景和世界觀不要寫進記憶。需要查找時用 search_memories，結果依相關度排序並帶有分數。',
       wfWorld4:
-        '使用者對文風或稱呼有長期要求，以及稱呼約定、固定用語的譯法、擬聲詞處理這類每一章都要遵守的翻譯規範，用 update_special_instructions 寫成書籍層級或章節層級的特殊指令：特殊指令每次取翻譯塊都會帶上，而記憶只在與目前內容相關時才出現。',
+        '使用者對文風或稱呼有長期要求時，用 update_special_instructions 寫成書籍層級或章節層級的特殊指令：特殊指令每次取翻譯塊都會帶上。',
       wfWorld5:
         '用 list_memories 可以翻頁查看全部記憶。過時或重複的項目用 delete_terms、delete_characters、delete_memories 刪除，刪除前先向使用者確認。',
       wfRenameTitle: '統一修改譯名',
@@ -162,6 +162,9 @@ export default {
       wfRename4:
         '確認無誤後去掉 dry_run 再呼叫一次。回傳 has_more 為 true 時繼續呼叫，直到為 false。預設會給每個改動的段落追加一個新版本，舊版本仍然保留。',
       wfRename5: '最後再用 count_occurrences 確認舊譯名已經沒有殘留，並向使用者回報改了多少處。',
+      translationRulesTitle: '翻譯規則',
+      translationRulesNote:
+        '下面的規則與 Tsukuyomi 內建翻譯使用的是同一份（以簡體中文書寫），翻譯、潤飾、校對時都要遵守。',
       rulesTitle: '規則',
       ruleWriteBack: '所有譯文和設定都透過工具寫回應用程式，不要只貼在對話裡。',
       ruleConfirm:
@@ -280,6 +283,7 @@ export default {
       create_book: '於本機書庫建立新書籍，支援同時寫入初始章節。',
       add_chapters: '依純文字分段或段落陣列向指定卷批次新增章節。',
       update_book: '修改書籍的作者、簡介、標籤與別名。',
+      move_chapters: '調整章節在卷內的順序，或把章節移到另一卷（可新建一卷）。',
       import_book_from_url: '透過內建站點能力從支援的 URL 匯入或增量更新書籍及章節正文。',
       check_book_updates: '檢查書籍來源站點是否有新章節，可選比對已匯入章節的正文是否改動。',
       apply_book_updates:
@@ -298,8 +302,10 @@ export default {
       upsert_terms: '依名稱批次新增或更新術語譯法與說明。',
       list_characters: '列出書籍全部角色設定、別名與說話風格。',
       upsert_characters: '依角色名批次新增或更新角色設定與別名譯法。',
-      search_memories: '依自然語言混合檢索書籍劇情記憶；不帶查詢時列出最近的記憶。',
-      upsert_memory: '新增或更新書籍劇情記憶項目。',
+      search_memories:
+        '依自然語言混合檢索書籍的記憶（可重複使用的翻譯決定），結果依相關度排序；不帶查詢時列出最近的記憶。',
+      upsert_memory:
+        '新增或更新一則記憶：只記可重複使用的翻譯決定（稱呼、術語譯法、文風），不記故事內容。',
       list_memories: '分頁列出書籍的全部記憶，可選帶上內文。',
       delete_terms: '依 ID 批次刪除術語。',
       delete_characters: '依 ID 批次刪除角色設定。',

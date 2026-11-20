@@ -138,7 +138,8 @@ describe('AgentMcp context & library tools', () => {
       chapters: Array<{ chapter_id: string; paragraph_count: number }>;
     };
     expect(addData.chapters).toHaveLength(2);
-    expect(addData.chapters[0]?.paragraph_count).toBe(2);
+    // 与站内导入一致：每一行是一个段落，空行也算
+    expect(addData.chapters[0]?.paragraph_count).toBe(3);
     expect(addData.chapters[1]?.paragraph_count).toBe(3);
 
     const bookInStore = useBooksStore().getBookById(bookId);
@@ -148,7 +149,7 @@ describe('AgentMcp context & library tools', () => {
     const ch1Content = await ChapterContentService.loadChapterContent(
       addData.chapters[0]!.chapter_id,
     );
-    expect(ch1Content?.map((p) => p.text)).toEqual(['第一段原文。', '第二段原文。']);
+    expect(ch1Content?.map((p) => p.text)).toEqual(['第一段原文。', '', '第二段原文。']);
 
     const listRes = await kernel.callTool('list_books', {}, { channel: 'desktop-mcp' });
     expect(listRes.isError).toBe(false);
@@ -163,6 +164,46 @@ describe('AgentMcp context & library tools', () => {
     );
     expect(getRes.isError).toBe(false);
     expect((getRes.data as { chapter_count: number }).chapter_count).toBe(2);
+  });
+
+  it('加章的分段规则与站内导入一致：每一行一个段落，空行、缩进与行尾空白原样保留', async () => {
+    const kernel = createAgentMcpKernel({
+      tools: [...agentMcpContextTools, ...agentMcpLibraryTools],
+    });
+    const created = await kernel.callTool(
+      'create_book',
+      {
+        title: '分段测试',
+        // 建书时带的初始章节走同一套规则
+        chapters: [{ title: '序', text: '\u3000序章の一行目。\r\n\r\n二行目。 ' }],
+      },
+      { channel: 'desktop-mcp' },
+    );
+    const bookId = (created.data as { book_id: string }).book_id;
+    const firstChapterId = useBooksStore().getBookById(bookId)!.volumes![0]!.chapters![0]!.id;
+    const first = await ChapterContentService.loadChapterContent(firstChapterId);
+    // Windows 换行按一行处理；行首的全角空格缩进与行尾空白都不动
+    expect(first?.map((p) => p.text)).toEqual(['\u3000序章の一行目。', '', '二行目。 ']);
+
+    const added = await kernel.callTool(
+      'add_chapters',
+      {
+        book_id: bookId,
+        chapters: [
+          { title: '文本', text: '一。\n\n\n二。\n' },
+          { title: '数组', paragraphs: ['\u3000甲', '', '乙'] },
+        ],
+      },
+      { channel: 'desktop-mcp' },
+    );
+    const chapters = (added.data as { chapters: Array<{ chapter_id: string }> }).chapters;
+    const text = await ChapterContentService.loadChapterContent(chapters[0]!.chapter_id);
+    expect(text?.map((p) => p.text)).toEqual(['一。', '', '', '二。', '']);
+    const array = await ChapterContentService.loadChapterContent(chapters[1]!.chapter_id);
+    expect(array?.map((p) => p.text)).toEqual(['\u3000甲', '', '乙']);
+    // 段落 ID 各不相同
+    const ids = [...(text ?? []), ...(array ?? [])].map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   it('import_book_from_url 对不支持站点与抓取失败均返回降级指引，支持站点则落盘', async () => {

@@ -52,6 +52,52 @@ describe('AgentMcp worldbuilding tools', () => {
     vi.restoreAllMocks();
   });
 
+  it('新增术语、角色、记忆的工具说明取自站内工具的同一份说明', async () => {
+    const { describeTool } = await import('src/services/ai/tools/tool-localization');
+    const tool = (name: string) => agentMcpWorldbuildingTools.find((entry) => entry.name === name)!;
+    const itemProps = (name: string, key: string) =>
+      (
+        tool(name).inputSchema.properties[key] as {
+          items: { properties: Record<string, { description?: string }> };
+        }
+      ).items.properties;
+
+    // 术语：什么该建条目、每个术语只留一个译名、描述要短
+    expect(tool('upsert_terms').description).toContain(describeTool('create_term'));
+    const termProps = itemProps('upsert_terms', 'terms');
+    expect(termProps.translation?.description).toBe(
+      describeTool('create_term.parameters.properties.translation'),
+    );
+    expect(termProps.description?.description).toBe(
+      describeTool('create_term.parameters.properties.description'),
+    );
+
+    // 角色：全名为主名、不自动生成带敬语的别名、描述要短、说话口吻
+    const charProps = itemProps('upsert_characters', 'characters');
+    expect(charProps.name?.description).toBe(
+      describeTool('create_character.parameters.properties.name'),
+    );
+    expect(charProps.aliases?.description).toBe(
+      describeTool('create_character.parameters.properties.aliases'),
+    );
+    expect(charProps.speaking_style?.description).toBe(
+      describeTool('create_character.parameters.properties.speaking_style'),
+    );
+    expect(tool('upsert_characters').description).toContain('禁止放术语');
+
+    // 记忆：只记可复用的翻译决定，不记剧情
+    const memory = tool('upsert_memory');
+    expect(memory.description).toContain('严禁保存故事设定、背景、世界观、剧情及情节发展');
+    const memoryProps = memory.inputSchema.properties as Record<string, { description?: string }>;
+    expect(memoryProps.summary?.description).toBe(
+      describeTool('create_memory.parameters.properties.summary'),
+    );
+    expect(memoryProps.content?.description).toBe(
+      describeTool('create_memory.parameters.properties.content'),
+    );
+    expect(JSON.stringify(memory.inputSchema)).not.toContain('plot point');
+  });
+
   it('upsert_terms 与 list_terms 支持批量新增和按名称/ID幂等更新', async () => {
     const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
 

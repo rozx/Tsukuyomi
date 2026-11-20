@@ -99,7 +99,7 @@ export default {
       conceptVersions:
         '每个段落在每种语言下可以有多个译文版本，其中一个是当前选用的版本。每种语言最多保留 5 个版本，超出时最早的版本会被移除。',
       conceptWorld:
-        '每本书有术语表、角色设定和记忆（剧情与世界观要点），还可以有书籍级和章节级的特殊指令。翻译时必须遵守它们。',
+        '每本书有术语表、角色设定和记忆（可复用的翻译决定：称呼、术语译法、文风），还可以有书籍级和章节级的特殊指令。翻译时必须遵守它们。',
       conceptIds:
         'book_id、chapter_id 和段落 ID 都来自工具的返回值，不要自己编造。省略 book_id 时使用用户当前打开的书；用户没有打开任何书时必须显式传入。',
       overviewTitle: '先了解现状',
@@ -145,11 +145,11 @@ export default {
       wfWorldTitle: '维护术语、角色与记忆',
       wfWorld1: '开始翻译一本书之前，先用 list_terms 和 list_characters 了解已有的译法。',
       wfWorld2:
-        '遇到新的专有名词或人名时，用 upsert_terms、upsert_characters 记录下来，之后全书沿用。',
+        '遇到作品特有的新术语或新角色时，用 upsert_terms、upsert_characters 记录下来，之后全书沿用。通用词汇不建术语；人名放角色表，不放术语表；建角色前先确认它不是已有角色的别名。',
       wfWorld3:
-        '重要的剧情转折、人物关系和世界观设定用 upsert_memory 记下；需要回忆前文时用 search_memories，结果按相关度排序并带有分数，由你自己判断哪些有用。',
+        '可复用的翻译决定（称呼怎么译、某个词固定怎么译、文风偏好、固定用语）用 upsert_memory 记下，取翻译块时会按相关度自动带出；剧情、背景和世界观不要写进记忆。需要查找时用 search_memories，结果按相关度排序并带有分数。',
       wfWorld4:
-        '用户对文风或称呼有长期要求，以及称呼约定、固定用语的译法、拟声词处理这类每一章都要遵守的翻译规范，用 update_special_instructions 写成书籍级或章节级的特殊指令：特殊指令每次取翻译块都会带上，而记忆只在与当前内容相关时才出现。',
+        '用户对文风或称呼有长期要求时，用 update_special_instructions 写成书籍级或章节级的特殊指令：特殊指令每次取翻译块都会带上。',
       wfWorld5:
         '用 list_memories 可以翻页查看全部记忆。过时或重复的条目用 delete_terms、delete_characters、delete_memories 删除，删除前先向用户确认。',
       wfRenameTitle: '统一修改译名',
@@ -161,6 +161,9 @@ export default {
       wfRename4:
         '确认无误后去掉 dry_run 再调用一次。返回 has_more 为 true 时继续调用，直到为 false。默认会给每个改动的段落追加一个新版本，旧版本仍然保留。',
       wfRename5: '最后再用 count_occurrences 确认旧译名已经没有残留，并向用户汇报改了多少处。',
+      translationRulesTitle: '翻译规则',
+      translationRulesNote:
+        '下面的规则与 Tsukuyomi 内置翻译使用的是同一份，翻译、润色、校对时都要遵守。',
       rulesTitle: '规则',
       ruleWriteBack: '所有译文和设定都通过工具写回应用，不要只贴在对话里。',
       ruleConfirm:
@@ -279,6 +282,7 @@ export default {
       create_book: '在本地书库创建新书籍，支持同时写入初始章节。',
       add_chapters: '按纯文本分段或段落数组向指定卷批量新增章节。',
       update_book: '修改书籍的作者、简介、标签与别名。',
+      move_chapters: '调整章节在卷内的顺序，或把章节移到另一卷（可新建一卷）。',
       import_book_from_url: '通过内置站点能力从受支持 URL 导入或增量更新书籍及章节正文。',
       check_book_updates: '检查书籍来源站点是否有新章节，可选比对已导入章节的正文是否改动。',
       apply_book_updates:
@@ -296,8 +300,10 @@ export default {
       upsert_terms: '按名称批量新增或更新术语译法与说明。',
       list_characters: '列出书籍全部角色设定、别名与说话风格。',
       upsert_characters: '按角色名批量新增或更新角色设定与别名译法。',
-      search_memories: '按自然语言混合检索书籍剧情记忆；不带查询时列出最近的记忆。',
-      upsert_memory: '新增或更新书籍剧情记忆条目。',
+      search_memories:
+        '按自然语言混合检索书籍的记忆（可复用的翻译决定），结果按相关度排序；不带查询时列出最近的记忆。',
+      upsert_memory:
+        '新增或更新一条记忆：只记可复用的翻译决定（称呼、术语译法、文风），不记故事内容。',
       list_memories: '分页列出书籍的全部记忆，可选带上正文。',
       delete_terms: '按 ID 批量删除术语。',
       delete_characters: '按 ID 批量删除角色设定。',
