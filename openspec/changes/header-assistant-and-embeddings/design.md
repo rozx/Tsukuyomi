@@ -26,22 +26,24 @@
 
 ## Decisions
 
-### D1 去掉折叠态，而不是把折叠态改成 0 宽
+### D1 去掉折叠态：容器保留、关闭时宽度为 0
 
-- `MainLayoutDesktop` 右侧容器在 `rightPanelOpen || isImportRoute` 为假时不渲染（而非宽度 0 的空容器），中央画布占满。
+- `MainLayoutDesktop` 右侧容器保留，宽度改为 `rightPanelOpen || isImportRoute ? rightPanelWidth : 0`，沿用现有 220ms 宽度过渡（`MainLayoutDesktop.vue` 的 `.desktop-shell-aside` transition），开关时面板滑入滑出；宽度为 0 时不渲染面板内容和拖动手柄，中央画布占满。
 - `AppRightPanelDesktop` 删除 `collapsed` 分支与 `RightPanelRail`。
-- `assistantInputMessage` 的 watcher 从 `AppRightPanelDesktop` 移到始终挂载的位置（`useMainLayoutShell` 或 `MainLayout` dispatcher），否则面板关闭时组件不在，「复制到助手」会失效。这是本设计最容易漏的一点。
+- `assistantInputMessage` 的 watcher 从 `AppRightPanelDesktop` 移到 `MainLayoutDesktop`（桌面布局变体始终挂载）。否则面板关闭时组件不在，「复制到助手」会失效——这是本设计最容易漏的一点。不放进 `useMainLayoutShell`：平板和手机的助手面板本来就一直挂载（`MainLayoutTablet.vue:70` 用类名滑入、`MainLayoutMobile` 用 `v-model:visible`），由各自的 `useRightPanel` watcher 处理，放进共享壳层会重复处理。
 
-替代方案：保留容器但宽度为 0——会留下一个无内容的 flex 子项和拖动手柄的边界情况，否决。
+替代方案：关闭时 `v-if` 整个容器——会丢掉现有的宽度过渡动画，面板突然出现，否决。（评审时由「不渲染容器」改为此方案。）
 
 ### D2 header 助手按钮
 
 - `AppHeader` 在任务中心 chip 与同步 chip 之间加「月詠」按钮：图标 + 文字（窄窗口只留图标），面板打开时为激活态。点击直接调用 `useMainNavDispatch().dispatch('chat')`，与平板导航栏、手机 Tab 栏共用同一套开 / 关逻辑，不另写一份。
-- 导入路由下面板强制打开，按钮显示激活态且点击不关闭（与现在导入页不可折叠一致）。
+- 导入路由下面板强制打开，按钮显示激活态且点击不关闭（与现在导入页不可折叠一致）。`dispatch('chat')` 本身不知道导入路由，会把 `rightPanelOpen` 切成 false（离开导入页后面板变成关闭），所以按钮在导入路由下要自己拦掉点击。
+- **窄窗口**：Electron 主窗口没有 `minWidth`（`src-electron/electron-main.ts:293` 只设了默认宽度 1200），且 Electron 始终走桌面变体；而 `AppHeader` 的 chip 文字在桌面上一律显示、没有任何收起规则。加上任务中心 chip 和「月詠」按钮后，窄窗口下 header 会挤出。给 `.dsk-sysbar` 加容器查询，宽度不足时按顺序收起：先隐藏品牌副标题，再隐藏同步 chip 的倒计时，最后各 chip 只留图标（任务中心 chip 保留数字）。
 
 ### D3 任务中心后台区的数据来源
 
-- 新 composable `useEmbeddingBackground`（放在 `src/composables/task-center/`），由 `useTaskCenter` 组合使用。它吸收 `BatchEmbeddingsPanel` 的脚本逻辑：本书章节 / 记忆统计、旧向量计数、队列进度与 ETA、当前处理任务、补齐 / 重建 / 暂停 / 继续 / 打开测试查询。
+- 新 composable `useEmbeddingBackground`（放在 `src/composables/task-center/`），由 `useTaskCenter` 组合使用。它吸收 `BatchEmbeddingsPanel` 的脚本逻辑：本书章节 / 记忆统计、旧向量计数、队列进度与 ETA、当前处理任务、补齐 / 重建 / 暂停 / 继续 / 打开测试查询。其中「当前处理任务」要带上原面板的防闪烁逻辑（`BatchEmbeddingsPanel.vue:231`：队列运行期间保留最后一次看到的任务，避免批次间隙整行闪掉）。
+- 初始状态用 `EmbeddingQueue.getProgress()` 同步读取（`embedding-queue.ts:404`），之后靠事件更新，因此 chip 在任务中心从未打开过时也能判断活动状态。
 - 刷新时机沿用现有节流策略，触发条件从「抽屉可见」改为「任务中心可见（popup 打开或固定面板展开）且后台区展开」；队列进度事件始终订阅（只更新轻量计数，供 chip 判断活动状态）。
 - 当前书来自路由参数（与现在一致）；非书籍路由时不计算本书统计。
 - 测试查询对话框 `BatchEmbeddingsTestQueryDialog` 改为挂在 `MainLayout` dispatcher（跨变体共享弹窗规则），由后台区「⋯」菜单打开。
@@ -49,7 +51,9 @@
 ### D4 后台区的显示规则
 
 - 本地嵌入未开启（`isLocalEmbeddingEffectivelyEnabled` 为假）时整个区不渲染；不再显示「未开启，去设置」提示。
-- 区头：标题、待处理总数、暂停 / 继续。展开内容：
+- 区头：标题、待处理总数、暂停 / 继续。
+- **同步闸门**：云同步期间队列会被 `applySyncGate` 挂起，此时用户点「继续」也放不行（`embedding-queue.ts:382`，闸门与用户暂停分开记录，`getProgress().syncGated` 可读）。区头此时显示「同步中，稍后继续」，暂停 / 继续按钮仍反映并修改用户自己的暂停状态，但不暗示能立即恢复。原面板通过 `BatchEmbeddingsBackendStatus` 的 `syncGated` 显示过这个状态，迁移时不能丢。
+- 展开内容：
   - 队列行：正在处理的书名与类型、ETA、进度；处理的是别的书时标明。
   - 旧向量提示（版本不匹配时），带「重建」按钮——复用 `BatchEmbeddingsStaleBanner` 的判断。
   - 书籍页：本书章节、记忆两条进度与「补齐缺失」；「⋯」菜单含「重建本书章节向量」「测试查询」「嵌入设置」。
@@ -58,7 +62,7 @@
 
 ### D5 chip 活动指示
 
-- 嵌入队列有待处理或正在处理的项时，视为「后台活动」，与「其他 AI 活动」同等：没有章节任务时 chip 显示活动圆点；不计入章节任务数量和进度条。队列暂停时不算活动。
+- 嵌入队列有待处理或正在处理的项时，视为「后台活动」，与「其他 AI 活动」同等：没有章节任务时 chip 显示活动圆点；不计入章节任务数量和进度条。队列被用户暂停或被同步闸门挂起时都不算活动。
 
 ### D6 设备形态
 

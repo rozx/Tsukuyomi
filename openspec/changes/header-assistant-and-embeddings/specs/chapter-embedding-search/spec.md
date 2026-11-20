@@ -43,6 +43,13 @@ The system SHALL surface chapter and memory embedding progress and actions in th
 - **WHEN** the user pauses or resumes from the section header
 - **THEN** the embedding queue pauses or resumes, independently of the chapter task queue
 
+#### Scenario: Queue held by cloud sync
+
+- **GIVEN** a cloud sync is in progress and has gated the embedding queue
+- **WHEN** the section renders
+- **THEN** it shows that embedding is waiting for the sync to finish
+- **AND** pressing resume does not start processing until the sync gate is released, while the user's own pause state is still recorded
+
 #### Scenario: Stale vectors after a model version change
 
 - **GIVEN** stored chapter or memory vectors were produced by an older model version
