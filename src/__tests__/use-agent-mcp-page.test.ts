@@ -205,7 +205,7 @@ describe('useAgentMcpPage composable', () => {
     store.recordActivity({
       channel: 'desktop-mcp',
       toolName: 'list_books',
-      argsSummary: '{}',
+      argsSummary: '',
       status: 'success',
       durationMs: 3,
     });

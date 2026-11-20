@@ -31,11 +31,11 @@ export function isToolAllowedByPermission(
   );
 }
 
-function summarizeArgs(args: Record<string, unknown>): string {
-  const entries = Object.entries(args);
-  if (entries.length === 0) return '{}';
+/** 把一个对象的前几个字段压成一行：数组给出条数，字符串截断，嵌套对象不展开 */
+function summarizeRecord(record: Record<string, unknown>, maxEntries: number): string {
+  const entries = Object.entries(record);
   const parts: string[] = [];
-  for (const [key, value] of entries.slice(0, 4)) {
+  for (const [key, value] of entries.slice(0, maxEntries)) {
     if (Array.isArray(value)) {
       parts.push(`${key}=[${value.length}]`);
     } else if (typeof value === 'string') {
@@ -47,8 +47,27 @@ function summarizeArgs(args: Record<string, unknown>): string {
       parts.push(`${key}=${String(value)}`);
     }
   }
-  if (entries.length > 4) parts.push(`+${entries.length - 4}`);
+  if (entries.length > maxEntries) parts.push(`+${entries.length - maxEntries}`);
   return parts.join(', ');
+}
+
+/** 调用参数的一行摘要；没有参数时为空字符串，由界面显示「无参数」 */
+function summarizeArgs(args: Record<string, unknown>): string {
+  return summarizeRecord(args, 4);
+}
+
+/** 返回结果的一行摘要；没有返回值时为 undefined */
+function summarizeResult(output: unknown): string | undefined {
+  if (output === undefined || output === null) return undefined;
+  if (Array.isArray(output)) return `[${output.length}]`;
+  if (typeof output === 'object') {
+    return summarizeRecord(output as Record<string, unknown>, 6) || undefined;
+  }
+  if (typeof output !== 'string' && typeof output !== 'number' && typeof output !== 'boolean') {
+    return undefined;
+  }
+  const text = String(output).replace(/\s+/g, ' ').trim();
+  return text.length > 120 ? `${text.slice(0, 120)}…` : text || undefined;
 }
 
 function toDescriptor(spec: AgentMcpToolSpec): AgentMcpToolDescriptor {
@@ -151,14 +170,18 @@ export function createAgentMcpKernel(options: CreateAgentMcpKernelOptions): Agen
     const args = rawArgs && typeof rawArgs === 'object' ? rawArgs : {};
     const argsSummary = summarizeArgs(args);
 
-    const record = (status: AgentMcpActivityStatus, errorMessage?: string): void => {
+    const record = (
+      status: AgentMcpActivityStatus,
+      detail: { errorMessage?: string; resultSummary?: string | undefined } = {},
+    ): void => {
       options.onRecordActivity?.({
         channel: callOptions.channel,
         toolName,
         argsSummary,
         status,
         durationMs: Date.now() - startedAt,
-        ...(errorMessage ? { errorMessage } : {}),
+        ...(detail.errorMessage ? { errorMessage: detail.errorMessage } : {}),
+        ...(detail.resultSummary ? { resultSummary: detail.resultSummary } : {}),
       });
     };
 
@@ -168,7 +191,7 @@ export function createAgentMcpKernel(options: CreateAgentMcpKernelOptions): Agen
       message: string,
       details?: Record<string, unknown>,
     ): AgentMcpCallResult => {
-      record(status, message);
+      record(status, { errorMessage: message });
       return buildErrorResult(code, message, details);
     };
 
@@ -212,7 +235,7 @@ export function createAgentMcpKernel(options: CreateAgentMcpKernelOptions): Agen
       }
 
       const payload = { ok: true, result: output };
-      record('success');
+      record('success', { resultSummary: summarizeResult(output) });
 
       if (!spec.readOnlyHint && config.notifyOnWrite && options.onWriteNotify) {
         try {

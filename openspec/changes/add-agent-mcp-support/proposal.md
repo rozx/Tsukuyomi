@@ -29,6 +29,6 @@
 
 - **渲染进程服务层**：新增 `src/services/agent-mcp/`（工具内核、各领域工具处理器、上下文打包器、WebMCP 适配器、Electron IPC 桥接、外部译文来源解析）；新增 `src/boot/agent-mcp.ts` 启动钩子（注册至 `quasar.config.ts`）。
 - **Electron 主进程与 Preload**：新增 `src-electron/mcp-server.ts` 与 IPC 通道；更新 `src-electron/electron-main.ts`、`src-electron/electron-preload.ts` 及 `src/types/electron.d.ts`。
-- **状态与配置**：在 `src/models/settings.ts` 与 `src/stores/settings.ts` 中增加设备本地 `agentMcp` 配置字段（上传 Gist 时剥离、下载时保留本机值）；新增 `src/stores/agent-mcp.ts` 管理运行态状态与内存态调用活动日志。
+- **状态与配置**：在 `src/models/settings.ts` 与 `src/stores/settings.ts` 中增加设备本地 `agentMcp` 配置字段（上传 Gist 时剥离、下载时保留本机值）；新增 `src/stores/agent-mcp.ts` 管理运行态状态与调用活动日志（保存在当前标签页会话内）。
 - **UI 与路由**：新增 `src/pages/AgentMcpPage.vue`、`src/pages/agent-mcp/AgentMcp{Desktop,Tablet,Mobile}.vue`、`src/composables/agent-mcp-page/useAgentMcpPage.ts` 与共享碎片组件；更新 `src/router/routes.ts`、`src/composables/useMainNavActive.ts`、`src/composables/layout/useMainNavDispatch.ts`、`src/components/layout/AppSideMenu.vue`、`src/components/layout/TabletNavRail.vue`、`src/components/dialogs/TranslationHistoryDialog.vue`、`src/composables/book-details/useBookDetailsPage.ts`；补齐 `zh-CN` / `zh-TW` / `en-US` 三语 i18n 与帮助文档。
 - **测试**：在 `src/__tests__/` 下按 TDD 为工具内核、权限门禁、翻译打包与写回、Electron Streamable HTTP MCP 服务端、WebMCP 适配层、本地设置同步隔离与导航/页面 composable 编写 Vitest 测试。

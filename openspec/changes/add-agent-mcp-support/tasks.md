@@ -40,6 +40,8 @@
 
 - [x] 5.9 处理浏览器自带旧版 WebMCP：`webmcp-relay.ts` 探测并在本页替换为 polyfill，无法替换时返回 `legacy-native`；中继接通状态写入 store 并在页面说明原因；页面与指南补充「只开一个标签页 / 工具名后缀」说明；通过 `agent-mcp-webmcp-relay.test.ts`、`agent-mcp-runtime-relay.test.ts`、`use-agent-mcp-page.test.ts` 验证，并在带旧版原生接口的浏览器里做了端到端检查。
 
+- [x] 5.10 调用活动改进：每条记录增加返回结果摘要，没有参数时显示「无参数」；日志保存到 `sessionStorage`，刷新后保留、关闭标签页后清空；通过 `agent-mcp-kernel.test.ts` 与 `agent-mcp-store.test.ts` 验证。
+
 ## 6. 集成验证与代码质量门禁
 
 - [x] 6.1 运行完整代码质量检查与全量测试：`bun run lint && bun run type-check && bun run test:coverage && bun run quality-check`，确认零 ESLint/TypeScript/Fallow/i18n 错误且全部单元测试通过。

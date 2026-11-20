@@ -168,12 +168,15 @@ export default {
     },
     activity: {
       title: '调用活动',
-      hint: '只保存在本次会话中，最多 200 条。',
+      hint: '刷新页面后仍会保留，关闭标签页后清空；最多 200 条。',
       clear: '清空',
       empty: '还没有调用记录。Agent 开始工作后，每一次工具调用都会实时显示在这里。',
       statusSuccess: '成功',
       statusError: '失败',
       statusDenied: '拒绝',
+      argsLabel: '参数',
+      resultLabel: '结果',
+      noArgs: '无参数',
     },
     permission: {
       title: '权限',

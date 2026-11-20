@@ -189,13 +189,16 @@ export default {
     },
     activity: {
       title: 'Call activity',
-      hint: 'Kept for this session only, up to 200 entries.',
+      hint: 'Kept across page reloads and cleared when the tab is closed; up to 200 entries.',
       clear: 'Clear',
       empty:
         'No calls yet. Once the agent starts working, every tool call appears here in real time.',
       statusSuccess: 'Success',
       statusError: 'Failed',
       statusDenied: 'Denied',
+      argsLabel: 'Arguments',
+      resultLabel: 'Result',
+      noArgs: 'No arguments',
     },
     permission: {
       title: 'Permissions',

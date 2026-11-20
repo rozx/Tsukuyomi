@@ -192,7 +192,7 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
 - **[Risk] 外部 Coding Agent 与用户同时编辑同一章节导致竞态覆盖** → **Mitigation**: 写回路径全部走 `booksStore.editParagraphTranslations` → `LibraryPersistence` 事务（原文变化时以 `PARAGRAPH_SOURCE_CHANGED` 拒绝）；默认采用 `append` 新增译文版本并选中，不改写用户当前版本。但每种语言最多保留 5 个版本，Agent 对同一段反复提交不同译文会逐出最早的版本（可能包含用户手改版本）——工作流模板要求 Agent 不对同一段重复提交，帮助文档说明该上限。
 - **[Risk] 浏览器 WebMCP 标准仍在快速演进，不同浏览器/扩展 API 形态存在差异** → **Mitigation**: 将 WebMCP 适配隔离在单一文件 `webmcp-adapter.ts`，同时兼容 `document.modelContext` 与 `navigator.modelContext`、`AbortSignal` 与 `unregisterTool`；后续规范稳定时只需改这一个适配文件。
 - **[Risk] 超长章节调用 `get_translation_chunk` 或 `add_chapters` 触发 IPC/HTTP 载荷过大或超时** → **Mitigation**: `get_translation_chunk` 强制按 `chunk_size` 分块（带硬上限保护）并返回游标分批拉取；Electron HTTP 端设 10 MB 请求体上限，长耗时爬虫调用配置独立超时阈值。
-- **[Risk] 活动日志在长时间翻译任务中无限增长占内存** → **Mitigation**: `useAgentMcpStore` 中的调用活动日志采用固定容量环形上限（例如保留最近 200 条），仅存内存不落盘，支持手动清空。
+- **[Risk] 活动日志在长时间翻译任务中无限增长占内存** → **Mitigation**: `useAgentMcpStore` 中的调用活动日志采用固定容量上限（最近 200 条），支持手动清空。日志保存在 `sessionStorage`（键 `tsukuyomi-agent-mcp-activities`）：刷新页面或开发时热重载后仍在，关闭标签页或退出桌面应用才清空；不写 IndexedDB、不参与 Gist 同步。读取时逐条校验，存储不可用或内容损坏时从空开始。每条记录除参数摘要外还带返回结果的一行摘要（数组给出条数、字符串截断、嵌套对象不展开），没有参数时摘要为空并由界面显示「无参数」，避免只显示一对花括号让人误以为记录是空的。
 
 ## Migration Plan
 

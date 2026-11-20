@@ -25,7 +25,18 @@
           <code class="log-tool">{{ entry.toolName }}</code>
           <span class="log-meta">{{ entry.durationMs }}ms · {{ formatTime(entry.timestamp) }}</span>
         </div>
-        <div class="log-args">{{ entry.argsSummary }}</div>
+        <dl class="log-detail">
+          <div class="log-detail-row">
+            <dt>{{ t('agentMcp.activity.argsLabel') }}</dt>
+            <dd :class="{ 'log-detail-empty': !entry.argsSummary }">
+              {{ entry.argsSummary || t('agentMcp.activity.noArgs') }}
+            </dd>
+          </div>
+          <div v-if="entry.resultSummary" class="log-detail-row">
+            <dt>{{ t('agentMcp.activity.resultLabel') }}</dt>
+            <dd>{{ entry.resultSummary }}</dd>
+          </div>
+        </dl>
         <div v-if="entry.errorMessage" class="log-error">{{ entry.errorMessage }}</div>
       </li>
     </ul>
@@ -121,11 +132,36 @@ function formatTime(timestamp: number): string {
   color: var(--moon-50-opacity-55);
 }
 
-.log-args {
-  font-family: 'JetBrains Mono', monospace;
+.log-detail {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.log-detail-row {
+  display: flex;
+  gap: 8px;
   font-size: 11px;
-  color: var(--moon-50-opacity-65);
+  line-height: 1.5;
+}
+
+.log-detail-row dt {
+  flex-shrink: 0;
+  color: var(--moon-50-opacity-55);
+}
+
+.log-detail-row dd {
+  margin: 0;
+  min-width: 0;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--moon-50-opacity-78);
   word-break: break-all;
+}
+
+.log-detail-row dd.log-detail-empty {
+  font-family: inherit;
+  color: var(--moon-50-opacity-55);
 }
 
 .log-error {

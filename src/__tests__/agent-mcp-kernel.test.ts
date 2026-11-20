@@ -154,6 +154,57 @@ describe('AgentMcpKernel', () => {
     expect(activities[0]?.status).toBe('success');
   });
 
+  it('活动记录带有返回结果摘要；没有参数时参数摘要为空而不是一对花括号', async () => {
+    const kernel = createAgentMcpKernel({
+      tools: [
+        makeTool({
+          name: 'list_things',
+          execute: () => ({
+            books: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+            total: 3,
+            note: '一段比较长的说明文字，用来确认字符串会被截断而不是整段塞进摘要里',
+            nested: { deep: true },
+            empty: null,
+          }),
+        }),
+        makeTool({ name: 'returns_text', execute: () => 'plain text result' }),
+        makeTool({ name: 'returns_nothing', execute: () => undefined }),
+        makeTool({
+          name: 'fails',
+          execute: () => ({ __agentMcpError: true, code: 'BOOM', message: 'it broke' }) as never,
+        }),
+      ],
+      onRecordActivity: (entry) => {
+        useAgentMcpStore().recordActivity(entry);
+      },
+    });
+
+    await kernel.callTool('list_things', {}, { channel: 'desktop-mcp' });
+    const listed = useAgentMcpStore().activities[0]!;
+    // 没有参数：摘要为空，由界面显示「无参数」
+    expect(listed.argsSummary).toBe('');
+    // 结果摘要说明返回了什么：数组给出条数，字符串截断，嵌套对象不展开
+    expect(listed.resultSummary).toContain('books=[3]');
+    expect(listed.resultSummary).toContain('total=3');
+    expect(listed.resultSummary).toContain('nested={…}');
+    expect(listed.resultSummary).toContain('…');
+    expect(listed.resultSummary!.length).toBeLessThan(200);
+
+    await kernel.callTool('returns_text', { q: 'x' }, { channel: 'desktop-mcp' });
+    expect(useAgentMcpStore().activities[0]!.argsSummary).toBe('q=x');
+    expect(useAgentMcpStore().activities[0]!.resultSummary).toBe('plain text result');
+
+    await kernel.callTool('returns_nothing', {}, { channel: 'desktop-mcp' });
+    expect(useAgentMcpStore().activities[0]!.resultSummary).toBeUndefined();
+
+    // 失败的调用只有错误信息，没有结果摘要
+    await kernel.callTool('fails', {}, { channel: 'desktop-mcp' });
+    const failed = useAgentMcpStore().activities[0]!;
+    expect(failed.status).toBe('error');
+    expect(failed.errorMessage).toBe('it broke');
+    expect(failed.resultSummary).toBeUndefined();
+  });
+
   it('提供 3 个内置翻译工作流模板并支持按参数渲染', () => {
     const list = listAgentMcpPrompts();
     expect(list.map((p) => p.name)).toEqual([

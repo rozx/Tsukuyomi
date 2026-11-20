@@ -26,6 +26,8 @@ export interface AgentMcpActivityPayload {
   status: AgentMcpActivityStatus;
   durationMs: number;
   errorMessage?: string;
+  /** 成功调用返回结果的一行摘要；没有返回值时缺省 */
+  resultSummary?: string;
 }
 
 export interface RecordAgentMcpActivityInput extends AgentMcpActivityPayload {

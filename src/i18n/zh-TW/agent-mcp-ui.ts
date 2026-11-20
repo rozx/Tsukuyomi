@@ -169,12 +169,15 @@ export default {
     },
     activity: {
       title: '呼叫活動',
-      hint: '只保存在本次工作階段中，最多 200 筆。',
+      hint: '重新整理頁面後仍會保留，關閉分頁後清空；最多 200 筆。',
       clear: '清空',
       empty: '還沒有呼叫記錄。Agent 開始工作後，每一次工具呼叫都會即時顯示在這裡。',
       statusSuccess: '成功',
       statusError: '失敗',
       statusDenied: '拒絕',
+      argsLabel: '參數',
+      resultLabel: '結果',
+      noArgs: '無參數',
     },
     permission: {
       title: '權限',
