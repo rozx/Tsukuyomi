@@ -160,16 +160,9 @@ export function createElectronMcpCoordinator(
     if (!options.isTrusted(event, options.getWindow())) {
       return server.getStatus();
     }
-    const current = server.getStatus();
-    if (current.state !== 'running') {
-      server.updateAuthToken(config.authToken);
-      return current;
-    }
-    if (current.port !== config.port) {
-      return server.start(config);
-    }
-    server.updateAuthToken(config.authToken);
-    return server.getStatus();
+    // 是否需要重启由服务在轮到这次更新时决定：这里按调用那一刻的状态判断的话，
+    // 服务还在启动时会拿到过时的状态，端口变化也会被忽略
+    return server.applyConfig(config);
   };
 
   const handleGetStatus = (event: IpcMainInvokeEvent): DesktopMcpServerStatus => {

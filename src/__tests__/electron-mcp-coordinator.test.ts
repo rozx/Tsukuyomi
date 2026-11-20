@@ -149,7 +149,10 @@ describe('Electron MCP IPC Coordinator', () => {
     const stopMock = vi.fn(() =>
       Promise.resolve({ state: 'stopped' as const, port: null, error: null }),
     );
-    const updateAuthTokenMock = vi.fn();
+    const applyConfigMock = vi.fn((cfg: { port: number; authToken: string }) => {
+      void cfg;
+      return Promise.resolve(status);
+    });
     let status: DesktopMcpServerStatus = { state: 'stopped', port: null, error: null };
 
     const fakeWindow = {
@@ -170,7 +173,7 @@ describe('Electron MCP IPC Coordinator', () => {
           status = await stopMock();
           return status;
         },
-        updateAuthToken: updateAuthTokenMock,
+        applyConfig: applyConfigMock,
         getStatus: () => status,
         handleRawRequest: vi.fn(),
       }),
@@ -179,14 +182,10 @@ describe('Electron MCP IPC Coordinator', () => {
     await coordinator.handleStart({} as never, { port: 48321, authToken: 'tok-1' });
     expect(startMock).toHaveBeenCalledTimes(1);
 
-    // 同端口只轮换令牌，不重启监听
+    // 更新配置交给服务处理：是否重启由服务在轮到这次更新时按当时的状态决定
     await coordinator.handleUpdateConfig({} as never, { port: 48321, authToken: 'tok-2' });
-    expect(updateAuthTokenMock).toHaveBeenCalledWith('tok-2');
+    expect(applyConfigMock).toHaveBeenCalledWith({ port: 48321, authToken: 'tok-2' });
     expect(startMock).toHaveBeenCalledTimes(1);
-
-    // 换端口则重启监听
-    await coordinator.handleUpdateConfig({} as never, { port: 48322, authToken: 'tok-2' });
-    expect(startMock).toHaveBeenCalledTimes(2);
 
     // 停服时终止挂起请求
     coordinator.handleRendererReady({ trusted: true } as never);
@@ -244,5 +243,36 @@ describe('Electron MCP IPC Coordinator', () => {
     for (const longOpTool of DESKTOP_MCP_LONG_OPERATION_TOOLS) {
       expect(toolNames.has(longOpTool)).toBe(true);
     }
+  });
+
+  it('服务还在启动时更新配置：令牌立即换成新的，端口变化等启动完成后生效', async () => {
+    const coordinator = createElectronMcpCoordinator({
+      getWindow: () => null,
+      isTrusted: () => true,
+      version: '0.19.2',
+      defaultTimeoutMs: 2000,
+    });
+    const event = {} as never;
+    const ping = (port: number | null, token: string) =>
+      fetch(`http://127.0.0.1:${port}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+      }).then((res) => res.status);
+
+    // 启动没有等待完成就更新配置，与界面上的调用方式一致
+    const starting = coordinator.handleStart(event, { port: 0, authToken: 'old-token-111111' });
+    const updating = coordinator.handleUpdateConfig(event, {
+      port: 0,
+      authToken: 'new-token-222222',
+    });
+    const started = await starting;
+    const updated = await updating;
+    expect(started.state).toBe('running');
+    expect(updated.state).toBe('running');
+    expect(await ping(updated.port, 'old-token-111111')).toBe(401);
+    expect(await ping(updated.port, 'new-token-222222')).not.toBe(401);
+
+    await coordinator.handleStop(event);
   });
 });

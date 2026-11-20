@@ -10,7 +10,12 @@ import { useBooksStore } from 'src/stores/books';
 import { useSettingsStore } from 'src/stores/settings';
 import { mapConcurrent } from 'src/utils/map-concurrent';
 import { agentMcpError, type AgentMcpToolSpec } from '../types';
-import { describeChapters, loadChapterParagraphs, readTrimmedString } from './helpers';
+import {
+  describeChapters,
+  loadChapterParagraphs,
+  readTrimmedString,
+  refreshBookKeepingOpenChapter,
+} from './helpers';
 import { countChaptersInVolumes, createEmptyVolume, textToParagraphs } from './library-helpers';
 
 const DEFAULT_IMPORT_MAX_CHAPTERS = 20;
@@ -204,7 +209,8 @@ async function persistFetchedChapterContents(
   }
 
   if (savedCount > 0 && booksStore.getBookById(bookId)) {
-    await booksStore.refreshBookFromStorage(bookId);
+    // 用户正打开这本书的某一章时保持该章正文已加载，补齐的正文才能立刻显示在阅读区
+    await refreshBookKeepingOpenChapter(bookId);
   }
   return { savedCount, bookDeleted: !booksStore.getBookById(bookId) };
 }

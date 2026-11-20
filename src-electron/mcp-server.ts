@@ -46,7 +46,11 @@ export interface RawHttpResponse {
 export interface ElectronMcpServerInstance {
   start: (config: DesktopMcpStartConfig) => Promise<DesktopMcpServerStatus>;
   stop: () => Promise<DesktopMcpServerStatus>;
-  updateAuthToken: (token: string) => void;
+  /**
+   * 应用新的配置。令牌立即生效；端口变化排在进行中的启动、停止之后，
+   * 轮到时按当时的状态决定是否重启，返回那时的状态。
+   */
+  applyConfig: (config: DesktopMcpStartConfig) => Promise<DesktopMcpServerStatus>;
   getStatus: () => DesktopMcpServerStatus;
   handleRawRequest: (req: RawHttpRequest) => Promise<RawHttpResponse>;
 }
@@ -522,12 +526,22 @@ export function createElectronMcpServer(
     activeToken = token.trim();
   };
 
+  const applyConfig = (config: DesktopMcpStartConfig): Promise<DesktopMcpServerStatus> => {
+    // 令牌马上换掉，旧令牌立即失效；不等排在前面的启动或停止
+    updateAuthToken(config.authToken);
+    return inOrder(async () => {
+      // 服务在运行且端口变了才需要重启；没有运行时只更新令牌，下次启动用新配置
+      if (server && status.port !== config.port) return startNow(config, tokenUpdates);
+      return { ...status };
+    });
+  };
+
   const getStatus = (): DesktopMcpServerStatus => ({ ...status });
 
   return {
     start,
     stop,
-    updateAuthToken,
+    applyConfig,
     getStatus,
     handleRawRequest,
   };

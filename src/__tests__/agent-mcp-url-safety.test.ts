@@ -202,6 +202,57 @@ describe('外部工具写入与抓取的网址限制', () => {
     expect(res.errorMessage).not.toContain('create_book');
   });
 
+  it('用户正打开的章节被导入补齐正文后，书库里这一章的正文已经加载，阅读区能立刻显示', async () => {
+    const scraped = {
+      id: 'open-book',
+      title: '正在看的书',
+      webUrl: [CATALOG],
+      volumes: [
+        {
+          id: 'v',
+          title: { original: '正文', translation: { id: 'vt', translation: '', aiModelId: '' } },
+          chapters: [
+            {
+              id: 'open-ch',
+              title: {
+                original: '第一話',
+                translation: { id: 'ct', translation: '', aiModelId: '' },
+              },
+              webUrl: `${CATALOG}1/`,
+              createdAt: new Date(),
+              lastEdited: new Date(),
+            },
+          ],
+        },
+      ],
+      createdAt: new Date(),
+      lastEdited: new Date(),
+    };
+    let chapterReady = false;
+    vi.spyOn(NovelScraperFactory, 'getScraper').mockReturnValue({
+      isValidUrl: () => true,
+      catalogUrl: () => CATALOG,
+      fetchNovel: () => Promise.resolve({ success: true, novel: scraped }),
+      // 第一次导入时章节正文还抓不到，只建好目录
+      fetchChapterContent: () =>
+        chapterReady ? Promise.resolve('一行目。\n二行目。') : Promise.reject(new Error('503')),
+    } as unknown as NovelScraper);
+    await call('import_book_from_url', { url: CATALOG });
+    // 目录建好但没有正文时，第一次导入会回滚新书；这里直接放入一本只有目录的书
+    if (!useBooksStore().getBookById('open-book')) await useBooksStore().addBook(scraped);
+
+    // 用户打开了这一章（此时没有正文）
+    useContextStore().setCurrentBook('open-book');
+    useContextStore().setCurrentChapter('open-ch');
+    chapterReady = true;
+    const res = await call('import_book_from_url', { url: CATALOG });
+    expect(res.isError).toBe(false);
+
+    const chapter = useBooksStore().getBookById('open-book')!.volumes![0]!.chapters![0]!;
+    expect(chapter.content?.map((p) => p.text)).toEqual(['一行目。', '二行目。']);
+    useContextStore().setCurrentBook(null);
+  });
+
   it('get_book 统计进度时分批读取正文，不逐章单独读取', async () => {
     const created = await call('create_book', {
       title: '统计',

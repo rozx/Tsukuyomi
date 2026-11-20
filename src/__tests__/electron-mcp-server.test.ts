@@ -322,14 +322,17 @@ describe('Electron Streamable HTTP MCP Server (dual-era)', () => {
       dispatch: () => Promise.resolve({}),
     });
     servers.push(server);
-    await server.start({ port: 0, authToken: 'first-token-000000' });
+    // 用一个确定的端口：端口不变时更新配置只换令牌，不重启
+    const { port } = await server.start({ port: 0, authToken: 'first-token-000000' });
 
     // 一次带旧令牌的重启排在停止之后，还没执行时用户更换了令牌
     void server.stop();
-    const restarting = server.start({ port: 0, authToken: 'old-token-111111' });
-    server.updateAuthToken('new-token-222222');
+    const restarting = server.start({ port: port!, authToken: 'old-token-111111' });
+    const applied = server.applyConfig({ port: port!, authToken: 'new-token-222222' });
     const status = await restarting;
     expect(status.state).toBe('running');
+    // 更新排在重启之后：返回的是重启完成后的状态，而不是调用那一刻的「已停止」
+    expect(await applied).toEqual(status);
 
     const call = (token: string) =>
       fetch(`http://127.0.0.1:${status.port}/mcp`, {
@@ -339,6 +342,31 @@ describe('Electron Streamable HTTP MCP Server (dual-era)', () => {
       }).then((res) => res.status);
     expect(await call('old-token-111111')).toBe(401);
     expect(await call('new-token-222222')).not.toBe(401);
+  });
+
+  it('应用新配置：端口没变只换令牌，端口变了重启监听，服务没在运行时只记下令牌', async () => {
+    const server = createElectronMcpServer({
+      version: '0.19.2',
+      dispatch: () => Promise.resolve({}),
+    });
+    servers.push(server);
+    const stoppedStatus = await server.applyConfig({ port: 0, authToken: 'token-before-start' });
+    expect(stoppedStatus.state).toBe('stopped');
+
+    const first = await server.start({ port: 0, authToken: 'token-a-000000' });
+    const samePort = await server.applyConfig({ port: first.port!, authToken: 'token-b-111111' });
+    expect(samePort).toEqual(first);
+
+    // 换一个确定空闲的端口：先占一个再释放
+    const probe = createElectronMcpServer({
+      version: '0.19.2',
+      dispatch: () => Promise.resolve({}),
+    });
+    const free = (await probe.start({ port: 0, authToken: 'x' })).port!;
+    await probe.stop();
+    const moved = await server.applyConfig({ port: free, authToken: 'token-b-111111' });
+    expect(moved).toEqual({ state: 'running', port: free, error: null });
+    expect(moved.port).not.toBe(first.port);
   });
 
   it('校验 Bearer Token（401）、非本机 Host / 跨站 Origin（403）、Token 轮换立即失效、两代并发与端口冲突报错', async () => {
@@ -387,7 +415,7 @@ describe('Electron Streamable HTTP MCP Server (dual-era)', () => {
     expect((modernRes.json?.result as Record<string, unknown>).resultType).toBe('complete');
 
     // Token 轮换后旧令牌立即 401，新令牌 200
-    server.updateAuthToken('token-v2');
+    await server.applyConfig({ port, authToken: 'token-v2' });
     const oldTokenRes = await postJson(
       { jsonrpc: '2.0', id: 12, method: 'ping' },
       { authorization: 'Bearer token-v1' },
