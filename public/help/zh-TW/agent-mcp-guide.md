@@ -16,6 +16,7 @@
 - 瀏覽器版透過 **WebMCP 本機中繼**（`@mcp-b/webmcp-local-relay`）讓 Claude Code、Cursor 等本機 Agent 使用本頁的工具，不需要開啟瀏覽器的實驗開關。
 - 在頁面第一步開啟 WebMCP 後，應用會在本頁註冊目前權限允許的工具（含唯讀的工作流指南 `get_workflow_guide`），並連線到你電腦上執行的中繼。
 - 在 Agent 用戶端裡加入中繼：Claude Code 執行 `claude mcp add webmcp-local-relay -- npx -y @mcp-b/webmcp-local-relay@latest --widget-origin <本頁位址>`，其他用戶端把頁面給出的 JSON 合併到 MCP 設定裡。需要 Node.js 22 或更高版本。頁面給出的設定已經填好本頁位址，中繼只接受來自它的連線。
+- 開啟後，頁面第一步會顯示是否真的接上了本機中繼：已接上、本機有中繼但本頁沒有接上（多半是中繼的 `--widget-origin` 與本頁位址不一致），或還沒有找到中繼（Agent 用戶端還沒有啟動它）。
 - 讓 Agent 呼叫 `webmcp_list_sources`，能看到本頁就表示已連線。工具列表裡看不到本頁工具時，可用 `webmcp_list_tools` 列出、`webmcp_call_tool` 按名稱呼叫。
 - 使用期間請保持本頁開啟：工具來自這個分頁，關閉或重新整理後 Agent 會暫時看不到它們。
 - 只開一個 Tsukuyomi 分頁：同時開著多個時，Agent 看到的工具名會帶上分頁後綴。
@@ -42,3 +43,8 @@
 7. 統一修改譯名時，Agent 會先用 `count_occurrences` 統計舊譯名的出現次數，再用 `replace_in_translations` 預覽並批次取代。依預設的寫回方式，每個改動的段落會追加一個新版本，舊版本仍然保留。全書範圍的搜尋用 `search_paragraphs`（支援正規表示式）；啟用了本機嵌入時還可以用 `search_chapters` 依內容描述找章節。
 8. 可以直接問 Agent「Tsukuyomi 怎麼匯入小說」這類使用問題：它會用 `search_help_docs` 和 `get_help_doc` 查閱本說明文件後回答。
 9. `delete_terms`、`delete_characters`、`delete_memories` 用於清理過時或重複的項目。指南要求 Agent 在刪除前先徵得你的同意。
+10. 翻譯新章節的第一塊時，Agent 會同時拿到上一章末尾的原文與譯文，以及最近幾章的標題譯名，用來延續語氣、標點習慣和標題格式。
+11. 原文把術語或角色名寫錯字（例如同音字）時，這些項目會作為「可能相關」單獨列出並標明原文裡的寫法，由 Agent 確認後使用。站內的翻譯、潤飾、校對也有同樣的提示。
+12. 每一章都要遵守的翻譯規範（稱呼約定、固定用語、擬聲詞處理等）請寫進書籍或章節的特殊指令，而不是記憶：特殊指令每次都會帶上，記憶只在與目前內容相關時才出現。
+13. 長篇書籍不需要讀整本目錄：`get_book` 可以只取最近幾章或某一卷，`list_terms` / `list_characters` 支援分頁和精簡輸出。
+14. 搜尋類工具（全書搜尋、詞頻統計、章節段落、術語與角色列表、使用文件）預設精確比對，另有可選的模糊比對：Agent 記不清確切寫法或原文有錯字時可以開啟。批次取代譯文不支援模糊比對，避免改到不該改的文字。

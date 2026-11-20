@@ -130,6 +130,22 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
 
 工具清单集中在 `tools/all-tools.ts`，内核注册与快速上手指南共用同一份，不再各自维护。
 
+### 4.2 实际使用反馈后的修正
+
+另一个 Agent 用这套工具跑完「检查更新 → 导入 → 翻译 → 查设定 → 回顾剧情」后给出的反馈，逐条对照代码核实后做了以下修正：
+
+- **取翻译块时记忆经常为空（bug）**：记忆的关键词得分是「命中数 ÷ 传入的实体数」。站内只传本块命中的术语和角色，`get_translation_chunk` 却把全书的术语和角色都传了进去，得分被稀释到阈值以下；同时也没有带章节标题参与匹配。现改为与站内一致：只传本块命中的实体，并传入 `buildChapterSemanticQuery` 的结果。
+- **角色用姓或名单独出现时不命中（bug）**：外部工具原先用简单子串匹配，现改用站内同一套匹配器（`findUniqueTermsInText` / `findUniqueCharactersInText`，含姓名拆分与注音归一化）。
+- **近似匹配**：原文的错字、同音异写（如 `エロ性女` 之于术语 `エロ聖女`）精确匹配找不到，站内翻译同样受影响。在 `src/utils/text-matcher.ts` 增加 `findNearTermsInText` / `findNearCharactersInText`，用项目已有的 Fuse.js 做近似子串搜索（阈值 0.3，与全文搜索一致：4～6 个字容许 1 处差错，7 个字以上容许 2 处；不足 4 个字的名称不做）。排除三种情况以减少误报：原文里已有完全一致的写法、命中的那一段本身是另一个已知名称、差异落在标点或空白上。结果不并入确定命中，单独作为「可能相关」给出并标明原文写法——`get_translation_chunk` 返回 `possible_terms` / `possible_characters`（含 `text_in_source`），站内的分块翻译 / 润色 / 校对上下文与单段上下文增加对应一节。用户明确接受「多匹配些总比完全不匹配好」。
+- **新章节第一块缺少衔接**：本章没有已译前文时返回 `previous_chapter_tail`（上一章末尾的已译段落，条数沿用 `context_before`），并始终返回 `recent_chapter_titles`（之前最近 5 章已有译名的标题），用于延续语气、标点习惯与标题格式。
+- **导入后拿不到章节 ID**：`apply_book_updates` 返回 `applied_chapters`，`import_book_from_url` 返回 `fetched_chapters`（章节 ID、所在卷、标题、来源网址），长篇不必为此再读整本目录。
+- **大书输出过大**：`get_book` 支持 `volume_id`、`recent_chapters`、`include_chapters: false`，并返回每卷的章节数；`list_terms` / `list_characters` 支持 `limit` / `offset` / `compact`（不传 `limit` 时仍返回全部，保持原行为）；`get_chapter_paragraphs` 支持 `skip_empty` 与 `from_end`，并返回 `has_more` / `next_start_index`。
+- **`search_memories` 多关键词时只返回一两条**：站内搜索有意与翻译注入采用同一套取舍（绝对阈值 + 只保留紧贴最高分的条目），外部 Agent 的主动搜索不适用。`MemoryService.searchMemoriesWithScores` 增加 `ranked` 选项：只去掉完全没有命中的条目，其余按分数取前 `limit` 条；外部工具使用该选项并返回分数，站内行为不变。原实现经 `searchMemories` 固定只取 8 条，`limit` 参数实际不生效，一并修正。
+- **翻译规范类内容不应依赖记忆召回**：没有给记忆增加「置顶 / 分类」（要改数据模型并牵涉同步）。称呼约定、固定用语这类每章都要遵守的规范属于特殊指令，每次取翻译块都会带上；快速上手指南已写明这一点。
+- **连不上中继时看不出原因**：中继脚本不向页面报告连接状态，但有两处可观察——中继接受本页后脚本会在 `sessionStorage` 记下所连地址（被拒绝时删除），以及中继支持只用于发现的 WebSocket 子协议（连上即收到问候，不会把页面登记为工具来源）。`src/services/agent-mcp/relay-link.ts` 据此给出三种状态：已接上、本机有中继但本页没有接上（多半是 `--widget-origin` 与页面地址不一致）、没有找到中继；页面第一步显示状态与本页地址，开启后 2.5 秒做第一次检查、之后每 15 秒复查，只在浏览器端、开关打开且本页开着时进行。这两处是中继脚本的内部约定，升级依赖时由测试校验。
+
+- **可选的模糊搜索**：`search_paragraphs`、`count_occurrences`、`get_chapter_paragraphs`、`list_terms`、`list_characters`、`search_help_docs` 都增加 `fuzzy` 参数，默认 `false`（精确匹配，行为不变），由 Agent 按需开启。实现共用 `tools/helpers.ts` 的 `fuzzyMatchIndexes`（Fuse.js，阈值与近似匹配、全文搜索同为 0.3）。几点取舍：`search_paragraphs` 的 `fuzzy` 与 `regex` 互斥；模糊词频每个命中段落计一次（无法可靠数出同一段里的多处近似写法）；术语、角色与使用文档的模糊结果按接近程度排序；`replace_in_translations` 不提供模糊模式，避免改到不该改的文字。
+
 ### 5. 外部译文 `aiModelId` 约定与兼容渲染
 - **决策**：
   - `Translation.aiModelId` 保持现有 `string` 类型不变，不修改 IndexedDB / Gist 同步数据格式。

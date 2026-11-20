@@ -7,6 +7,7 @@ import {
   resolveTaskChunkSize,
 } from 'src/services/ai/tasks/utils/chunk-formatter';
 import {
+  buildChapterSemanticQuery,
   resolveSpecialInstructionsForTask,
   selectRelevantMemoriesForChunk,
 } from 'src/services/ai/tasks/utils/context-builder';
@@ -20,13 +21,22 @@ import { getLanguageTranslation, getNameTranslation } from 'src/services/localiz
 import { titleOriginal } from 'src/services/localization/title-edit';
 import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
+import {
+  findNearCharactersInText,
+  findNearTermsInText,
+  findUniqueCharactersInText,
+  findUniqueTermsInText,
+} from 'src/utils/text-matcher';
 import { isEmptyParagraph } from 'src/utils/text-utils';
 import { buildExternalTranslationModelId } from 'src/utils/translation-model-label';
 import { agentMcpError, type AgentMcpExecutionContext, type AgentMcpToolSpec } from '../types';
 import {
   formatCharacterSummary,
   formatTermSummary,
+  FUZZY_PROPERTY,
+  fuzzyMatchIndexes,
   loadChapterParagraphs,
+  parseLimit,
   parseNonNegativeInt,
   readTrimmedString,
   resolveBookAndChapterFromArgs,
@@ -67,25 +77,6 @@ async function persistChapterTitleTranslation(
 function isTranslatedForLanguage(paragraph: Paragraph, language: AppLocale): boolean {
   const tr = getLanguageTranslation(paragraph, language);
   return Boolean(tr && tr.translation.trim().length > 0);
-}
-
-function matchRelevantTerms(book: Novel, chunkText: string, language: AppLocale) {
-  const lowerChunk = chunkText.toLowerCase();
-  return (book.terminologies ?? [])
-    .filter((term) => term.name.trim().length > 0 && lowerChunk.includes(term.name.toLowerCase()))
-    .map((term) => formatTermSummary(term, language));
-}
-
-function matchRelevantCharacters(book: Novel, chunkText: string, language: AppLocale) {
-  const lowerChunk = chunkText.toLowerCase();
-  return (book.characterSettings ?? [])
-    .filter((char) => {
-      if (char.name.trim().length > 0 && lowerChunk.includes(char.name.toLowerCase())) return true;
-      return (char.aliases ?? []).some(
-        (alias) => alias.name.trim().length > 0 && lowerChunk.includes(alias.name.toLowerCase()),
-      );
-    })
-    .map((char) => formatCharacterSummary(char, language));
 }
 
 function countChapterProgress(paragraphs: readonly Paragraph[], language: AppLocale) {
@@ -169,6 +160,48 @@ function findNextCursor(
 function getChapterTitleTranslation(chapter: Chapter, language: AppLocale): string {
   if (typeof chapter.title !== 'object') return '';
   return getNameTranslation(chapter.title, language)?.translation ?? '';
+}
+
+/** 新章节取标题格式参考时，带上之前多少章的标题 */
+const RECENT_TITLE_COUNT = 5;
+
+/** 按卷章顺序排在指定章节之前的全部章节 */
+function chaptersBefore(book: Novel, chapterId: string): Chapter[] {
+  const all = (book.volumes ?? []).flatMap((volume) => volume.chapters ?? []);
+  const index = all.findIndex((chapter) => chapter.id === chapterId);
+  return index > 0 ? all.slice(0, index) : [];
+}
+
+function describeChapterTitle(chapter: Chapter, language: AppLocale) {
+  return {
+    chapter_id: chapter.id,
+    title_original: titleOriginal(chapter.title),
+    title_translation: getChapterTitleTranslation(chapter, language),
+  };
+}
+
+/** 之前最近几章里已有译名的标题，供新章节对齐标题格式（数字全半角、「话」的写法等） */
+function collectRecentChapterTitles(previous: readonly Chapter[], language: AppLocale) {
+  return previous
+    .map((chapter) => describeChapterTitle(chapter, language))
+    .filter((title) => title.title_translation.length > 0)
+    .slice(-RECENT_TITLE_COUNT);
+}
+
+/**
+ * 本章还没有已译前文时，取上一章末尾的已译段落作衔接，让语气、标点习惯与
+ * 章末固定用语能延续下去。上一章不存在或没有译文时返回 null。
+ */
+async function collectPreviousChapterTail(
+  previous: Chapter | undefined,
+  count: number,
+  language: AppLocale,
+) {
+  if (!previous || count <= 0) return null;
+  const paragraphs = await loadChapterParagraphs(previous);
+  const tail = collectContextBefore(paragraphs, paragraphs.length, count, language);
+  if (tail.length === 0) return null;
+  return { ...describeChapterTitle(previous, language), paragraphs: tail };
 }
 
 function resolveBatchItemId(
@@ -372,6 +405,7 @@ async function executeGetTranslationChunk(
     ));
   }
 
+  const previousChapters = chaptersBefore(book, chapter.id);
   const basePayload = {
     book_id: book.id,
     chapter_id: chapter.id,
@@ -384,6 +418,7 @@ async function executeGetTranslationChunk(
     chapter_total_count: progress.total,
     chapter_translated_count: progress.translated,
     remaining_untranslated_count: progress.remainingUntranslated,
+    recent_chapter_titles: collectRecentChapterTitles(previousChapters, targetLanguage),
   };
 
   if (candidates.length === 0) {
@@ -392,8 +427,11 @@ async function executeGetTranslationChunk(
       completed: true,
       paragraphs: [],
       context_before: [],
+      previous_chapter_tail: null,
       matched_terms: [],
       matched_characters: [],
+      possible_terms: [],
+      possible_characters: [],
       memories: [],
       next_cursor: null,
     };
@@ -409,12 +447,25 @@ async function executeGetTranslationChunk(
   const lastOriginalIdx = indexById.get(chunkParagraphs[chunkParagraphs.length - 1]!.id) ?? 0;
   const chunkText = chunkParagraphs.map((p) => p.text).join('\n');
 
+  // 与站内翻译用同一套匹配（姓名拆分、注音归一化），并且只把本块命中的术语和角色交给记忆打分：
+  // 关键词得分是「命中数 ÷ 传入的实体数」，传全书的设定会把得分稀释到阈值以下
+  const allTerms = book.terminologies ?? [];
+  const allCharacters = book.characterSettings ?? [];
+  const matchedTerms = findUniqueTermsInText(chunkText, allTerms);
+  const matchedCharacters = findUniqueCharactersInText(chunkText, allCharacters);
   const selectedMemories = await selectRelevantMemoriesForChunk(
     book.id,
     chunkText,
-    book.terminologies,
-    book.characterSettings,
-    undefined,
+    matchedTerms,
+    matchedCharacters,
+    buildChapterSemanticQuery(chapter, targetLanguage),
+    targetLanguage,
+  );
+
+  const contextBefore = collectContextBefore(
+    allParagraphs,
+    firstOriginalIdx,
+    contextBeforeCount,
     targetLanguage,
   );
 
@@ -429,14 +480,30 @@ async function executeGetTranslationChunk(
         ? { current_translation: getLanguageTranslation(p, targetLanguage)?.translation ?? null }
         : {}),
     })),
-    context_before: collectContextBefore(
-      allParagraphs,
-      firstOriginalIdx,
-      contextBeforeCount,
-      targetLanguage,
+    context_before: contextBefore,
+    previous_chapter_tail:
+      contextBefore.length === 0
+        ? await collectPreviousChapterTail(
+            previousChapters[previousChapters.length - 1],
+            contextBeforeCount,
+            targetLanguage,
+          )
+        : null,
+    matched_terms: matchedTerms.map((term) => formatTermSummary(term, targetLanguage)),
+    matched_characters: matchedCharacters.map((char) =>
+      formatCharacterSummary(char, targetLanguage),
     ),
-    matched_terms: matchRelevantTerms(book, chunkText, targetLanguage),
-    matched_characters: matchRelevantCharacters(book, chunkText, targetLanguage),
+    // 原文写法与名称接近但不完全相同（错字、异写）：不是确定命中，由 Agent 自行确认
+    possible_terms: findNearTermsInText(chunkText, allTerms, allCharacters).map((match) => ({
+      ...formatTermSummary(match.item, targetLanguage),
+      text_in_source: match.matchedText,
+    })),
+    possible_characters: findNearCharactersInText(chunkText, allCharacters, allTerms).map(
+      (match) => ({
+        ...formatCharacterSummary(match.item, targetLanguage),
+        text_in_source: match.matchedText,
+      }),
+    ),
     memories: selectedMemories.memories.map((m) => ({
       id: m.id,
       summary: m.summary,
@@ -541,7 +608,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
   {
     name: 'get_translation_chunk',
     description:
-      'Fetch the next chunk of paragraphs to translate or review, bundled with preceding translated context, matched terms, character settings, top relevant memories, special instructions, target language, and continuation cursor.',
+      'Fetch the next chunk of paragraphs to translate or review, bundled with preceding translated context (context_before; for the first chunk of a chapter, previous_chapter_tail carries the end of the previous chapter instead), recent_chapter_titles for title formatting, matched terms and characters (plus possible_terms / possible_characters: near matches where the source spelling differs slightly, e.g. a typo; text_in_source shows the spelling, confirm before applying), top relevant memories, special instructions, target language, and continuation cursor.',
     category: 'translation',
     permission: 'read_only',
     readOnlyHint: true,
@@ -573,7 +640,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
         context_before: {
           type: 'number',
           description:
-            'Number of already-translated preceding paragraphs to include for continuity (default 3, max 10).',
+            'Number of already-translated preceding paragraphs to include for continuity (default 3, max 10). Also the number of paragraphs taken from the end of the previous chapter when this chapter has none yet; 0 disables both.',
         },
         task_type: {
           type: 'string',
@@ -641,7 +708,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
   {
     name: 'get_chapter_paragraphs',
     description:
-      'Read paragraphs from a chapter by index range or keyword filter, including current translation and optional translation history.',
+      'Read paragraphs from a chapter by index range or keyword filter, including current translation and optional translation history. Use skip_empty=true to ignore blank lines and from_end=true to read the end of a chapter.',
     category: 'translation',
     permission: 'read_only',
     readOnlyHint: true,
@@ -654,7 +721,11 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
           description: 'Target book ID (optional if a book is currently open).',
         },
         chapter_id: { type: 'string', description: 'Target chapter ID.' },
-        start_index: { type: 'number', description: 'Starting paragraph index (default 0).' },
+        start_index: {
+          type: 'number',
+          description:
+            'Starting paragraph index (default 0); pass next_start_index to continue. Ignored when from_end is true.',
+        },
         limit: {
           type: 'number',
           description: 'Maximum paragraphs to return (default 50, max 200).',
@@ -662,6 +733,17 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
         keyword: {
           type: 'string',
           description: 'Optional case-insensitive substring filter on original or translation.',
+        },
+        fuzzy: FUZZY_PROPERTY,
+        skip_empty: {
+          type: 'boolean',
+          description:
+            'Skip blank paragraphs so that limit counts only paragraphs with text (default false).',
+        },
+        from_end: {
+          type: 'boolean',
+          description:
+            'Return the last `limit` paragraphs of the chapter, still in reading order (default false).',
         },
         include_history: {
           type: 'boolean',
@@ -675,52 +757,79 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
       if (!resolved.ok) return resolved.error;
       const { book, chapter, targetLanguage } = resolved;
 
-      const startIndex = parseNonNegativeInt(args.start_index, 0);
-      const limit = Math.min(200, Math.max(1, parseNonNegativeInt(args.limit, 50)));
+      const limit = parseLimit(args.limit, 50, 200);
       const keyword = readTrimmedString(args.keyword).toLowerCase();
       const includeHistory = args.include_history === true;
+      const skipEmpty = args.skip_empty === true;
+      const fromEnd = args.from_end === true;
+      const startIndex = fromEnd ? 0 : parseNonNegativeInt(args.start_index, 0);
 
       const allParagraphs = await loadChapterParagraphs(chapter);
-      const matched: Array<Record<string, unknown>> = [];
-
-      for (let i = startIndex; i < allParagraphs.length && matched.length < limit; i++) {
+      // 模糊过滤一次算出命中的段落；精确过滤逐段判断
+      const fuzzyHits =
+        keyword && args.fuzzy === true
+          ? new Set(
+              fuzzyMatchIndexes(
+                allParagraphs,
+                (p) => [p.text, getLanguageTranslation(p, targetLanguage)?.translation ?? ''],
+                keyword,
+              ),
+            )
+          : null;
+      // 先找出范围内符合条件的段落序号，再按方向截取
+      const candidates: number[] = [];
+      for (let i = startIndex; i < allParagraphs.length; i++) {
         const p = allParagraphs[i]!;
-        const selected = getLanguageTranslation(p, targetLanguage);
-        if (keyword) {
-          const hitOriginal = p.text.toLowerCase().includes(keyword);
-          const hitTranslation = (selected?.translation ?? '').toLowerCase().includes(keyword);
-          if (!hitOriginal && !hitTranslation) continue;
+        if (skipEmpty && isEmptyParagraph(p.text)) continue;
+        if (fuzzyHits) {
+          if (!fuzzyHits.has(i)) continue;
+        } else if (keyword) {
+          const translation = getLanguageTranslation(p, targetLanguage)?.translation ?? '';
+          if (
+            !p.text.toLowerCase().includes(keyword) &&
+            !translation.toLowerCase().includes(keyword)
+          )
+            continue;
         }
-        matched.push({
-          index: i,
-          id: p.id,
-          text: p.text,
-          selected_translation: selected
-            ? {
-                id: selected.id,
-                translation: selected.translation,
-                ai_model_id: selected.aiModelId,
-              }
-            : null,
-          ...(includeHistory
-            ? {
-                translations: p.translations.map((tr) => ({
-                  id: tr.id,
-                  language: tr.language ?? 'zh-CN',
-                  translation: tr.translation,
-                  ai_model_id: tr.aiModelId,
-                })),
-              }
-            : {}),
-        });
+        candidates.push(i);
       }
+      const selected = fromEnd ? candidates.slice(-limit) : candidates.slice(0, limit);
+      const hasMore = candidates.length > selected.length;
 
       return {
         book_id: book.id,
         chapter_id: chapter.id,
         target_language: targetLanguage,
         total_paragraphs: allParagraphs.length,
-        paragraphs: matched,
+        paragraphs: selected.map((i) => {
+          const p = allParagraphs[i]!;
+          const current = getLanguageTranslation(p, targetLanguage);
+          return {
+            index: i,
+            id: p.id,
+            text: p.text,
+            selected_translation: current
+              ? {
+                  id: current.id,
+                  translation: current.translation,
+                  ai_model_id: current.aiModelId,
+                }
+              : null,
+            ...(includeHistory
+              ? {
+                  translations: p.translations.map((tr) => ({
+                    id: tr.id,
+                    language: tr.language ?? 'zh-CN',
+                    translation: tr.translation,
+                    ai_model_id: tr.aiModelId,
+                  })),
+                }
+              : {}),
+          };
+        }),
+        has_more: hasMore,
+        // 向后读时给出下一次的起点；从末尾读时更早的内容用 start_index 自行指定
+        next_start_index: hasMore && !fromEnd ? selected[selected.length - 1]! + 1 : null,
       };
     },
   },

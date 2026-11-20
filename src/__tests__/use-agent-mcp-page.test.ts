@@ -20,6 +20,16 @@ vi.mock('src/composables/useToastHistory', () => ({
 vi.mock('src/utils/platform', () => ({
   isElectron: () => platformState.isElectron,
 }));
+// 中继连接状态靠探测本机端口得到，测试里由 relayProbe 控制结果
+const { relayProbe } = vi.hoisted(() => ({
+  relayProbe: {
+    status: { state: 'not-found', port: null } as { state: string; port: number | null },
+  },
+}));
+vi.mock('src/services/agent-mcp/relay-link', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  checkRelayLink: vi.fn(() => Promise.resolve({ ...relayProbe.status })),
+}));
 
 describe('useAgentMcpPage composable', () => {
   beforeEach(async () => {
@@ -513,6 +523,55 @@ describe('useAgentMcpPage composable', () => {
     expect(values()[1]).toBe(
       ctx.permissionOptions.value.find((option) => option.value === 'read_only')?.label,
     );
+    harness.unmount();
+  });
+
+  it('浏览器端开启后说明是否真的接上了本机中继，并给出原因与本页地址', async () => {
+    const { checkRelayLink } = await import('src/services/agent-mcp/relay-link');
+    vi.mocked(checkRelayLink).mockClear();
+    relayProbe.status = { state: 'not-found', port: null };
+    await useSettingsStore().updateSettings({ uiLocale: 'zh-CN' });
+    await useSettingsStore().updateAgentMcpSettings({ webMcpEnabled: false });
+    const harness = mountHarness();
+    const ctx = harness.getCtx();
+
+    // 开关没开时不检查，也不显示
+    await ctx.refreshRelayLink();
+    expect(checkRelayLink).not.toHaveBeenCalled();
+    expect(ctx.relayLinkNotice.value).toBeNull();
+
+    await useSettingsStore().updateAgentMcpSettings({ webMcpEnabled: true });
+    await ctx.refreshRelayLink();
+    expect(ctx.relayLinkNotice.value?.tone).toBe('info');
+    expect(ctx.relayLinkNotice.value?.text).toMatch(/没有找到/);
+
+    // 中继在运行但没有接受本页：提示核对允许的页面地址，并给出本页实际地址
+    relayProbe.status = { state: 'not-linked', port: 9333 };
+    await ctx.refreshRelayLink();
+    expect(ctx.relayLinkNotice.value?.tone).toBe('warn');
+    expect(ctx.relayLinkNotice.value?.text).toContain('--widget-origin');
+    expect(ctx.relayLinkNotice.value?.text).toContain(window.location.origin);
+
+    relayProbe.status = { state: 'connected', port: 9333 };
+    await ctx.refreshRelayLink();
+    expect(ctx.relayLinkNotice.value?.tone).toBe('ok');
+    expect(ctx.relayLinkNotice.value?.text).toContain('9333');
+
+    // 关掉开关后不再显示
+    await useSettingsStore().updateAgentMcpSettings({ webMcpEnabled: false });
+    await nextTick();
+    expect(ctx.relayLinkNotice.value).toBeNull();
+    harness.unmount();
+  });
+
+  it('桌面端不探测中继', async () => {
+    platformState.isElectron = true;
+    const { checkRelayLink } = await import('src/services/agent-mcp/relay-link');
+    vi.mocked(checkRelayLink).mockClear();
+    const harness = mountHarness();
+    await harness.getCtx().refreshRelayLink();
+    expect(checkRelayLink).not.toHaveBeenCalled();
+    expect(harness.getCtx().relayLinkNotice.value).toBeNull();
     harness.unmount();
   });
 

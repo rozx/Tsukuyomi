@@ -256,10 +256,14 @@ describe('AgentMcp context & library tools', () => {
       updated_existing: boolean;
       chapter_count: number;
       fetched_chapter_count: number;
+      fetched_chapters: Array<{ chapter_id: string; volume_id: string; title_original: string }>;
     };
     expect(importData.book_id).toBe('scraped-uuid-1');
     expect(importData.updated_existing).toBe(false);
     expect(importData.fetched_chapter_count).toBe(1);
+    // 直接带回抓到正文的章节 ID，不必再读整本目录
+    expect(importData.fetched_chapters.map((ch) => ch.chapter_id)).toEqual(['ch-scraped-1']);
+    expect(importData.fetched_chapters[0]?.volume_id).toBeTruthy();
 
     // 立即调用 get_translation_chunk 应能读到抓取的段落而非空章
     const chunkRes = await fullKernel.callTool(
@@ -818,6 +822,88 @@ describe('AgentMcp context & library tools', () => {
     expect(stored[0]!.id).toBe('keep-para-1');
     expect(stored[0]!.text).toBe('先に書き込まれた本文。');
     expect(stored[0]!.translations.map((t) => t.translation)).toContain('先写入的译文。');
+  });
+
+  it('get_book 可只看某一卷、只看最近几章，或只要卷的概览，长篇不必读整本目录', async () => {
+    const kernel = createAgentMcpKernel({
+      tools: [...agentMcpContextTools, ...agentMcpLibraryTools],
+    });
+    const created = await kernel.callTool(
+      'create_book',
+      {
+        title: '长篇',
+        volume_title: '第一卷',
+        chapters: [
+          { title: '1话', paragraphs: ['a'] },
+          { title: '2话', paragraphs: ['b'] },
+        ],
+      },
+      { channel: 'desktop-mcp' },
+    );
+    const bookId = (created.data as { book_id: string }).book_id;
+    await kernel.callTool(
+      'add_chapters',
+      {
+        book_id: bookId,
+        volume_title: '第二卷',
+        chapters: [
+          { title: '3话', paragraphs: ['c'] },
+          { title: '4话', paragraphs: ['d'] },
+          { title: '5话', paragraphs: ['e'] },
+        ],
+      },
+      { channel: 'desktop-mcp' },
+    );
+    type BookResult = {
+      chapter_count: number;
+      returned_chapter_count: number;
+      volumes: Array<{
+        id: string;
+        title_original: string;
+        chapter_count: number;
+        chapters?: Array<{ title_original: string; paragraph_count?: number }>;
+      }>;
+    };
+    const call = async (args: Record<string, unknown>) =>
+      (await kernel.callTool('get_book', { book_id: bookId, ...args }, { channel: 'desktop-mcp' }))
+        .data as BookResult;
+    const titles = (book: BookResult) =>
+      book.volumes.map((v) => (v.chapters ?? []).map((ch) => ch.title_original));
+
+    // 默认：全部卷章
+    const full = await call({});
+    expect(full.chapter_count).toBe(5);
+    expect(full.returned_chapter_count).toBe(5);
+    expect(titles(full)).toEqual([
+      ['1话', '2话'],
+      ['3话', '4话', '5话'],
+    ]);
+
+    // 只看最近 2 章：其余卷只给概览
+    const recent = await call({ recent_chapters: 2 });
+    expect(recent.chapter_count).toBe(5);
+    expect(recent.returned_chapter_count).toBe(2);
+    expect(titles(recent)).toEqual([[], ['4话', '5话']]);
+    expect(recent.volumes.map((v) => v.chapter_count)).toEqual([2, 3]);
+    expect(recent.volumes[1]?.chapters?.[0]?.paragraph_count).toBe(1);
+
+    // 只看某一卷
+    const second = await call({ volume_id: full.volumes[1]!.id });
+    expect(titles(second)).toEqual([[], ['3话', '4话', '5话']]);
+
+    // 只要卷的概览
+    const outline = await call({ include_chapters: false });
+    expect(outline.returned_chapter_count).toBe(0);
+    expect(outline.volumes.every((v) => v.chapters === undefined)).toBe(true);
+    expect(outline.volumes.map((v) => v.chapter_count)).toEqual([2, 3]);
+
+    const missing = await kernel.callTool(
+      'get_book',
+      { book_id: bookId, volume_id: 'nope' },
+      { channel: 'desktop-mcp' },
+    );
+    expect(missing.isError).toBe(true);
+    expect(missing.errorCode).toBe('VOLUME_NOT_FOUND');
   });
 
   it('update_book 修改作者、简介、标签与别名，只改传入的字段；什么都没传时报错', async () => {

@@ -22,6 +22,9 @@ export default {
     nextParagraphs: '后文段落',
     chapterCharacters: '本章出场角色',
     relatedTerms: '相关术语',
+    possibleTerms: '可能相关的术语（原文写法与术语名接近，可能是错字或异写；确认是同一个词再使用）',
+    possibleCharacters:
+      '可能相关的角色（原文写法与角色名接近，可能是错字或异写；确认是同一人再使用）',
     entities: '当前部分出现的术语和角色',
     fresh: '提供的记录已为最新，不必仅为检查是否最新而再次获取。',
     contextReminder: '如需参考上下文可调用工具，不能把工具返回内容作为{task}结果提交。',

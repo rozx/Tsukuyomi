@@ -67,13 +67,19 @@ export default {
       webLegacyNative:
         '瀏覽器開著舊版的 WebMCP 實驗開關，中繼無法轉發本頁的工具。請開啟 chrome://flags/#enable-webmcp-testing 把它關閉並重新啟動瀏覽器，或把瀏覽器升級到最新版本。',
       webRelayFailed: 'WebMCP 執行階段載入失敗，請重新整理頁面後重試。',
+      relayConnected: '已接上本機中繼（連接埠 {port}）。Agent 現在可以使用本頁的工具。',
+      relayNotLinked:
+        '本機有中繼在執行，但本頁還沒有接上。中繼只接受啟動參數 --widget-origin 指定的頁面位址，本頁位址是 {origin}；兩者不一致時，請重新複製下面的指南或設定，並在 Agent 用戶端裡更新後重新啟動。剛開啟的幾秒內出現這則提示屬於正常。',
+      relayNotFound:
+        '還沒有找到本機中繼。中繼由 Agent 用戶端啟動：把下面的指南交給 Agent（或手動新增 MCP）後重新啟動用戶端即可。本頁位址：{origin}',
     },
     guide: {
       overviewContext:
         'get_app_context：使用者現在在哪個頁面、開啟的書和章節（含翻譯進度）、選取的段落及其原文與譯文、在頁面上反白選取的文字（selected_text），以及介面語言。使用者說「這一段」「這一章」「這裡」時先呼叫它，不要猜。',
-      overviewLibrary: 'list_books 列出書庫；get_book 查看一本書的章節列表與各章翻譯進度。',
+      overviewLibrary:
+        'list_books 列出書庫；get_book 查看一本書的章節列表與各章翻譯進度。長篇不要讀整本目錄：用 recent_chapters 只取最近幾章，用 volume_id 只看某一卷，或把 include_chapters 設為 false 只看卷的概覽。術語、角色很多時，list_terms / list_characters 用 limit、offset 分頁並把 compact 設為 true。',
       overviewSearch:
-        '要知道一個詞在全書哪些地方出現，用 search_paragraphs（可搜原文、譯文，支援正規表示式）或 count_occurrences（統計次數與章節分布），不要逐章讀取；啟用了本機嵌入時還可以用 search_chapters 依內容描述找章節。',
+        '要知道一個詞在全書哪些地方出現，用 search_paragraphs（可搜原文、譯文，支援正規表示式）或 count_occurrences（統計次數與章節分布），不要逐章讀取；啟用了本機嵌入時還可以用 search_chapters 依內容描述找章節。這些搜尋以及 get_chapter_paragraphs、list_terms、list_characters、search_help_docs 的關鍵字預設都是精確比對；記不清確切寫法，或原文可能有錯字、異寫時，加上 fuzzy: true 做模糊比對。',
       overviewHelp:
         '使用者問 Tsukuyomi 怎麼用、某個功能在哪裡時，先用 search_help_docs 找到相關文件，再用 get_help_doc 讀完全文後回答，不要憑印象回答。',
       overviewWorkflows:
@@ -109,7 +115,7 @@ export default {
       wfTranslateTitle: '翻譯一章',
       wfTranslate1: '呼叫 get_translation_chunk，傳入 chapter_id，mode 設為 "untranslated"。',
       wfTranslate2:
-        '回傳的 paragraphs 是待翻譯段落（含 id 與原文）；context_before 是前文已有的譯文，用來銜接語氣；matched_terms、matched_characters 是這一塊命中的術語和角色，memories 是相關記憶，special_instructions 是特殊指令，target_language 是目標語言。',
+        '回傳的 paragraphs 是待翻譯段落（含 id 與原文）；context_before 是本章前文已有的譯文，用來銜接語氣；本章還沒有譯文時改看 previous_chapter_tail，它是上一章末尾的原文與譯文，標點習慣和章末固定用語要與它保持一致；recent_chapter_titles 是最近幾章的標題原文與譯名，新章節的標題格式要與它們一致。matched_terms、matched_characters 是這一塊命中的術語和角色；possible_terms、possible_characters 是原文寫法略有出入的近似命中（text_in_source 是原文裡的寫法），可能是原文的錯字或異寫，確認是同一個詞後再使用。memories 是相關記憶，special_instructions 是特殊指令，target_language 是目標語言。',
       wfTranslate3:
         '逐段翻譯：一個原文段落對應一個譯文段落，不合併、不拆分、不省略；術語和角色名使用給出的譯法。',
       wfTranslate4:
@@ -132,7 +138,8 @@ export default {
         '站點不受支援或抓取失敗時，自行取得正文，用 create_book 建書，再用 add_chapters 寫入章節。錯誤裡帶有 book_id 時表示書已存在，只需要 add_chapters，不要重新建書。',
       wfUpdateTitle: '跟進連載更新',
       wfUpdate1: '呼叫 check_book_updates 查看來源站點的新章節。',
-      wfUpdate2: '呼叫 apply_book_updates 匯入，預設只匯入新章節。',
+      wfUpdate2:
+        '呼叫 apply_book_updates 匯入，預設只匯入新章節。回傳的 applied_chapters 裡就有新章節的 chapter_id，不需要再讀整本目錄。',
       wfUpdate3:
         'include_updated 會套用已匯入章節的正文改動，並清除被改段落的譯文，使用前必須先得到使用者同意。',
       wfUpdate4: '匯入完成後按「翻譯一章」處理新章節。',
@@ -141,9 +148,9 @@ export default {
       wfWorld2:
         '遇到新的專有名詞或人名時，用 upsert_terms、upsert_characters 記錄下來，之後全書沿用。',
       wfWorld3:
-        '重要的劇情轉折、人物關係和世界觀設定用 upsert_memory 記下；需要回憶前文時用 search_memories。',
+        '重要的劇情轉折、人物關係和世界觀設定用 upsert_memory 記下；需要回憶前文時用 search_memories，結果依相關度排序並帶有分數，由你自己判斷哪些有用。',
       wfWorld4:
-        '使用者對文風或稱呼有長期要求時，用 update_special_instructions 寫成書籍層級或章節層級的特殊指令。',
+        '使用者對文風或稱呼有長期要求，以及稱呼約定、固定用語的譯法、擬聲詞處理這類每一章都要遵守的翻譯規範，用 update_special_instructions 寫成書籍層級或章節層級的特殊指令：特殊指令每次取翻譯塊都會帶上，而記憶只在與目前內容相關時才出現。',
       wfWorld5:
         '用 list_memories 可以翻頁查看全部記憶。過時或重複的項目用 delete_terms、delete_characters、delete_memories 刪除，刪除前先向使用者確認。',
       wfRenameTitle: '統一修改譯名',
@@ -172,7 +179,7 @@ export default {
         'UPDATE_SOURCE_MISSING、UPDATE_SOURCE_INVALID：這本書沒有可用的更新來源，請使用者在應用程式裡設定或修復。',
       errOther: '其他錯誤：把工具回傳的錯誤訊息原樣告訴使用者，不要猜測原因後反覆重試。',
       errRelay:
-        '看不到任何 Tsukuyomi 工具：呼叫 webmcp_list_sources 檢查頁面是否已連線；沒有連線時請使用者確認頁面開著並且 WebMCP 已開啟。',
+        '看不到任何 Tsukuyomi 工具，或 webmcp_list_sources 回傳 0 個來源：請使用者查看 Tsukuyomi「外部 Agent」頁面第一步的中繼狀態。頁面沒開或 WebMCP 沒開啟時請使用者開啟；顯示「本機有中繼在執行，但本頁還沒有接上」時，表示中繼的 --widget-origin 與頁面位址不一致，依頁面顯示的位址更新 MCP 設定後重新啟動用戶端；顯示「還沒有找到本機中繼」時，表示中繼沒有啟動或連接埠被占用。',
       title: 'Tsukuyomi 快速上手指南',
       setupTitle: '首次設定（只需做一次）',
       setupIntro:

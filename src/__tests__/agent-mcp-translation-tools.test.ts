@@ -160,6 +160,286 @@ describe('AgentMcp translation tools', () => {
     expect(getLastScoreBreakdowns(book.id)).toBeUndefined();
   });
 
+  it('术语很多的书里，取翻译块仍能带出与本块相关的记忆（不被全书术语数量稀释）', async () => {
+    // 60 个与本块无关的术语：记忆相关性只应按本块命中的术语和角色计算
+    const unrelatedTerms = Array.from({ length: 60 }, (_, i) => ({
+      id: `term-x-${i}`,
+      name: `無関係語${i}`,
+      translation: { id: `tt-x-${i}`, translation: `无关词${i}`, aiModelId: 'm1' },
+    }));
+    const base = createTestBook();
+    const book = createTestBook({
+      terminologies: [...(base.terminologies ?? []), ...unrelatedTerms],
+    });
+    await useBooksStore().addBook(book);
+    await MemoryService.createMemory(
+      book.id,
+      'アリスは月光石を大切にしている。',
+      '爱丽丝珍视月光石',
+    );
+
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const res = await kernel.callTool(
+      'get_translation_chunk',
+      { book_id: book.id, chapter_id: 'ch-1' },
+      { channel: 'desktop-mcp' },
+    );
+    expect(res.isError).toBe(false);
+    const data = res.data as {
+      matched_terms: Array<{ name: string }>;
+      memories: Array<{ summary: string }>;
+    };
+    expect(data.matched_terms.map((t) => t.name)).toEqual(['月光石']);
+    expect(data.memories.map((m) => m.summary)).toEqual(['爱丽丝珍视月光石']);
+  });
+
+  it('角色用姓或名单独出现、带敬称时也能命中（与站内翻译用同一套匹配）', async () => {
+    const base = createTestBook();
+    const book = createTestBook({
+      characterSettings: [
+        {
+          id: 'char-yu',
+          name: '月岡 優',
+          sex: 'female',
+          description: '学姐',
+          speakingStyle: '',
+          translation: { id: 'ct-yu', translation: '月冈优', aiModelId: 'm1' },
+          aliases: [
+            {
+              name: '優ちゃん',
+              translation: { id: 'at-yu', translation: '小优', aiModelId: 'm1' },
+            },
+          ],
+        },
+      ],
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            {
+              ...base.volumes![0]!.chapters![0]!,
+              content: [
+                {
+                  id: 'p0000001',
+                  text: '「優さん、おはようございます」',
+                  selectedTranslationId: '',
+                  translations: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const res = await kernel.callTool(
+      'get_translation_chunk',
+      { book_id: book.id, chapter_id: 'ch-1' },
+      { channel: 'desktop-mcp' },
+    );
+    const data = res.data as { matched_characters: Array<{ name: string; translation: string }> };
+    expect(data.matched_characters).toEqual([
+      expect.objectContaining({ name: '月岡 優', translation: '月冈优' }),
+    ]);
+  });
+
+  it('原文把术语或角色名写错字时，取翻译块把它们列为「可能相关」并给出原文写法', async () => {
+    const base = createTestBook();
+    const book = createTestBook({
+      terminologies: [
+        {
+          id: 'term-saint',
+          name: 'エロ聖女',
+          translation: { id: 'tt-s', translation: '色情圣女', aiModelId: 'm1' },
+        },
+      ],
+      characterSettings: [
+        {
+          id: 'char-alex',
+          name: 'アレクサンドラ',
+          sex: 'female',
+          description: '',
+          speakingStyle: '',
+          translation: { id: 'ct-a', translation: '亚历山德拉', aiModelId: 'm1' },
+          aliases: [],
+        },
+      ],
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            {
+              ...base.volumes![0]!.chapters![0]!,
+              content: [
+                {
+                  id: 'p0000001',
+                  text: 'エロ性女と呼ばれたアレクサンドロは笑った。',
+                  selectedTranslationId: '',
+                  translations: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const data = (
+      await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-1' },
+        { channel: 'desktop-mcp' },
+      )
+    ).data as {
+      matched_terms: unknown[];
+      matched_characters: unknown[];
+      possible_terms: Array<Record<string, unknown>>;
+      possible_characters: Array<Record<string, unknown>>;
+    };
+    // 不是确定命中，单独列出
+    expect(data.matched_terms).toEqual([]);
+    expect(data.matched_characters).toEqual([]);
+    expect(data.possible_terms).toEqual([
+      expect.objectContaining({
+        name: 'エロ聖女',
+        translation: '色情圣女',
+        text_in_source: 'エロ性女',
+      }),
+    ]);
+    expect(data.possible_characters).toEqual([
+      expect.objectContaining({
+        name: 'アレクサンドラ',
+        translation: '亚历山德拉',
+        text_in_source: 'アレクサンドロ',
+      }),
+    ]);
+  });
+
+  it('新章节的第一块带上上一章末尾的已译段落，以及最近几章的标题译法', async () => {
+    const base = createTestBook();
+    const firstChapter = base.volumes![0]!.chapters![0]!;
+    const translated = (id: string, text: string, translation: string) => ({
+      id,
+      text,
+      selectedTranslationId: `tr-${id}`,
+      translations: [
+        { id: `tr-${id}`, translation, aiModelId: 'builtin-model-1', language: 'zh-CN' as const },
+      ],
+    });
+    const book = createTestBook({
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            {
+              ...firstChapter,
+              id: 'ch-prev',
+              title: {
+                original: '６９５話　前夜',
+                translation: { id: 'cht-p', translation: '６９５话　前夜', aiModelId: '' },
+              },
+              content: [
+                translated('pa000001', '一行目。', '第一行。'),
+                translated('pa000002', '二行目。', '第二行。'),
+                { id: 'pa000003', text: '', selectedTranslationId: '', translations: [] },
+                translated('pa000004', '「また明日」', '「明天见」'),
+                // 末尾没译的段落不算衔接
+                { id: 'pa000005', text: '未訳の行。', selectedTranslationId: '', translations: [] },
+              ],
+            },
+            {
+              ...firstChapter,
+              id: 'ch-new',
+              title: {
+                original: '６９６話　朝',
+                translation: { id: 'cht-n', translation: '', aiModelId: '' },
+              },
+              content: [
+                { id: 'pb000001', text: '朝が来た。', selectedTranslationId: '', translations: [] },
+                { id: 'pb000002', text: '鳥が鳴く。', selectedTranslationId: '', translations: [] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+
+    const first = (
+      await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-new', context_before: 2 },
+        { channel: 'desktop-mcp' },
+      )
+    ).data as {
+      context_before: unknown[];
+      previous_chapter_tail: {
+        chapter_id: string;
+        title_original: string;
+        title_translation: string;
+        paragraphs: Array<{ id: string; original: string; translation: string }>;
+      } | null;
+      recent_chapter_titles: Array<{
+        chapter_id: string;
+        title_original: string;
+        title_translation: string;
+      }>;
+    };
+    expect(first.context_before).toEqual([]);
+    expect(first.previous_chapter_tail).toMatchObject({
+      chapter_id: 'ch-prev',
+      title_original: '６９５話　前夜',
+      title_translation: '６９５话　前夜',
+    });
+    // 取上一章最后 2 段已译的非空段落，按原顺序
+    expect(first.previous_chapter_tail?.paragraphs.map((p) => [p.id, p.translation])).toEqual([
+      ['pa000002', '第二行。'],
+      ['pa000004', '「明天见」'],
+    ]);
+    expect(first.recent_chapter_titles).toEqual([
+      {
+        chapter_id: 'ch-prev',
+        title_original: '６９５話　前夜',
+        title_translation: '６９５话　前夜',
+      },
+    ]);
+
+    // 本章已有已译前文时用本章的，不再带上一章
+    await kernel.callTool(
+      'submit_translations',
+      {
+        book_id: book.id,
+        chapter_id: 'ch-new',
+        paragraphs: [{ paragraph_id: 'pb000001', translated_text: '天亮了。' }],
+      },
+      { channel: 'desktop-mcp' },
+    );
+    const next = (
+      await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-new' },
+        { channel: 'desktop-mcp' },
+      )
+    ).data as { context_before: unknown[]; previous_chapter_tail: unknown };
+    expect(next.context_before).toHaveLength(1);
+    expect(next.previous_chapter_tail).toBeNull();
+
+    // 全书第一章没有上一章；context_before 为 0 时不带衔接
+    const firstOfBook = (
+      await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-prev', mode: 'all' },
+        { channel: 'desktop-mcp' },
+      )
+    ).data as { previous_chapter_tail: unknown; recent_chapter_titles: unknown[] };
+    expect(firstOfBook.previous_chapter_tail).toBeNull();
+    expect(firstOfBook.recent_chapter_titles).toEqual([]);
+  });
+
   it('submit_translations 支持默认 append、同文去重、版本上限 5 逐出、显式 overwrite（保留原 aiModelId）与无译文退化 append', async () => {
     const book = createTestBook();
     await useBooksStore().addBook(book);
@@ -375,5 +655,102 @@ describe('AgentMcp translation tools', () => {
     expect(typeof freshTitle === 'object' && freshTitle.translation.translation).toBe(
       '第一章 月光之夜',
     );
+  });
+
+  it('get_chapter_paragraphs 可跳过空段落、从章节末尾读取，并给出继续读取的位置', async () => {
+    const base = createTestBook();
+    const blank = (id: string) => ({ id, text: '', selectedTranslationId: '', translations: [] });
+    const line = (id: string, text: string) => ({
+      id,
+      text,
+      selectedTranslationId: '',
+      translations: [],
+    });
+    const book = createTestBook({
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            {
+              ...base.volumes![0]!.chapters![0]!,
+              content: [
+                line('pc000001', '一'),
+                blank('pc000002'),
+                line('pc000003', '二'),
+                blank('pc000004'),
+                line('pc000005', '三'),
+                blank('pc000006'),
+                line('pc000007', '四'),
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    type Result = {
+      total_paragraphs: number;
+      paragraphs: Array<{ index: number; text: string }>;
+      has_more: boolean;
+      next_start_index: number | null;
+    };
+    const call = async (args: Record<string, unknown>) =>
+      (
+        await kernel.callTool(
+          'get_chapter_paragraphs',
+          { book_id: book.id, chapter_id: 'ch-1', ...args },
+          { channel: 'desktop-mcp' },
+        )
+      ).data as Result;
+
+    // 默认行为不变：空段落也算一条
+    const plain = await call({ limit: 3 });
+    expect(plain.paragraphs.map((p) => p.text)).toEqual(['一', '', '二']);
+    expect(plain.has_more).toBe(true);
+    expect(plain.next_start_index).toBe(3);
+
+    // 跳过空段落：limit 只数有内容的段落
+    const skipped = await call({ limit: 3, skip_empty: true });
+    expect(skipped.paragraphs.map((p) => [p.index, p.text])).toEqual([
+      [0, '一'],
+      [2, '二'],
+      [4, '三'],
+    ]);
+    expect(skipped.has_more).toBe(true);
+    expect(skipped.next_start_index).toBe(5);
+    const rest = await call({ limit: 3, skip_empty: true, start_index: skipped.next_start_index });
+    expect(rest.paragraphs.map((p) => p.text)).toEqual(['四']);
+    expect(rest.has_more).toBe(false);
+    expect(rest.next_start_index).toBeNull();
+
+    // 从末尾读取：返回最后几段，仍按原文顺序
+    const tail = await call({ limit: 2, skip_empty: true, from_end: true });
+    expect(tail.paragraphs.map((p) => [p.index, p.text])).toEqual([
+      [4, '三'],
+      [6, '四'],
+    ]);
+    expect(tail.has_more).toBe(true);
+    expect(tail.total_paragraphs).toBe(7);
+  });
+
+  it('get_chapter_paragraphs 的关键词过滤可选模糊匹配', async () => {
+    const book = createTestBook();
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const call = async (args: Record<string, unknown>) =>
+      (
+        await kernel.callTool(
+          'get_chapter_paragraphs',
+          { book_id: book.id, chapter_id: 'ch-1', ...args },
+          { channel: 'desktop-mcp' },
+        )
+      ).data as { paragraphs: Array<{ id: string }> };
+
+    // 原文是「机の上には月光石が輝いていた。」，查询里把「輝」写成了「光」
+    expect((await call({ keyword: '月光石が光いていた' })).paragraphs).toEqual([]);
+    expect(
+      (await call({ keyword: '月光石が光いていた', fuzzy: true })).paragraphs.map((p) => p.id),
+    ).toEqual(['p0000002']);
   });
 });

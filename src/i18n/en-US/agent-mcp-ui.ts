@@ -73,14 +73,20 @@ export default {
       webLegacyNative:
         'The browser has an old WebMCP experimental flag turned on, and the relay cannot forward the tools on this page. Open chrome://flags/#enable-webmcp-testing, turn it off and restart the browser, or update the browser to the latest version.',
       webRelayFailed: 'The WebMCP runtime failed to load. Reload the page and try again.',
+      relayConnected:
+        'Connected to the local relay (port {port}). The agent can now use the tools on this page.',
+      relayNotLinked:
+        'A relay is running on this computer, but this page is not connected to it. The relay only accepts the page address given by its --widget-origin option, and this page is {origin}. If they differ, copy the guide or configuration below again, update it in your agent client and restart the client. Seeing this for a few seconds right after turning WebMCP on is normal.',
+      relayNotFound:
+        'No local relay found yet. The relay is started by your agent client: give the guide below to the agent (or add the MCP manually), then restart the client. This page: {origin}',
     },
     guide: {
       overviewContext:
         'get_app_context: which page the user is on, the open book and chapter (with translation progress), the selected paragraph with its original text and translation, any text highlighted on the page (selected_text), and the interface language. Call it first when the user says "this paragraph", "this chapter" or "here" instead of guessing.',
       overviewLibrary:
-        'list_books lists the library; get_book shows the chapter list and per-chapter translation progress of one book.',
+        'list_books lists the library; get_book shows the chapter list and per-chapter translation progress of one book. For long books do not fetch the whole table of contents: use recent_chapters for only the latest chapters, volume_id for one volume, or set include_chapters to false for a volume outline. When a book has many terms or characters, page list_terms / list_characters with limit and offset and set compact to true.',
       overviewSearch:
-        'To see where a word appears across the book, use search_paragraphs (original text or translations, regular expressions supported) or count_occurrences (counts and per-chapter distribution) instead of reading chapter by chapter. With local embedding enabled, search_chapters finds chapters from a description of their content.',
+        'To see where a word appears across the book, use search_paragraphs (original text or translations, regular expressions supported) or count_occurrences (counts and per-chapter distribution) instead of reading chapter by chapter. With local embedding enabled, search_chapters finds chapters from a description of their content. These searches, and the keyword filters of get_chapter_paragraphs, list_terms, list_characters and search_help_docs, match exactly by default; when you are unsure of the exact spelling, or the source may contain typos or variants, add fuzzy: true for fuzzy matching.',
       overviewHelp:
         'When the user asks how to use Tsukuyomi or where a feature is, find the relevant guide with search_help_docs, read it in full with get_help_doc, then answer. Do not answer from memory.',
       overviewWorkflows:
@@ -118,7 +124,7 @@ export default {
       wfTranslate1:
         'Call get_translation_chunk with the chapter_id and mode set to "untranslated".',
       wfTranslate2:
-        'In the result, paragraphs are the paragraphs to translate (with id and source text); context_before is the existing translation of the preceding text, for continuity; matched_terms and matched_characters are the terms and characters that occur in this chunk; memories are related notes; special_instructions are the special instructions; target_language is the target language.',
+        'In the result, paragraphs are the paragraphs to translate (with id and source text); context_before is the existing translation of the preceding text in this chapter, for continuity; when this chapter has none yet, use previous_chapter_tail instead: the source and translation of the end of the previous chapter, whose punctuation habits and fixed closing phrases you should follow; recent_chapter_titles are the source titles and translated titles of the latest chapters, and a new chapter title should follow their format. matched_terms and matched_characters are the terms and characters that occur in this chunk; possible_terms and possible_characters are near matches where the source spelling differs slightly (text_in_source shows it), likely a typo or variant in the source: use them only after confirming it is the same word. memories are related notes; special_instructions are the special instructions; target_language is the target language.',
       wfTranslate3:
         'Translate paragraph by paragraph: one translated paragraph per source paragraph, with no merging, splitting or omission. Use the given renderings for terms and character names.',
       wfTranslate4:
@@ -144,7 +150,7 @@ export default {
       wfUpdateTitle: 'Follow an ongoing serial',
       wfUpdate1: 'Call check_book_updates to see which chapters are new on the source site.',
       wfUpdate2:
-        'Call apply_book_updates to import them; by default only new chapters are imported.',
+        'Call apply_book_updates to import them; by default only new chapters are imported. The returned applied_chapters already contains the chapter_id of each new chapter, so there is no need to fetch the table of contents again.',
       wfUpdate3:
         "include_updated applies text changes to chapters already imported and clears the translations of revised paragraphs. Get the user's consent before using it.",
       wfUpdate4: 'After importing, handle the new chapters as described in "Translate a chapter".',
@@ -154,9 +160,9 @@ export default {
       wfWorld2:
         'Record new proper nouns and names with upsert_terms and upsert_characters and use them consistently from then on.',
       wfWorld3:
-        'Record important plot turns, relationships and world-building facts with upsert_memory; use search_memories when you need to recall earlier events.',
+        'Record important plot turns, relationships and world-building facts with upsert_memory; use search_memories when you need to recall earlier events. Results are ranked by relevance and carry a score; judge for yourself which are useful.',
       wfWorld4:
-        'When the user has a standing requirement about style or forms of address, write it as a book-level or chapter-level special instruction with update_special_instructions.',
+        'When the user has a standing requirement about style or forms of address, and for translation conventions every chapter must follow (forms of address, fixed phrases, how to render sound effects), write a book-level or chapter-level special instruction with update_special_instructions: special instructions come with every translation chunk, while memories only appear when they are relevant to the current text.',
       wfWorld5:
         'list_memories pages through every memory. Remove outdated or duplicate entries with delete_terms, delete_characters and delete_memories, and confirm with the user before deleting.',
       wfRenameTitle: 'Rename a term everywhere',
@@ -191,7 +197,7 @@ export default {
       errOther:
         'Other errors: tell the user the error message exactly as the tool returned it; do not guess the cause and retry repeatedly.',
       errRelay:
-        'No Tsukuyomi tools visible: call webmcp_list_sources to check whether the page is connected; if it is not, ask the user to confirm the page is open and WebMCP is turned on.',
+        'No Tsukuyomi tools are visible, or webmcp_list_sources returns 0 sources: ask the user to look at the relay status in step 1 of the Tsukuyomi "External Agent" page. If the page is closed or WebMCP is off, ask them to turn it on. "A relay is running on this computer, but this page is not connected to it" means the relay\'s --widget-origin does not match the page address: update the MCP configuration with the address shown on the page and restart the client. "No local relay found yet" means the relay is not running or its port is taken.',
       title: 'Tsukuyomi quick start guide',
       setupTitle: 'First-time setup (once only)',
       setupIntro:

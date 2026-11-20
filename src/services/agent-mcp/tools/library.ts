@@ -9,6 +9,7 @@ import { generateShortId } from 'src/utils/id-generator';
 import { agentMcpError, type AgentMcpToolSpec } from '../types';
 import {
   loadChapterParagraphs,
+  parseNonNegativeInt,
   readStringList,
   readTrimmedString,
   resolveBookFromArgs,
@@ -85,6 +86,28 @@ function buildChapterEntity(input: ChapterInput, now: Date): Chapter {
   };
 }
 
+/** 决定 get_book 要列出哪些章节：可限定某一卷、只取末尾若干章，或完全不列 */
+function selectListedChapters(
+  volumes: readonly Volume[],
+  options: { volumeId: string; recentCount: number; includeChapters: boolean },
+): Set<string> {
+  if (!options.includeChapters) return new Set();
+  const ids = volumes
+    .filter((vol) => !options.volumeId || vol.id === options.volumeId)
+    .flatMap((vol) => (vol.chapters ?? []).map((ch) => ch.id));
+  return new Set(options.recentCount > 0 ? ids.slice(-options.recentCount) : ids);
+}
+
+async function countChapterStats(chapter: Chapter, language: AppLocale) {
+  const nonEmpty = (await loadChapterParagraphs(chapter)).filter((p) => p.text.trim().length > 0);
+  return {
+    paragraph_count: nonEmpty.length,
+    translated_count: nonEmpty.filter((p) =>
+      Boolean(getLanguageTranslation(p, language)?.translation.trim()),
+    ).length,
+  };
+}
+
 /**
  * 从参数里取出要修改的书籍信息。只包含调用方传入的字段；
  * 空字符串或空数组表示清空该字段。
@@ -151,7 +174,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
   {
     name: 'get_book',
     description:
-      'Get full metadata, volumes, chapters, and per-chapter translation progress for a book.',
+      'Get metadata, volumes, chapters, and per-chapter translation progress for a book. For long books, narrow the chapter list with recent_chapters (only the latest N chapters), volume_id (one volume), or include_chapters=false (volume outline only) instead of fetching the whole table of contents.',
     category: 'library',
     permission: 'read_only',
     readOnlyHint: true,
@@ -163,10 +186,23 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
           type: 'string',
           description: 'Target book ID (optional if a book is currently open).',
         },
+        volume_id: {
+          type: 'string',
+          description: 'Only list the chapters of this volume (other volumes are summarized).',
+        },
+        recent_chapters: {
+          type: 'number',
+          description: 'Only list the last N chapters of the book (or of volume_id when given).',
+        },
+        include_chapters: {
+          type: 'boolean',
+          description:
+            'Set false to return only the volume outline with chapter counts (default true).',
+        },
         include_chapter_stats: {
           type: 'boolean',
           description:
-            'Whether to compute paragraph/translated counts for each chapter (default true).',
+            'Whether to compute paragraph/translated counts for each listed chapter (default true).',
         },
       },
     },
@@ -174,34 +210,30 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
       const bookRes = resolveBookFromArgs(args, ctx);
       if (!bookRes.ok) return bookRes.error;
       const { book, targetLanguage } = bookRes;
-
-      const includeStats = args.include_chapter_stats !== false;
       const volumes = book.volumes ?? [];
-      let totalChapters = 0;
+
+      const volumeId = readTrimmedString(args.volume_id);
+      if (volumeId && !volumes.some((vol) => vol.id === volumeId)) {
+        return agentMcpError('VOLUME_NOT_FOUND', `Volume not found: ${volumeId}`);
+      }
+      const listed = selectListedChapters(volumes, {
+        volumeId,
+        recentCount: parseNonNegativeInt(args.recent_chapters, 0),
+        includeChapters: args.include_chapters !== false,
+      });
+      const includeStats = args.include_chapter_stats !== false;
 
       const formattedVolumes = [];
       for (const vol of volumes) {
-        const chapters = vol.chapters ?? [];
-        totalChapters += chapters.length;
         const formattedChapters = [];
-        for (const ch of chapters) {
-          let paragraphCount: number | undefined;
-          let translatedCount: number | undefined;
-          if (includeStats) {
-            const content = await loadChapterParagraphs(ch);
-            const nonEmpty = content.filter((p) => p.text.trim().length > 0);
-            paragraphCount = nonEmpty.length;
-            translatedCount = nonEmpty.filter((p) =>
-              Boolean(getLanguageTranslation(p, targetLanguage)?.translation.trim()),
-            ).length;
-          }
+        for (const ch of vol.chapters ?? []) {
+          if (!listed.has(ch.id)) continue;
           const chTitle = formatTitle(ch.title, targetLanguage);
           formattedChapters.push({
             id: ch.id,
             title_original: chTitle.original,
             title_translation: chTitle.translation,
-            ...(paragraphCount !== undefined ? { paragraph_count: paragraphCount } : {}),
-            ...(translatedCount !== undefined ? { translated_count: translatedCount } : {}),
+            ...(includeStats ? await countChapterStats(ch, targetLanguage) : {}),
             ...(ch.webUrl ? { web_url: ch.webUrl } : {}),
           });
         }
@@ -210,7 +242,9 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
           id: vol.id,
           title_original: volTitle.original,
           title_translation: volTitle.translation,
-          chapters: formattedChapters,
+          chapter_count: vol.chapters?.length ?? 0,
+          // 没有列出章节的卷只给概览，不带空的 chapters 数组
+          ...(args.include_chapters !== false ? { chapters: formattedChapters } : {}),
         });
       }
 
@@ -225,7 +259,8 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
         enable_original_text_validation: Boolean(book.enableOriginalTextValidation),
         translation_chunk_size: book.translationChunkSize ?? null,
         volume_count: formattedVolumes.length,
-        chapter_count: totalChapters,
+        chapter_count: countChaptersInVolumes(volumes),
+        returned_chapter_count: listed.size,
         volumes: formattedVolumes,
       };
     },

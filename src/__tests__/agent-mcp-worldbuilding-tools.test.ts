@@ -4,6 +4,7 @@ import type { Novel } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 import { useContextStore } from 'src/stores/context';
 import { useSettingsStore } from 'src/stores/settings';
+import { MemoryService } from 'src/services/memory-service';
 import { createAgentMcpKernel } from 'src/services/agent-mcp/kernel';
 import { agentMcpWorldbuildingTools } from 'src/services/agent-mcp/tools/worldbuilding';
 
@@ -195,6 +196,48 @@ describe('AgentMcp worldbuilding tools', () => {
     expect(memories.some((m) => m.id === memId)).toBe(true);
   });
 
+  it('search_memories 按相关度排序返回并带上分数，不套用翻译注入的严格阈值', async () => {
+    const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
+    const entries: Array<[string, string]> = [
+      ['魔王与地球', '第16卷：魔王开始侵攻地球。'],
+      ['女神的委托', '女神委托勇者前往地球。'],
+      ['奶奶登场', '勇者的奶奶在第16卷登场。'],
+      ['无关条目', '关于料理比赛的记录。'],
+    ];
+    for (const [summary, content] of entries) {
+      await kernel.callTool(
+        'upsert_memory',
+        { book_id: 'book-wb-1', summary, content },
+        { channel: 'desktop-mcp' },
+      );
+    }
+    const searchSpy = vi.spyOn(MemoryService, 'searchMemoriesWithScores');
+
+    const query = '第16卷 魔王 地球 女神 勇者 奶奶';
+    const res = await kernel.callTool(
+      'search_memories',
+      { book_id: 'book-wb-1', query, limit: 10 },
+      { channel: 'desktop-mcp' },
+    );
+    expect(res.isError).toBe(false);
+    // 外部 Agent 的主动搜索用「排序」方式，条数由 limit 决定
+    expect(searchSpy).toHaveBeenCalledWith('book-wb-1', query, 10, 'zh-CN', { ranked: true });
+    const memories = (res.data as { memories: Array<{ summary: string; score: number }> }).memories;
+    expect(memories.map((m) => m.summary).sort()).toEqual(
+      ['奶奶登场', '女神的委托', '魔王与地球'].sort(),
+    );
+    const scores = memories.map((m) => m.score);
+    expect(scores.every((score) => typeof score === 'number')).toBe(true);
+    expect([...scores].sort((a, b) => b - a)).toEqual(scores);
+
+    const limited = await kernel.callTool(
+      'search_memories',
+      { book_id: 'book-wb-1', query, limit: 2 },
+      { channel: 'desktop-mcp' },
+    );
+    expect((limited.data as { memories: unknown[] }).memories).toHaveLength(2);
+  });
+
   it('get_special_instructions 与 update_special_instructions 支持书级与章级读写', async () => {
     const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
 
@@ -233,6 +276,176 @@ describe('AgentMcp worldbuilding tools', () => {
     expect(data.book.translation_instructions).toBe('全书保持轻小说口语风格');
     expect(data.book.polish_instructions).toBe('润色时减少被动语态');
     expect(data.chapter.translation_instructions).toBe('本章战斗节奏紧凑');
+  });
+
+  it('list_terms 与 list_characters 支持分页和精简输出，设定很多的书不会一次塞满上下文', async () => {
+    const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
+    await kernel.callTool(
+      'upsert_terms',
+      {
+        book_id: 'book-wb-1',
+        terms: [1, 2, 3, 4, 5].map((n) => ({
+          name: `用語${n}`,
+          translation: `术语${n}`,
+          description: `很长的说明${n}`,
+        })),
+      },
+      { channel: 'desktop-mcp' },
+    );
+    type TermPage = {
+      total: number;
+      has_more: boolean;
+      next_offset: number | null;
+      terms: Array<Record<string, unknown>>;
+    };
+    const listTerms = async (args: Record<string, unknown>) =>
+      (
+        await kernel.callTool(
+          'list_terms',
+          { book_id: 'book-wb-1', ...args },
+          { channel: 'desktop-mcp' },
+        )
+      ).data as TermPage;
+
+    // 默认仍返回全部，带完整说明
+    const all = await listTerms({});
+    expect(all.total).toBe(5);
+    expect(all.terms).toHaveLength(5);
+    expect(all.has_more).toBe(false);
+    expect(String(all.terms[0]?.description)).toContain('很长的说明');
+
+    const page = await listTerms({ limit: 2, offset: 2, compact: true });
+    expect(page.total).toBe(5);
+    // 翻页顺序与不分页时一致
+    expect(page.terms.map((t) => t.name)).toEqual(all.terms.slice(2, 4).map((t) => t.name));
+    expect(page.has_more).toBe(true);
+    expect(page.next_offset).toBe(4);
+    // 精简输出只有 ID、名称与译法
+    expect(Object.keys(page.terms[0]!).sort()).toEqual(['id', 'name', 'translation']);
+
+    // 关键词过滤后的总数与分页都按过滤结果算
+    const filtered = await listTerms({ keyword: '用語5', limit: 10 });
+    expect(filtered.total).toBe(1);
+    expect(filtered.has_more).toBe(false);
+
+    await kernel.callTool(
+      'upsert_characters',
+      {
+        book_id: 'book-wb-1',
+        characters: [
+          {
+            name: 'レオン',
+            translation: '莱昂',
+            sex: 'male',
+            description: '很长的角色说明',
+            speaking_style: '粗鲁',
+            aliases: [{ name: 'レオ', translation: '莱奥' }],
+          },
+          { name: 'ミナ', translation: '米娜' },
+        ],
+      },
+      { channel: 'desktop-mcp' },
+    );
+    const chars = (
+      await kernel.callTool(
+        'list_characters',
+        { book_id: 'book-wb-1', limit: 1, compact: true },
+        { channel: 'desktop-mcp' },
+      )
+    ).data as {
+      total: number;
+      has_more: boolean;
+      characters: Array<Record<string, unknown>>;
+    };
+    expect(chars.total).toBe(2);
+    expect(chars.has_more).toBe(true);
+    // 精简输出保留别名（翻译时要靠它认人），去掉说明与说话风格
+    expect(Object.keys(chars.characters[0]!).sort()).toEqual([
+      'aliases',
+      'id',
+      'name',
+      'translation',
+    ]);
+    const leon = (
+      await kernel.callTool(
+        'list_characters',
+        { book_id: 'book-wb-1', keyword: 'レオン', compact: true },
+        { channel: 'desktop-mcp' },
+      )
+    ).data as { characters: Array<Record<string, unknown>> };
+    expect(leon.characters[0]).toMatchObject({
+      name: 'レオン',
+      translation: '莱昂',
+      aliases: [{ name: 'レオ', translation: '莱奥' }],
+    });
+  });
+
+  it('list_terms 与 list_characters 的关键词过滤可选模糊匹配，最接近的排在前面', async () => {
+    const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
+    await kernel.callTool(
+      'upsert_terms',
+      {
+        book_id: 'book-wb-1',
+        terms: [
+          { name: 'エロ聖女', translation: '色情圣女' },
+          { name: '聖銀騎士団', translation: '圣银骑士团' },
+          { name: '魔力炉', translation: '魔力炉' },
+        ],
+      },
+      { channel: 'desktop-mcp' },
+    );
+    const listTerms = async (args: Record<string, unknown>) =>
+      (
+        await kernel.callTool(
+          'list_terms',
+          { book_id: 'book-wb-1', ...args },
+          { channel: 'desktop-mcp' },
+        )
+      ).data as { total: number; terms: Array<{ name: string }> };
+
+    // 默认精确：写错一个字就找不到
+    expect((await listTerms({ keyword: 'エロ性女' })).total).toBe(0);
+    // 模糊：能找到，且不会把无关的条目带出来
+    const fuzzy = await listTerms({ keyword: 'エロ性女', fuzzy: true });
+    expect(fuzzy.terms.map((t) => t.name)).toEqual(['エロ聖女']);
+    // 模糊匹配也看译名
+    expect((await listTerms({ keyword: '圣银骑土团', fuzzy: true })).terms[0]?.name).toBe(
+      '聖銀騎士団',
+    );
+    // 没有关键词时 fuzzy 不起作用，照常列出全部
+    expect((await listTerms({ fuzzy: true })).total).toBe(3);
+
+    await kernel.callTool(
+      'upsert_characters',
+      {
+        book_id: 'book-wb-1',
+        characters: [
+          {
+            name: 'アレクサンドラ',
+            translation: '亚历山德拉',
+            aliases: [{ name: 'サンドラ姫殿下', translation: '桑德拉公主殿下' }],
+          },
+          { name: 'ミナ', translation: '米娜' },
+        ],
+      },
+      { channel: 'desktop-mcp' },
+    );
+    const listChars = async (args: Record<string, unknown>) =>
+      (
+        await kernel.callTool(
+          'list_characters',
+          { book_id: 'book-wb-1', ...args },
+          { channel: 'desktop-mcp' },
+        )
+      ).data as { total: number; characters: Array<{ name: string }> };
+    expect((await listChars({ keyword: 'アレクサンドロ' })).total).toBe(0);
+    expect(
+      (await listChars({ keyword: 'アレクサンドロ', fuzzy: true })).characters.map((c) => c.name),
+    ).toEqual(['アレクサンドラ']);
+    // 别名同样参与模糊匹配
+    expect(
+      (await listChars({ keyword: 'サンドラ妃殿下', fuzzy: true })).characters.map((c) => c.name),
+    ).toEqual(['アレクサンドラ']);
   });
 
   it('delete_terms 与 delete_characters 按 ID 批量删除，找不到的逐项报告', async () => {

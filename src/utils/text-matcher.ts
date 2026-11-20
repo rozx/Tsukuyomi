@@ -1,3 +1,4 @@
+import Fuse from 'fuse.js';
 import type { Terminology, CharacterSetting } from 'src/models/novel';
 import { getCharacterNameVariants } from './novel-utils';
 
@@ -768,4 +769,140 @@ export function findUniqueCharactersInText(
   });
 
   return uniqueCharacters;
+}
+
+/** 近似匹配的结果：原文里有一处与名称非常接近但不完全相同的写法 */
+export interface NearNameMatch<T> {
+  item: T;
+  /** 被近似匹配到的名称（术语名、角色全名或别名） */
+  name: string;
+  /** 原文里的实际写法（多字、少字时是大致位置的片段） */
+  matchedText: string;
+}
+
+/** 名称至少这么长才做近似匹配：更短的名称差一个字就是另一个词，误报太多 */
+const NEAR_MATCH_MIN_LENGTH = 4;
+/**
+ * 模糊匹配的阈值。Fuse 的得分约等于「差错数 ÷ 查询长度」，0.3 与全文搜索
+ * （full-text-index-service）一致：4～6 个字容许 1 处差错，7 个字以上容许 2 处，
+ * 越长容错越多；不足 4 个字时实际上要求完全一致。
+ */
+export const FUZZY_MATCH_THRESHOLD = 0.3;
+const NEAR_MATCH_WORD_CHAR = /[\p{L}\p{N}]/u;
+const NEAR_MATCH_NAME_SEPARATORS = /[\s\u3000・･]+/g;
+
+function stripNameSeparators(name: string): string {
+  return name.replace(NEAR_MATCH_NAME_SEPARATORS, '');
+}
+
+/**
+ * 根据 Fuse 给出的命中区间，取出原文里对应名称的那一段。
+ * Fuse 只标出字符相同的区间：用第一段在名称里的位置反推这一段的起点，再取与名称等长的片段。
+ */
+function locateNearText(
+  text: string,
+  name: string,
+  indices: ReadonlyArray<readonly [number, number]>,
+): string | null {
+  const first = indices[0];
+  if (!first) return null;
+  const piece = text.slice(first[0], first[1] + 1);
+  const start = Math.max(0, first[0] - Math.max(0, name.indexOf(piece)));
+  return text.slice(start, start + name.length) || null;
+}
+
+/** 与名称等长的片段里，如果不同的那个位置是标点或空白，就不是「写错了字」 */
+function differsOnlyInWordChars(candidate: string, name: string): boolean {
+  if (candidate.length !== name.length) return true;
+  for (let i = 0; i < name.length; i++) {
+    if (candidate[i] !== name[i] && !NEAR_MATCH_WORD_CHAR.test(candidate[i]!)) return false;
+  }
+  return true;
+}
+
+function collectKnownNames(
+  terms: readonly Terminology[],
+  characters: readonly CharacterSetting[],
+): Set<string> {
+  const names = new Set<string>();
+  const add = (name: string | undefined): void => {
+    const stripped = stripNameSeparators(name ?? '');
+    if (stripped) names.add(stripped);
+  };
+  for (const term of terms) add(term.name);
+  for (const character of characters) {
+    add(character.name);
+    // 姓、名单独出现也是已知写法
+    for (const part of character.name.split(NEAR_MATCH_NAME_SEPARATORS)) add(part);
+    for (const alias of character.aliases ?? []) add(alias.name);
+  }
+  return names;
+}
+
+function findNearMatches<T>(
+  text: string,
+  entries: ReadonlyArray<{ item: T; names: readonly string[] }>,
+  knownNames: ReadonlySet<string>,
+): NearNameMatch<T>[] {
+  if (!text || entries.length === 0) return [];
+  // 把整段文本当作唯一的文档，逐个名称做近似子串搜索
+  const fuse = new Fuse([text], {
+    includeScore: true,
+    includeMatches: true,
+    ignoreLocation: true,
+    threshold: FUZZY_MATCH_THRESHOLD,
+  });
+  const matches: NearNameMatch<T>[] = [];
+  for (const { item, names } of entries) {
+    const candidates = names.map(stripNameSeparators).filter((name) => name.length > 0);
+    // 任一写法已经原样出现：精确匹配会处理，这里不重复报告
+    if (candidates.some((name) => text.includes(name))) continue;
+    for (const name of candidates) {
+      if (Array.from(name).length < NEAR_MATCH_MIN_LENGTH) continue;
+      const hit = fuse.search(name, { limit: 1 })[0];
+      const matchedText = hit && locateNearText(text, name, hit.matches?.[0]?.indices ?? []);
+      if (!matchedText) continue;
+      // 那一段本身是另一个已知名称（是另一个词，不是错字），或差在标点、空白上：不算
+      if (knownNames.has(matchedText) || !differsOnlyInWordChars(matchedText, name)) continue;
+      matches.push({ item, name, matchedText });
+      break;
+    }
+  }
+  return matches;
+}
+
+/**
+ * 找出原文里「写法与术语名非常接近」的术语：原文的错字、同音异写（如 聖→性）会让
+ * 精确匹配漏掉本该用上的术语。结果只是「可能相关」，由使用方自行判断。
+ * @param characters 同一本书的角色，用来排除「那一处其实是某个角色名」的情况
+ */
+export function findNearTermsInText(
+  text: string,
+  terms: readonly Terminology[],
+  characters: readonly CharacterSetting[] = [],
+): NearNameMatch<Terminology>[] {
+  return findNearMatches(
+    text,
+    terms.map((term) => ({ item: term, names: [term.name] })),
+    collectKnownNames(terms, characters),
+  );
+}
+
+/**
+ * 找出原文里「写法与角色全名或别名非常接近」的角色。姓、名单独出现的情况由精确匹配负责。
+ * @param terms 同一本书的术语，用来排除「那一处其实是某个术语」的情况
+ */
+export function findNearCharactersInText(
+  text: string,
+  characters: readonly CharacterSetting[],
+  terms: readonly Terminology[] = [],
+): NearNameMatch<CharacterSetting>[] {
+  return findNearMatches(
+    text,
+    characters.map((character) => ({
+      item: character,
+      names: [character.name, ...(character.aliases ?? []).map((alias) => alias.name)],
+    })),
+    collectKnownNames(terms, characters),
+  );
 }

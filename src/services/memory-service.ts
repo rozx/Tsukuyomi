@@ -706,12 +706,20 @@ export class MemoryService {
     }
   }
 
-  /** 搜索 Memory，并返回与生产注入一致的完整分数。 */
+  /**
+   * 搜索 Memory，并返回与生产注入一致的完整分数。
+   *
+   * 默认的取舍与翻译注入相同（绝对阈值 + 只保留紧贴最高分的条目）。
+   * `ranked` 用于调用方自己判断相关性的主动搜索：只去掉完全没有命中的条目，
+   * 其余按分数从高到低取前 limit 条——多关键词查询时每条记忆只命中其中几个词，
+   * 分数被拉开，默认方式会只剩最高分的一两条。
+   */
   static async searchMemoriesWithScores(
     bookId: string,
     query: string,
     limit = 8,
     language?: AppLocale,
+    options: { ranked?: boolean } = {},
   ): Promise<ScoredMemory[]> {
     if (!bookId) {
       throw new LocalizedError('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
@@ -791,7 +799,12 @@ export class MemoryService {
       const absoluteFiltered = scored.filter((s) => s.breakdown.total >= minScore);
       // 相对排名收缩:针对语义余弦噪声地板高的场景,把候选从"全员高分"压成
       // "top 附近的少数突出项",避免工具向 AI 返回一大堆中庸匹配。
-      const filtered = filterByRelativeRanking(absoluteFiltered, Math.max(1, limit));
+      const filtered = options.ranked
+        ? scored
+            .filter((s) => s.breakdown.keyword > 0 || s.breakdown.semantic > 0)
+            .sort((a, b) => b.breakdown.total - a.breakdown.total)
+            .slice(0, Math.max(1, limit))
+        : filterByRelativeRanking(absoluteFiltered, Math.max(1, limit));
 
       const resultIds = filtered.map((s) => s.memory.id);
       if (resultIds.length > 0) {

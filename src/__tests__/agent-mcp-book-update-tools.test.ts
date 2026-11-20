@@ -232,6 +232,53 @@ describe('AgentMcp book update tools', () => {
     });
   });
 
+  it('apply_book_updates 返回导入的章节 ID、所在卷与标题，不需要再读整本书的目录', async () => {
+    const { session } = fakeSession(changeset({ new: [NEW_1, NEW_2] }));
+    // 模拟真实导入：应用更新后书里多出带来源网址的章节
+    session.apply.mockImplementation(async (selection: { urls: string[] }) => {
+      await kernel.callTool(
+        'add_chapters',
+        {
+          book_id: bookId,
+          chapters: [
+            { title: NEW_1.title, paragraphs: ['一'], web_url: NEW_1.url },
+            { title: NEW_2.title, paragraphs: ['二'], web_url: NEW_2.url },
+          ],
+        },
+        { channel: 'desktop-mcp' },
+      );
+      return {
+        bookId,
+        revision: 2,
+        status: 'success' as const,
+        appliedUrls: [...selection.urls],
+        failed: [],
+      };
+    });
+
+    const res = await kernel.callTool(
+      'apply_book_updates',
+      { book_id: bookId },
+      { channel: 'desktop-mcp' },
+    );
+    expect(res.isError).toBe(false);
+    const volume = useBooksStore().getBookById(bookId)!.volumes![0]!;
+    expect((res.data as { applied_chapters: unknown[] }).applied_chapters).toEqual([
+      {
+        chapter_id: volume.chapters![0]!.id,
+        volume_id: volume.id,
+        title_original: NEW_1.title,
+        url: NEW_1.url,
+      },
+      {
+        chapter_id: volume.chapters![1]!.id,
+        volume_id: volume.id,
+        title_original: NEW_2.title,
+        url: NEW_2.url,
+      },
+    ]);
+  });
+
   it('apply_book_updates 可用 urls 限定范围；含未知网址时拒绝；没有可导入内容时不调用应用', async () => {
     const { session } = fakeSession(changeset({ new: [NEW_1, NEW_2] }));
 

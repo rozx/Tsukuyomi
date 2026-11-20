@@ -1,4 +1,5 @@
 import type { AppLocale } from 'src/models/locale';
+import type { Memory } from 'src/models/memory';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { MemoryService } from 'src/services/memory-service';
 import { TerminologyService } from 'src/services/terminology-service';
@@ -9,8 +10,10 @@ import {
   findChapterInBook,
   formatCharacterSummary,
   formatTermSummary,
+  FUZZY_PROPERTY,
+  fuzzyMatchIndexes,
+  paginate,
   parseLimit,
-  parseNonNegativeInt,
   readOptionalTrimmedString,
   readStringList,
   readTrimmedString,
@@ -275,31 +278,66 @@ function matchesKeyword(keyword: string, texts: readonly string[]): boolean {
   return texts.some((value) => value.toLowerCase().includes(keyword));
 }
 
-function executeListEntity<T>(
+/** 设定很多的书一次列出全部会很大：支持分页，精简输出只保留翻译时认名字需要的字段 */
+const LIST_PAGING_PROPERTIES = {
+  fuzzy: FUZZY_PROPERTY,
+  limit: {
+    type: 'number',
+    description: 'Maximum entries to return (default: all, max 500).',
+  },
+  offset: {
+    type: 'number',
+    description: 'Number of entries to skip; pass next_offset from the previous call.',
+  },
+  compact: {
+    type: 'boolean',
+    description:
+      'Return only id, name, translation (and aliases for characters), without descriptions. Use for large books.',
+  },
+};
+
+function executeListEntity<T extends object>(
   args: Record<string, unknown>,
   ctx: AgentMcpExecutionContext,
   resultKey: 'terms' | 'characters',
-  selectItems: (
+  compactKeys: ReadonlyArray<keyof T>,
+  listItems: (
     book: NonNullable<ReturnType<ReturnType<typeof useBooksStore>['getBookById']>>,
     language: AppLocale,
-    keyword: string,
   ) => T[],
+  /** 每个条目参与关键词匹配的文字 */
+  searchTexts: (item: T) => string[],
 ) {
   const resolved = resolveBookFromArgs(args, ctx);
   if (!resolved.ok) return resolved.error;
   const { book, targetLanguage } = resolved;
-  const keyword = readTrimmedString(args.keyword).toLowerCase();
+  const keyword = readTrimmedString(args.keyword);
+  const all = listItems(book, targetLanguage);
+  let matched = all;
+  if (keyword && args.fuzzy === true) {
+    // 模糊匹配按接近程度排序，最像的在前
+    matched = fuzzyMatchIndexes(all, searchTexts, keyword).map((index) => all[index]!);
+  } else if (keyword) {
+    matched = all.filter((item) => matchesKeyword(keyword.toLowerCase(), searchTexts(item)));
+  }
+  const { page, ...paging } = paginate(matched, args, { defaultLimit: null, maxLimit: 500 });
+  const entries =
+    args.compact === true
+      ? page.map((item) => Object.fromEntries(compactKeys.map((key) => [key, item[key]])))
+      : page;
   return {
     book_id: book.id,
     target_language: targetLanguage,
-    [resultKey]: selectItems(book, targetLanguage, keyword),
+    ...paging,
+    [resultKey]: entries,
   };
 }
 
 export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   {
     name: 'list_terms',
-    description: 'List or keyword-filter terminology entries for a book.',
+    description:
+      'List or keyword-filter terminology entries for a book. For books with many entries, use limit/offset and compact=true.',
     category: 'worldbuilding',
     permission: 'read_only',
     readOnlyHint: true,
@@ -312,15 +350,18 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
           type: 'string',
           description: 'Optional case-insensitive filter on name/translation/description.',
         },
+        ...LIST_PAGING_PROPERTIES,
       },
     },
     execute: (args, ctx) =>
-      executeListEntity(args, ctx, 'terms', (book, language, keyword) =>
-        (book.terminologies ?? [])
-          .map((term) => formatTermSummary(term, language))
-          .filter((term) =>
-            matchesKeyword(keyword, [term.name, term.translation, term.description]),
-          ),
+      executeListEntity(
+        args,
+        ctx,
+        'terms',
+        ['id', 'name', 'translation'],
+        (book, language) =>
+          (book.terminologies ?? []).map((term) => formatTermSummary(term, language)),
+        (term) => [term.name, term.translation, term.description],
       ),
   },
   {
@@ -357,7 +398,7 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   {
     name: 'list_characters',
     description:
-      'List or keyword-filter character settings (including aliases and speaking style) for a book.',
+      'List or keyword-filter character settings (including aliases and speaking style) for a book. For books with many entries, use limit/offset and compact=true.',
     category: 'worldbuilding',
     permission: 'read_only',
     readOnlyHint: true,
@@ -370,20 +411,23 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
           type: 'string',
           description: 'Optional case-insensitive filter on name/translation/alias.',
         },
+        ...LIST_PAGING_PROPERTIES,
       },
     },
     execute: (args, ctx) =>
-      executeListEntity(args, ctx, 'characters', (book, language, keyword) =>
-        (book.characterSettings ?? [])
-          .map((char) => formatCharacterSummary(char, language))
-          .filter((char) =>
-            matchesKeyword(keyword, [
-              char.name,
-              char.translation,
-              char.description,
-              ...char.aliases.flatMap((a) => [a.name, a.translation]),
-            ]),
-          ),
+      executeListEntity(
+        args,
+        ctx,
+        'characters',
+        ['id', 'name', 'translation', 'aliases'],
+        (book, language) =>
+          (book.characterSettings ?? []).map((char) => formatCharacterSummary(char, language)),
+        (char) => [
+          char.name,
+          char.translation,
+          char.description,
+          ...char.aliases.flatMap((alias) => [alias.name, alias.translation]),
+        ],
       ),
   },
   {
@@ -433,7 +477,7 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   {
     name: 'search_memories',
     description:
-      'Search book memories using Tsukuyomi hybrid semantic + keyword retrieval (or list recent memories when query is omitted).',
+      'Search book memories using Tsukuyomi hybrid semantic + keyword retrieval, ranked by relevance with a score per result (or list recent memories when query is omitted). Returns every memory with some match, best first; judge relevance from the score and content.',
     category: 'worldbuilding',
     permission: 'read_only',
     readOnlyHint: true,
@@ -452,22 +496,37 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
       const { book } = resolved;
 
       const query = readTrimmedString(args.query);
-      const rawLimit = Number(args.limit);
-      const limit =
-        Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(30, Math.trunc(rawLimit)) : 10;
+      const limit = parseLimit(args.limit, 10, 30);
+      const describe = (m: Memory) => ({
+        id: m.id,
+        summary: m.summary,
+        content: m.content,
+        updated_at: m.updatedAt ?? m.lastAccessedAt,
+      });
 
-      const memories = query
-        ? (await MemoryService.searchMemories(book.id, query, book.targetLanguage)).slice(0, limit)
-        : await MemoryService.getRecentMemories(book.id, limit, 'lastAccessedAt', false);
-
+      if (!query) {
+        const recent = await MemoryService.getRecentMemories(
+          book.id,
+          limit,
+          'lastAccessedAt',
+          false,
+        );
+        return { book_id: book.id, query, memories: recent.map(describe) };
+      }
+      // 主动搜索由 Agent 自己判断相关性：按分数排序返回，不套用翻译注入时的严格阈值
+      const scored = await MemoryService.searchMemoriesWithScores(
+        book.id,
+        query,
+        limit,
+        book.targetLanguage ?? 'zh-CN',
+        { ranked: true },
+      );
       return {
         book_id: book.id,
         query,
-        memories: memories.map((m) => ({
-          id: m.id,
-          summary: m.summary,
-          content: m.content,
-          updated_at: m.updatedAt ?? m.lastAccessedAt,
+        memories: scored.map(({ memory, breakdown }) => ({
+          ...describe(memory),
+          score: Math.round(breakdown.total * 1000) / 1000,
         })),
       };
     },
@@ -540,20 +599,15 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
       if (!resolved.ok) return resolved.error;
       const { book } = resolved;
 
-      const limit = parseLimit(args.limit, 50, 200);
-      const offset = parseNonNegativeInt(args.offset, 0);
       const includeContent = args.include_content === true;
       // 按创建时间从新到旧，同一时刻按 ID 排，保证翻页顺序稳定
       const all = (await MemoryService.getAllMemories(book.id)).sort(
         (a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id),
       );
-      const page = all.slice(offset, offset + limit);
-      const hasMore = offset + page.length < all.length;
+      const { page, ...paging } = paginate(all, args, { defaultLimit: 50, maxLimit: 200 });
       return {
         book_id: book.id,
-        total: all.length,
-        has_more: hasMore,
-        next_offset: hasMore ? offset + page.length : null,
+        ...paging,
         memories: page.map((m) => ({
           id: m.id,
           summary: m.summary,

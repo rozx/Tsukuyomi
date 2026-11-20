@@ -11,8 +11,6 @@ import type {
 } from 'src/services/localization/paragraph-edit';
 import { getLanguageTranslation } from 'src/services/localization/selection';
 import { titleOriginal } from 'src/services/localization/title-edit';
-import { useBooksStore } from 'src/stores/books';
-import { useContextStore } from 'src/stores/context';
 import { useSettingsStore } from 'src/stores/settings';
 import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
 import { buildExternalTranslationModelId } from 'src/utils/translation-model-label';
@@ -24,10 +22,13 @@ import {
 } from '../types';
 import {
   findChapterInBook,
+  FUZZY_PROPERTY,
+  fuzzyMatchIndexes,
   parseLimit,
   parseNonNegativeInt,
   readStringList,
   readTrimmedString,
+  refreshBookKeepingOpenChapter,
   resolveBookFromArgs,
 } from './helpers';
 import { buildEditForParagraph } from './translation';
@@ -141,7 +142,12 @@ async function executeSearchParagraphs(
   const query = readTrimmedString(args.query);
   if (!query) return agentMcpError('INVALID_ARGS', 'query must be a non-empty string.');
   const useRegex = args.regex === true;
-  const matcher = buildTextMatcher(query, useRegex, args.case_sensitive === true);
+  const fuzzy = args.fuzzy === true;
+  if (fuzzy && useRegex) {
+    return agentMcpError('INVALID_ARGS', 'fuzzy and regex cannot be used together.');
+  }
+  const caseSensitive = args.case_sensitive === true;
+  const matcher = buildTextMatcher(query, useRegex, caseSensitive);
   if (!matcher.ok) return matcher.error;
 
   const resolved = resolveScanScope(args, ctx);
@@ -157,12 +163,27 @@ async function executeSearchParagraphs(
   let hasMore = false;
 
   scan: for await (const { chapter, paragraphs } of scanChapters(chapters)) {
+    // 模糊搜索按章节一次算出命中的段落；精确搜索逐段判断
+    const fuzzyHits = fuzzy
+      ? new Set(
+          fuzzyMatchIndexes(
+            paragraphs,
+            (paragraph) => [
+              searchIn !== 'translation' ? paragraph.text : '',
+              searchIn !== 'original' ? selectedTranslationText(paragraph, targetLanguage) : '',
+            ],
+            query,
+            { caseSensitive },
+          ),
+        )
+      : null;
     for (let index = 0; index < paragraphs.length; index++) {
       const paragraph = paragraphs[index]!;
       const translation = selectedTranslationText(paragraph, targetLanguage);
-      const hit =
-        (searchIn !== 'translation' && matcher.test(paragraph.text)) ||
-        (searchIn !== 'original' && translation.length > 0 && matcher.test(translation));
+      const hit = fuzzyHits
+        ? fuzzyHits.has(index)
+        : (searchIn !== 'translation' && matcher.test(paragraph.text)) ||
+          (searchIn !== 'original' && translation.length > 0 && matcher.test(translation));
       if (!hit) continue;
 
       matchedSoFar += 1;
@@ -188,6 +209,7 @@ async function executeSearchParagraphs(
     target_language: targetLanguage,
     query,
     regex: useRegex,
+    fuzzy,
     search_in: searchIn,
     searched_chapter_count: chapters.length,
     matches,
@@ -202,6 +224,23 @@ interface KeywordTally {
   totalCount: number;
   paragraphCount: number;
   perChapter: Map<string, { title: string; count: number }>;
+}
+
+/**
+ * 一章里各命中段落的出现次数。精确统计数的是不重叠的出现次数；
+ * 模糊统计无法可靠地数出同一段里的多处近似写法，每个命中段落计 1 次。
+ */
+function countPerParagraph(
+  sources: readonly string[],
+  tally: KeywordTally,
+  fuzzy: boolean,
+): number[] {
+  if (fuzzy) {
+    return fuzzyMatchIndexes(sources, (source) => [source], tally.keyword).map(() => 1);
+  }
+  return sources
+    .map((source) => (source ? countOccurrences(source.toLowerCase(), tally.lowered) : 0))
+    .filter((count) => count > 0);
 }
 
 async function executeCountOccurrences(
@@ -221,6 +260,7 @@ async function executeCountOccurrences(
   const { book, targetLanguage, chapters } = resolved.scope;
   // 词频只统计一侧：原文（默认）或当前选用的译文
   const searchIn = args.search_in === 'translation' ? 'translation' : 'original';
+  const fuzzy = args.fuzzy === true;
 
   const tallies: KeywordTally[] = keywords.map((keyword) => ({
     keyword,
@@ -231,25 +271,19 @@ async function executeCountOccurrences(
   }));
 
   for await (const { chapter, paragraphs } of scanChapters(chapters)) {
-    for (const paragraph of paragraphs) {
-      const source =
-        searchIn === 'original'
-          ? paragraph.text
-          : selectedTranslationText(paragraph, targetLanguage);
-      if (!source) continue;
-      const lowered = source.toLowerCase();
-      for (const tally of tallies) {
-        const count = countOccurrences(lowered, tally.lowered);
-        if (count === 0) continue;
-        tally.totalCount += count;
-        tally.paragraphCount += 1;
-        const entry = tally.perChapter.get(chapter.id) ?? {
-          title: titleOriginal(chapter.title),
-          count: 0,
-        };
-        entry.count += count;
-        tally.perChapter.set(chapter.id, entry);
-      }
+    const sources = paragraphs.map((paragraph) =>
+      searchIn === 'original' ? paragraph.text : selectedTranslationText(paragraph, targetLanguage),
+    );
+    for (const tally of tallies) {
+      const counts = countPerParagraph(sources, tally, fuzzy);
+      if (counts.length === 0) continue;
+      const chapterTotal = counts.reduce((sum, count) => sum + count, 0);
+      tally.totalCount += chapterTotal;
+      tally.paragraphCount += counts.length;
+      tally.perChapter.set(chapter.id, {
+        title: titleOriginal(chapter.title),
+        count: chapterTotal,
+      });
     }
   }
 
@@ -257,6 +291,7 @@ async function executeCountOccurrences(
     book_id: book.id,
     target_language: targetLanguage,
     search_in: searchIn,
+    fuzzy,
     searched_chapter_count: chapters.length,
     occurrences: tallies.map((tally) => ({
       keyword: tally.keyword,
@@ -351,11 +386,7 @@ async function persistReplacements(
     groups,
     scope.targetLanguage,
   );
-  // 刷新界面；用户正打开这本书的某一章时保持该章正文已加载
-  const contextStore = useContextStore();
-  const openChapterId =
-    contextStore.currentBookId === scope.book.id ? contextStore.currentChapterId : null;
-  await useBooksStore().refreshBookFromStorage(scope.book.id, openChapterId ?? undefined);
+  await refreshBookKeepingOpenChapter(scope.book.id);
 }
 
 async function executeReplaceInTranslations(
@@ -473,7 +504,8 @@ export const agentMcpSearchTools: AgentMcpToolSpec[] = [
         book_id: BOOK_ID_PROPERTY,
         query: {
           type: 'string',
-          description: 'Keyword (substring) to look for, or a regular expression when regex=true.',
+          description:
+            'Keyword (substring) to look for, or a regular expression when regex=true. Set fuzzy=true to also match slightly different spellings.',
         },
         regex: {
           type: 'boolean',
@@ -483,6 +515,7 @@ export const agentMcpSearchTools: AgentMcpToolSpec[] = [
           type: 'boolean',
           description: 'Match case exactly (default false).',
         },
+        fuzzy: FUZZY_PROPERTY,
         search_in: {
           type: 'string',
           enum: ['original', 'translation', 'both'],
@@ -523,6 +556,10 @@ export const agentMcpSearchTools: AgentMcpToolSpec[] = [
           type: 'string',
           enum: ['original', 'translation'],
           description: 'Which text to count in (default original).',
+        },
+        fuzzy: {
+          ...FUZZY_PROPERTY,
+          description: `${FUZZY_PROPERTY.description} In fuzzy mode each matching paragraph counts once.`,
         },
         chapter_id: {
           type: 'string',

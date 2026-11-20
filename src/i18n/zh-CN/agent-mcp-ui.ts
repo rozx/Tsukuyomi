@@ -67,13 +67,19 @@ export default {
       webLegacyNative:
         '浏览器开着旧版的 WebMCP 实验开关，中继无法转发本页的工具。请打开 chrome://flags/#enable-webmcp-testing 把它关闭并重启浏览器，或把浏览器升级到最新版本。',
       webRelayFailed: 'WebMCP 运行时加载失败，请刷新页面后重试。',
+      relayConnected: '已接上本机中继（端口 {port}）。Agent 现在可以使用本页的工具。',
+      relayNotLinked:
+        '本机有中继在运行，但本页还没有接上。中继只接受启动参数 --widget-origin 指定的页面地址，本页地址是 {origin}；两者不一致时，请重新复制下面的指南或配置，并在 Agent 客户端里更新后重启。刚开启的几秒内出现这条提示属于正常。',
+      relayNotFound:
+        '还没有找到本机中继。中继由 Agent 客户端启动：把下面的指南交给 Agent（或手动添加 MCP）后重启客户端即可。本页地址：{origin}',
     },
     guide: {
       overviewContext:
         'get_app_context：用户现在在哪个页面、打开的书和章节（含翻译进度）、选中的段落及其原文与译文、在页面上划选的文字（selected_text），以及界面语言。用户说「这一段」「这一章」「这里」时先调用它，不要猜。',
-      overviewLibrary: 'list_books 列出书库；get_book 查看一本书的章节列表与各章翻译进度。',
+      overviewLibrary:
+        'list_books 列出书库；get_book 查看一本书的章节列表与各章翻译进度。长篇不要读整本目录：用 recent_chapters 只取最近几章，用 volume_id 只看某一卷，或把 include_chapters 设为 false 只看卷的概览。术语、角色很多时，list_terms / list_characters 用 limit、offset 分页并把 compact 设为 true。',
       overviewSearch:
-        '要知道一个词在全书哪些地方出现，用 search_paragraphs（可搜原文、译文，支持正则）或 count_occurrences（统计次数与章节分布），不要逐章读取；开启了本地嵌入时还可以用 search_chapters 按内容描述找章节。',
+        '要知道一个词在全书哪些地方出现，用 search_paragraphs（可搜原文、译文，支持正则）或 count_occurrences（统计次数与章节分布），不要逐章读取；开启了本地嵌入时还可以用 search_chapters 按内容描述找章节。这些搜索以及 get_chapter_paragraphs、list_terms、list_characters、search_help_docs 的关键词默认都是精确匹配；记不清确切写法，或原文可能有错字、异写时，加上 fuzzy: true 做模糊匹配。',
       overviewHelp:
         '用户问 Tsukuyomi 怎么用、某个功能在哪里时，先用 search_help_docs 找到相关文档，再用 get_help_doc 读完全文后回答，不要凭印象回答。',
       overviewWorkflows:
@@ -108,7 +114,7 @@ export default {
       wfTranslateTitle: '翻译一章',
       wfTranslate1: '调用 get_translation_chunk，传入 chapter_id，mode 设为 "untranslated"。',
       wfTranslate2:
-        '返回的 paragraphs 是待翻译段落（含 id 与原文）；context_before 是前文已有的译文，用来衔接语气；matched_terms、matched_characters 是这一块命中的术语和角色，memories 是相关记忆，special_instructions 是特殊指令，target_language 是目标语言。',
+        '返回的 paragraphs 是待翻译段落（含 id 与原文）；context_before 是本章前文已有的译文，用来衔接语气；本章还没有译文时改看 previous_chapter_tail，它是上一章末尾的原文与译文，标点习惯和章末固定用语要与它保持一致；recent_chapter_titles 是最近几章的标题原文与译名，新章节的标题格式要与它们一致。matched_terms、matched_characters 是这一块命中的术语和角色；possible_terms、possible_characters 是原文写法略有出入的近似命中（text_in_source 是原文里的写法），可能是原文的错字或异写，确认是同一个词后再使用。memories 是相关记忆，special_instructions 是特殊指令，target_language 是目标语言。',
       wfTranslate3:
         '逐段翻译：一个原文段落对应一个译文段落，不合并、不拆分、不省略；术语和角色名使用给出的译法。',
       wfTranslate4:
@@ -131,7 +137,8 @@ export default {
         '站点不受支持或抓取失败时，自行获取正文，用 create_book 建书，再用 add_chapters 写入章节。错误里带有 book_id 时说明书已存在，只需要 add_chapters，不要重新建书。',
       wfUpdateTitle: '跟进连载更新',
       wfUpdate1: '调用 check_book_updates 查看来源站点的新章节。',
-      wfUpdate2: '调用 apply_book_updates 导入，默认只导入新章节。',
+      wfUpdate2:
+        '调用 apply_book_updates 导入，默认只导入新章节。返回的 applied_chapters 里就有新章节的 chapter_id，不需要再读整本目录。',
       wfUpdate3:
         'include_updated 会应用已导入章节的正文改动，并清除被改段落的译文，使用前必须先得到用户同意。',
       wfUpdate4: '导入完成后按「翻译一章」处理新章节。',
@@ -140,9 +147,9 @@ export default {
       wfWorld2:
         '遇到新的专有名词或人名时，用 upsert_terms、upsert_characters 记录下来，之后全书沿用。',
       wfWorld3:
-        '重要的剧情转折、人物关系和世界观设定用 upsert_memory 记下；需要回忆前文时用 search_memories。',
+        '重要的剧情转折、人物关系和世界观设定用 upsert_memory 记下；需要回忆前文时用 search_memories，结果按相关度排序并带有分数，由你自己判断哪些有用。',
       wfWorld4:
-        '用户对文风或称呼有长期要求时，用 update_special_instructions 写成书籍级或章节级的特殊指令。',
+        '用户对文风或称呼有长期要求，以及称呼约定、固定用语的译法、拟声词处理这类每一章都要遵守的翻译规范，用 update_special_instructions 写成书籍级或章节级的特殊指令：特殊指令每次取翻译块都会带上，而记忆只在与当前内容相关时才出现。',
       wfWorld5:
         '用 list_memories 可以翻页查看全部记忆。过时或重复的条目用 delete_terms、delete_characters、delete_memories 删除，删除前先向用户确认。',
       wfRenameTitle: '统一修改译名',
@@ -171,7 +178,7 @@ export default {
         'UPDATE_SOURCE_MISSING、UPDATE_SOURCE_INVALID：这本书没有可用的更新来源，请用户在应用里设置或修复。',
       errOther: '其他错误：把工具返回的错误信息原样告诉用户，不要猜测原因后反复重试。',
       errRelay:
-        '看不到任何 Tsukuyomi 工具：调用 webmcp_list_sources 检查页面是否已连接；没有连接时请用户确认页面开着并且 WebMCP 已开启。',
+        '看不到任何 Tsukuyomi 工具，或 webmcp_list_sources 返回 0 个来源：请用户查看 Tsukuyomi「外部 Agent」页面第一步的中继状态。页面没开或 WebMCP 没开启时请用户开启；显示「本机有中继在运行，但本页还没有接上」时，说明中继的 --widget-origin 与页面地址不一致，按页面显示的地址更新 MCP 配置后重启客户端；显示「还没有找到本机中继」时，说明中继没有启动或端口被占用。',
       title: 'Tsukuyomi 快速上手指南',
       setupTitle: '首次设置（只需做一次）',
       setupIntro:

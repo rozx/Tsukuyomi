@@ -1,7 +1,7 @@
 import type { BookSyncChangeset, SyncFailure } from 'src/models/book-sync';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { agentMcpError, type AgentMcpToolError, type AgentMcpToolSpec } from '../types';
-import { resolveBookFromArgs } from './helpers';
+import { describeChapters, refreshBookKeepingOpenChapter, resolveBookFromArgs } from './helpers';
 
 type BookSyncSession = Awaited<ReturnType<typeof BookSyncService.openSession>>;
 
@@ -202,6 +202,7 @@ export const agentMcpBookUpdateTools: AgentMcpToolSpec[] = [
           status: 'up_to_date',
           applied_count: 0,
           applied_urls: [],
+          applied_chapters: [],
           skipped_updated_count: skippedUpdatedCount,
           failed: [],
         };
@@ -209,11 +210,19 @@ export const agentMcpBookUpdateTools: AgentMcpToolSpec[] = [
 
       try {
         const result = await session.apply({ urls });
+        // 直接带回导入章节的 ID：长篇的整本目录很大，不应该为了拿新章节的 ID 再读一遍
+        const applied = new Set(result.appliedUrls);
+        const fresh = applied.size > 0 ? await refreshBookKeepingOpenChapter(bookId) : undefined;
         return {
           book_id: bookId,
           status: result.status,
           applied_count: result.appliedUrls.length,
           applied_urls: result.appliedUrls,
+          applied_chapters: fresh
+            ? describeChapters(fresh, (chapter) =>
+                Boolean(chapter.webUrl && applied.has(chapter.webUrl)),
+              )
+            : [],
           skipped_updated_count: skippedUpdatedCount,
           failed: summarizeFailures(result.failed),
         };

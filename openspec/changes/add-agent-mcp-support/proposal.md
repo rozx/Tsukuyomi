@@ -23,7 +23,9 @@
 
 ### Modified Capabilities
 
-<!-- 无既有规格需求变更；本变更遵循既有 device-variant-dispatch、desktop-tool-pages 与设备本地配置不参与 Gist 同步的约定，不修改其需求。 -->
+- `ai-context-building`: 构建翻译 / 润色 / 校对上下文时，把原文写法与术语名、角色名接近但不完全相同的条目（错字、同音异写）作为「可能相关」单独列出。站内任务与外部 Agent 的翻译块共用这套近似匹配。
+
+<!-- 其余既有规格没有需求变更；本变更遵循既有 device-variant-dispatch、desktop-tool-pages 与设备本地配置不参与 Gist 同步的约定。 -->
 
 ## Impact
 

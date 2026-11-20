@@ -75,6 +75,20 @@
               <i class="pi pi-exclamation-triangle" aria-hidden="true" />
               <span>{{ ctx.webMcpRelayIssue.value }}</span>
             </div>
+            <!-- 是否真的接上了本机中继；接不上时说明原因 -->
+            <div
+              v-if="ctx.relayLinkNotice.value"
+              class="amcp-alert"
+              :class="`amcp-alert--${ctx.relayLinkNotice.value.tone}`"
+              role="status"
+            >
+              <i
+                class="pi"
+                :class="RELAY_NOTICE_ICONS[ctx.relayLinkNotice.value.tone]"
+                aria-hidden="true"
+              />
+              <span>{{ ctx.relayLinkNotice.value.text }}</span>
+            </div>
             <p class="amcp-hint">{{ t('agentMcp.steps.webKeepOpen') }}</p>
           </template>
         </div>
@@ -184,6 +198,12 @@ const { t, locale } = useI18n();
 const ctx = injectAgentMcpPage();
 // 在桌面看板的栏位里：指南文本框占满剩余高度，而不是固定高度
 const fill = useFlatAgentMcpPanels();
+
+const RELAY_NOTICE_ICONS = {
+  ok: 'pi-check-circle',
+  warn: 'pi-exclamation-triangle',
+  info: 'pi-info-circle',
+} as const;
 
 const TAB_LABEL_KEYS: Record<AgentMcpConnectTab, string> = {
   'claude-code': 'agentMcp.steps.tabClaudeCode',

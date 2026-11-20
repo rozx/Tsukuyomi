@@ -31,7 +31,13 @@ import { captureExecutionLanguages } from './execution-languages';
 import { getPostToolCallReminder } from './todo-helper';
 import { getCurrentStatusInfo } from '../prompts/common';
 import { useBooksStore } from 'src/stores/books';
-import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
+import {
+  findNearCharactersInText,
+  findNearTermsInText,
+  findUniqueCharactersInText,
+  findUniqueTermsInText,
+  type NearNameMatch,
+} from 'src/utils/text-matcher';
 import { splitTextForEmbedding } from 'src/utils/embedding-text-segments';
 import { MEMORY_EMBEDDING_VERSION } from 'src/utils/memory-embedding-lookup';
 import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
@@ -621,6 +627,29 @@ function buildChunkCharactersSection(
   return '**' + agentText('aiContext.characters') + '**:\n' + details.join('\n');
 }
 
+/** 近似匹配到的条目：「原文写法 ≈ 名称 → 译名」 */
+function formatNearMatch(
+  match: NearNameMatch<Terminology | CharacterSetting>,
+  languages: ExecutionLanguages,
+): string {
+  const translation = getNameTranslation(match.item, languages.targetLanguage)?.translation ?? '';
+  return `${match.matchedText} ≈ ${match.item.name} → ${translation}`;
+}
+
+/**
+ * 原文写法与术语 / 角色名接近但不完全相同的条目（错字、同音异写）。
+ * 精确匹配找不到它们；单独列为「可能相关」，由模型自行确认是否同一个词。
+ */
+function buildNearMatchSection(
+  labelKey: 'aiContext.possibleTerms' | 'aiContext.possibleCharacters',
+  matches: ReadonlyArray<NearNameMatch<Terminology | CharacterSetting>>,
+  languages: ExecutionLanguages,
+): string {
+  if (matches.length === 0) return '';
+  const list = matches.map((match) => formatNearMatch(match, languages)).join('、');
+  return '**' + agentText(labelKey) + '**: ' + list;
+}
+
 /**
  * 提取当前 chunk 中出现的术语 / 角色 / 相关记忆，拼接为上下文字符串
  * 注意：每次调用都从 store 重新获取书籍数据，确保包含前一个 chunk 中创建/更新的术语和角色
@@ -646,9 +675,21 @@ async function buildCurrentChunkContext(
     : undefined;
   const semanticQueryContext = buildChapterSemanticQuery(chapter, languages.targetLanguage);
 
+  const allTerms = book.terminologies || [];
+  const allCharacters = book.characterSettings || [];
   const contextParts = [
     buildChunkTermsSection(terms, languages),
     buildChunkCharactersSection(characters, languages),
+    buildNearMatchSection(
+      'aiContext.possibleTerms',
+      findNearTermsInText(chunkText, allTerms, allCharacters),
+      languages,
+    ),
+    buildNearMatchSection(
+      'aiContext.possibleCharacters',
+      findNearCharactersInText(chunkText, allCharacters, allTerms),
+      languages,
+    ),
   ].filter(Boolean);
 
   let currentChunkContext = '';
@@ -1055,24 +1096,29 @@ function buildTermsContextPart(
   const currentParagraph = allChapterParagraphs.find((p) => p.id === currentParagraphId);
   if (!book || !currentParagraph?.text) return '';
   const terms = findUniqueTermsInText(currentParagraph.text, book.terminologies || []);
-  if (terms.length === 0) return '';
-  const termList = terms
-    .map(
-      (term) =>
-        '- ' +
-        term.name +
-        ' → ' +
-        (getNameTranslation(term, languages.targetLanguage)?.translation ?? '') +
-        (term.description ? ': ' + term.description : ''),
-    )
-    .join('\n');
+  const nearTerms = findNearTermsInText(
+    currentParagraph.text,
+    book.terminologies || [],
+    book.characterSettings || [],
+  );
+  if (terms.length === 0 && nearTerms.length === 0) return '';
+  const lines = terms.map(
+    (term) =>
+      '- ' +
+      term.name +
+      ' → ' +
+      (getNameTranslation(term, languages.targetLanguage)?.translation ?? '') +
+      (term.description ? ': ' + term.description : ''),
+  );
+  const nearSection = buildNearMatchSection('aiContext.possibleTerms', nearTerms, languages);
+  if (nearSection) lines.push(nearSection);
   return (
     '\n\n' +
     agentText('aiContext.heading', {
       label: agentText('aiContext.relatedTerms'),
     }) +
     '\n' +
-    termList +
+    lines.join('\n') +
     '\n'
   );
 }

@@ -50,6 +50,14 @@
 
 - [x] 5.14 桌面工作台改为铺满窗口的看板：`AgentMcpDesktop.vue` 页面自身不滚动，按可用宽度（容器查询）分三档——宽屏三栏并排、中等宽度两栏（左栏接入、右栏标签切换）、较窄时一次一栏；composable 新增 `sections` / `activeSection` / `selectSection` / `secondarySection` / `summaryMetrics`；各栏外框由页面提供，`AgentMcpPanel` 在栏内不再套卡片（`panel-surface.ts`），接入栏的指南文本框与调用活动列表占满栏高。通过 `use-agent-mcp-page.test.ts` 与 2000×965、1440×900、900×800 三种窗口的真实浏览器截图验证。
 
+- [x] 5.15 按实际使用反馈修正：`get_translation_chunk` 的记忆与术语 / 角色匹配改为与站内一致，并返回 `previous_chapter_tail`、`recent_chapter_titles`、`possible_terms`、`possible_characters`；`apply_book_updates` / `import_book_from_url` 返回章节 ID；`get_book`、`list_terms`、`list_characters`、`get_chapter_paragraphs` 增加面向大书的筛选、分页与精简选项；`search_memories` 改为按相关度排序并返回分数（`MemoryService.searchMemoriesWithScores` 的 `ranked` 选项）。通过 `agent-mcp-translation-tools.test.ts`、`agent-mcp-book-update-tools.test.ts`、`agent-mcp-library-tools.test.ts`、`agent-mcp-worldbuilding-tools.test.ts`、`memory-search-ranked.test.ts` 验证。
+
+- [x] 5.16 近似匹配：`src/utils/text-matcher.ts` 新增基于 Fuse.js 的 `findNearTermsInText` / `findNearCharactersInText`，站内分块与单段翻译上下文、外部 `get_translation_chunk` 都把写法接近的术语与角色列为「可能相关」。通过 `text-matcher-near.test.ts`、`context-builder-near-matches.test.ts` 验证。
+
+- [x] 5.17 中继连接状态：新增 `src/services/agent-mcp/relay-link.ts`，页面第一步显示是否接上本机中继及原因；指南的出错处理补充来源数为 0 时的排查。通过 `agent-mcp-relay-link.test.ts`、`use-agent-mcp-page.test.ts` 与真实浏览器验证。
+
+- [x] 5.18 可选的模糊搜索：`search_paragraphs`、`count_occurrences`、`get_chapter_paragraphs`、`list_terms`、`list_characters`、`search_help_docs` 增加 `fuzzy` 参数（默认精确），共用 `fuzzyMatchIndexes`；指南与帮助文档说明何时使用。通过各工具的测试文件验证。
+
 ## 6. 集成验证与代码质量门禁
 
 - [x] 6.1 运行完整代码质量检查与全量测试：`bun run lint && bun run type-check && bun run test:coverage && bun run quality-check`，确认零 ESLint/TypeScript/Fallow/i18n 错误且全部单元测试通过。

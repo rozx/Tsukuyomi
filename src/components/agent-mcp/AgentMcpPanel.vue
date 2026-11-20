@@ -195,6 +195,18 @@ const flat = useFlatAgentMcpPanels();
   color: #fca5a5;
 }
 
+.amcp-alert--ok {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  color: #bbf7d0;
+}
+
+.amcp-alert--warn {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fde68a;
+}
+
 .amcp-alert--info {
   background: var(--tsukuyomi-opacity-8);
   border: 1px solid var(--tsukuyomi-opacity-25);

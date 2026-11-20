@@ -1,10 +1,14 @@
+import Fuse from 'fuse.js';
 import { translateText } from 'src/i18n/translate';
 import type { AppLocale } from 'src/models/locale';
 import type { Chapter, CharacterSetting, Novel, Paragraph, Terminology } from 'src/models/novel';
 import { ChapterContentService } from 'src/services/chapter-content-service';
 import { getNameTranslation } from 'src/services/localization/selection';
+import { titleOriginal } from 'src/services/localization/title-edit';
 import { useBooksStore } from 'src/stores/books';
+import { useContextStore } from 'src/stores/context';
 import { useSettingsStore } from 'src/stores/settings';
+import { FUZZY_MATCH_THRESHOLD } from 'src/utils/text-matcher';
 import { agentMcpError, type AgentMcpExecutionContext, type AgentMcpToolError } from '../types';
 
 export function resolveDefaultVolumeTitle(): string {
@@ -23,6 +27,29 @@ export function findChapterInBook(book: Novel, chapterId: string): Chapter | nul
     }
   }
   return null;
+}
+
+/**
+ * 从存储重新读取一本书并更新书库（批量写入之后刷新界面用）。
+ * 用户正打开这本书的某一章时保持该章正文已加载。
+ */
+export async function refreshBookKeepingOpenChapter(bookId: string): Promise<Novel | undefined> {
+  const contextStore = useContextStore();
+  const openChapterId =
+    contextStore.currentBookId === bookId ? contextStore.currentChapterId : null;
+  return useBooksStore().refreshBookFromStorage(bookId, openChapterId ?? undefined);
+}
+
+/** 按卷章顺序列出符合条件的章节的 ID、所在卷、标题与来源网址 */
+export function describeChapters(book: Novel, include: (chapter: Chapter) => boolean) {
+  return (book.volumes ?? []).flatMap((volume) =>
+    (volume.chapters ?? []).filter(include).map((chapter) => ({
+      chapter_id: chapter.id,
+      volume_id: volume.id,
+      title_original: titleOriginal(chapter.title),
+      ...(chapter.webUrl ? { url: chapter.webUrl } : {}),
+    })),
+  );
 }
 
 export function resolveBookFromArgs(
@@ -84,6 +111,60 @@ export function parseNonNegativeInt(value: unknown, fallback: number): number {
 /** 读取条数上限：缺省或非法时用默认值，并限制在 1..max 之间 */
 export function parseLimit(value: unknown, fallback: number, max: number): number {
   return Math.min(max, Math.max(1, parseNonNegativeInt(value, fallback)));
+}
+
+/**
+ * 按 limit / offset 参数分页。defaultLimit 为 null 表示不传 limit 时返回全部。
+ * 返回的 total 是分页前的总数，next_offset 在没有更多时为 null。
+ */
+export function paginate<T>(
+  items: readonly T[],
+  args: Record<string, unknown>,
+  options: { defaultLimit: number | null; maxLimit: number },
+): { page: T[]; total: number; has_more: boolean; next_offset: number | null } {
+  const offset = parseNonNegativeInt(args.offset, 0);
+  const limit =
+    args.limit === undefined && options.defaultLimit === null
+      ? items.length
+      : parseLimit(args.limit, options.defaultLimit ?? options.maxLimit, options.maxLimit);
+  const page = items.slice(offset, offset + limit);
+  const hasMore = offset + page.length < items.length;
+  return {
+    page,
+    total: items.length,
+    has_more: hasMore,
+    next_offset: hasMore ? offset + page.length : null,
+  };
+}
+
+/** 各搜索工具共用的 fuzzy 参数说明 */
+export const FUZZY_PROPERTY = {
+  type: 'boolean',
+  description:
+    'Fuzzy matching (default false = exact substring). When true, text that differs slightly from the query also matches: about one differing character per 4 characters of query, so typos and variant spellings are found. Queries shorter than 4 characters still need an exact match.',
+};
+
+/**
+ * 模糊匹配：返回命中条目的序号，最接近的排在前面。
+ * getTexts 给出每个条目参与匹配的文字（任一命中即算）。
+ */
+export function fuzzyMatchIndexes<T>(
+  items: readonly T[],
+  getTexts: (item: T) => readonly string[],
+  query: string,
+  options: { caseSensitive?: boolean } = {},
+): number[] {
+  if (!query || items.length === 0) return [];
+  const fuse = new Fuse(
+    items.map((item) => ({ texts: getTexts(item).filter((text) => text.length > 0) })),
+    {
+      keys: ['texts'],
+      threshold: FUZZY_MATCH_THRESHOLD,
+      ignoreLocation: true,
+      isCaseSensitive: options.caseSensitive === true,
+    },
+  );
+  return fuse.search(query).map((result) => result.refIndex);
 }
 
 /** 读取字符串数组参数：去掉首尾空白、空项与重复项 */

@@ -10,7 +10,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useSettingsStore } from 'src/stores/settings';
 import { mapConcurrent } from 'src/utils/map-concurrent';
 import { agentMcpError, type AgentMcpToolSpec } from '../types';
-import { loadChapterParagraphs, readTrimmedString } from './helpers';
+import { describeChapters, loadChapterParagraphs, readTrimmedString } from './helpers';
 import {
   buildParagraphs,
   countChaptersInVolumes,
@@ -453,6 +453,10 @@ export const importBookFromUrlTool: AgentMcpToolSpec = {
         chapter_count: countChaptersInVolumes(latestVolumes),
         added_chapter_count: prepared.addedCount,
         fetched_chapter_count: savedCount,
+        // 本次抓到正文的章节，可直接拿去翻译
+        fetched_chapters: describeChapters(latestBook, (chapter) =>
+          batch.fetchedByChapterId.has(chapter.id),
+        ),
         pending_chapter_count: batch.pendingCount,
         has_more: batch.pendingCount > 0,
         failed_chapters: batch.failedChapters,

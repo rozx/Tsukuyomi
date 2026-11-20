@@ -111,6 +111,25 @@ describe('AgentMcp 帮助文档工具', () => {
     expect(none.total).toBe(0);
   });
 
+  it('search_help_docs 的 fuzzy 选项：搜索词写得略有出入时也能找到文档', async () => {
+    mockHelp();
+    const kernel = createAgentMcpKernel({ tools: agentMcpHelpTools });
+    const search = async (args: Record<string, unknown>) =>
+      (await kernel.callTool('search_help_docs', args, { channel: 'desktop-mcp' })).data as {
+        docs: HelpHit[];
+      };
+
+    // 文档里写的是「从网址导入」，这里把「网址」写成了「网止」
+    expect((await search({ query: '从网止导入' })).docs).toEqual([]);
+    expect((await search({ query: '从网止导入', fuzzy: true })).docs.map((doc) => doc.id)).toEqual([
+      'import-guide',
+    ]);
+    // 标题同样参与模糊匹配
+    expect((await search({ query: '术语菅理', fuzzy: true })).docs.map((doc) => doc.id)).toEqual([
+      'book-details-terminology',
+    ]);
+  });
+
   it('search_help_docs 按界面语言读取文档；个别文档读取失败不影响其他结果', async () => {
     const { indexSpy, docSpy } = mockHelp();
     await useSettingsStore().updateSettings({ uiLocale: 'en-US' });

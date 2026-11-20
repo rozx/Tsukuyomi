@@ -139,6 +139,30 @@ describe('buildAgentQuickStartGuide', () => {
     expect(guide).toMatch(/delete_terms[^\n]*确认/);
   });
 
+  it('说明长篇如何省着读、新章节如何衔接上一章、翻译规范应写进特殊指令', () => {
+    const guide = desktopGuide();
+    for (const field of [
+      'recent_chapters',
+      'compact',
+      'previous_chapter_tail',
+      'recent_chapter_titles',
+      'possible_terms',
+      'text_in_source',
+      'applied_chapters',
+    ])
+      expect(guide).toContain(field);
+    // 模糊搜索是可选项
+    expect(guide).toMatch(/默认都是精确匹配[^\n]*fuzzy: true/);
+    // 每章都要遵守的规范放特殊指令，而不是记忆
+    expect(guide).toMatch(/翻译规范[^\n]*update_special_instructions/);
+  });
+
+  it('浏览器通道说明来源数为 0 时怎么排查', () => {
+    const guide = webGuide();
+    expect(guide).toMatch(/0 个来源/);
+    expect(guide).toContain('--widget-origin');
+  });
+
   it('是通用说明而不是具体任务：不包含书名或待填占位', () => {
     const guide = desktopGuide();
     expect(guide).not.toContain('《');

@@ -3,7 +3,7 @@ import { HelpService } from 'src/services/help-service';
 import { useSettingsStore } from 'src/stores/settings';
 import { localizedErrorCode } from 'src/utils/localized-error';
 import { agentMcpError, type AgentMcpToolSpec } from '../types';
-import { readTrimmedString } from './helpers';
+import { FUZZY_PROPERTY, fuzzyMatchIndexes, readTrimmedString } from './helpers';
 
 /** 正文命中时，片段在命中位置前后各保留的字符数 */
 const SNIPPET_RADIUS = 80;
@@ -47,6 +47,7 @@ export const agentMcpHelpTools: AgentMcpToolSpec[] = [
           type: 'string',
           description: 'Keyword to look for (case-insensitive). Omit to list all guides.',
         },
+        fuzzy: FUZZY_PROPERTY,
       },
     },
     execute: async (args) => {
@@ -58,21 +59,36 @@ export const agentMcpHelpTools: AgentMcpToolSpec[] = [
       }
 
       const lowerQuery = query.toLowerCase();
-      const hits = await Promise.all(
-        docs.map(async (doc) => {
-          const inMeta =
-            doc.title.toLowerCase().includes(lowerQuery) ||
-            doc.description.toLowerCase().includes(lowerQuery);
-          // 个别文档读取失败时只按标题和简介判断，不让整次搜索失败
-          const snippet = await HelpService.getDocument(doc.id, locale)
-            .then(({ markdown }) => buildSnippet(markdown, lowerQuery))
-            .catch(() => null);
-          if (!inMeta && snippet === null) return null;
-          return { ...summarizeDoc(doc), ...(snippet !== null ? { snippet } : {}) };
-        }),
+      // 个别文档读取失败时只按标题和简介判断，不让整次搜索失败
+      const loaded = await Promise.all(
+        docs.map(async (doc) => ({
+          doc,
+          markdown: await HelpService.getDocument(doc.id, locale)
+            .then(({ markdown }) => markdown)
+            .catch(() => ''),
+        })),
       );
-      const matched = hits.filter((hit) => hit !== null);
-      return { locale, query, total: matched.length, docs: matched };
+      const describe = ({ doc, markdown }: (typeof loaded)[number]) => {
+        // 片段只在正文里有确切写法时给出
+        const snippet = buildSnippet(markdown, lowerQuery);
+        return { ...summarizeDoc(doc), ...(snippet !== null ? { snippet } : {}) };
+      };
+
+      const matched =
+        args.fuzzy === true
+          ? // 模糊匹配按接近程度排序
+            fuzzyMatchIndexes(
+              loaded,
+              ({ doc, markdown }) => [doc.title, doc.description, markdown],
+              query,
+            ).map((index) => loaded[index]!)
+          : loaded.filter(
+              ({ doc, markdown }) =>
+                doc.title.toLowerCase().includes(lowerQuery) ||
+                doc.description.toLowerCase().includes(lowerQuery) ||
+                markdown.toLowerCase().includes(lowerQuery),
+            );
+      return { locale, query, total: matched.length, docs: matched.map(describe) };
     },
   },
   {

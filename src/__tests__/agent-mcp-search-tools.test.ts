@@ -231,6 +231,50 @@ describe('AgentMcp 全书搜索与批量替换工具', () => {
       expect(secondData.next_offset).toBeNull();
     });
 
+    it('fuzzy 选项：默认精确匹配找不到写法略有出入的内容，开启后可以找到', async () => {
+      const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
+      const search = async (args: Record<string, unknown>) =>
+        (
+          await kernel.callTool(
+            'search_paragraphs',
+            { book_id: BOOK_ID, ...args },
+            { channel: 'desktop-mcp' },
+          )
+        ).data as { matches: SearchMatch[]; fuzzy: boolean };
+
+      // 原文是「アリスは月光石を拾った。」，查询里把「石」写成了「岩」
+      const exact = await search({ query: 'アリスは月光岩を' });
+      expect(exact.fuzzy).toBe(false);
+      expect(exact.matches).toEqual([]);
+
+      const fuzzy = await search({ query: 'アリスは月光岩を', fuzzy: true });
+      expect(fuzzy.fuzzy).toBe(true);
+      expect(fuzzy.matches.map((m) => m.id)).toEqual(['p1000001']);
+
+      // 模糊搜索同样遵守搜索范围：这句只在原文里
+      const translationOnly = await search({
+        query: 'アリスは月光岩を',
+        fuzzy: true,
+        search_in: 'translation',
+      });
+      expect(translationOnly.matches).toEqual([]);
+
+      // 差得太多不算
+      const far = await search({ query: 'ボブは太陽岩を', fuzzy: true });
+      expect(far.matches).toEqual([]);
+    });
+
+    it('fuzzy 与 regex 不能同时使用', async () => {
+      const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
+      const res = await kernel.callTool(
+        'search_paragraphs',
+        { book_id: BOOK_ID, query: '月光石', fuzzy: true, regex: true },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError).toBe(true);
+      expect(res.errorCode).toBe('INVALID_ARGS');
+    });
+
     it('没有给搜索词时报错', async () => {
       const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
       const res = await kernel.callTool(
@@ -286,6 +330,28 @@ describe('AgentMcp 全书搜索与批量替换工具', () => {
       );
       const { occurrences } = res.data as { occurrences: Array<{ total_count: number }> };
       expect(occurrences[0]?.total_count).toBe(2);
+    });
+
+    it('fuzzy 选项：写法略有出入的也计入，每个命中段落计一次', async () => {
+      const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
+      const count = async (args: Record<string, unknown>) =>
+        (
+          await kernel.callTool(
+            'count_occurrences',
+            { book_id: BOOK_ID, keywords: ['月光岩を拾った'], ...args },
+            { channel: 'desktop-mcp' },
+          )
+        ).data as {
+          fuzzy: boolean;
+          occurrences: Array<{ total_count: number; paragraph_count: number }>;
+        };
+      const exact = await count({});
+      expect(exact.fuzzy).toBe(false);
+      expect(exact.occurrences[0]).toMatchObject({ total_count: 0, paragraph_count: 0 });
+
+      const fuzzy = await count({ fuzzy: true });
+      expect(fuzzy.fuzzy).toBe(true);
+      expect(fuzzy.occurrences[0]).toMatchObject({ total_count: 1, paragraph_count: 1 });
     });
 
     it('没有给任何关键词时报错', async () => {
