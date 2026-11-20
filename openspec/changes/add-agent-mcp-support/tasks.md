@@ -38,6 +38,8 @@
 
 - [x] 5.8 扩展快速上手指南：以「首次设置」开头，让 Agent 替用户建立项目文件夹、以项目级方式配置 MCP、把指南保存为该文件夹的 AGENTS.md；补充数据模型、工具一览、分步工作流与出错处理；页面改为两步，客户端配置收进默认折叠的「手动添加 MCP」；连接配置抽到 `src/services/agent-mcp/client-config.ts` 与页面片段共用；通过 `src/__tests__/agent-mcp-quick-start.test.ts` 验证。
 
+- [x] 5.9 处理浏览器自带旧版 WebMCP：`webmcp-relay.ts` 探测并在本页替换为 polyfill，无法替换时返回 `legacy-native`；中继接通状态写入 store 并在页面说明原因；页面与指南补充「只开一个标签页 / 工具名后缀」说明；通过 `agent-mcp-webmcp-relay.test.ts`、`agent-mcp-runtime-relay.test.ts`、`use-agent-mcp-page.test.ts` 验证，并在带旧版原生接口的浏览器里做了端到端检查。
+
 ## 6. 集成验证与代码质量门禁
 
 - [x] 6.1 运行完整代码质量检查与全量测试：`bun run lint && bun run type-check && bun run test:coverage && bun run quality-check`，确认零 ESLint/TypeScript/Fallow/i18n 错误且全部单元测试通过。

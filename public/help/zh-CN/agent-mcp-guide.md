@@ -18,6 +18,9 @@
 - 在 Agent 客户端里添加中继：Claude Code 运行 `claude mcp add webmcp-local-relay -- npx -y @mcp-b/webmcp-local-relay@latest --widget-origin <本页地址>`，其他客户端把页面给出的 JSON 合并到 MCP 配置里。需要 Node.js 22 或更高版本。页面给出的配置已经填好本页地址，中继只接受来自它的连接。
 - 让 Agent 调用 `webmcp_list_sources`，能看到本页就说明已连接。工具列表里看不到本页工具时，可用 `webmcp_list_tools` 列出、`webmcp_call_tool` 按名称调用。
 - 使用期间请保持本页打开：工具来自这个标签页，关闭或刷新后 Agent 会暂时看不到它们。
+- 只开一个 Tsukuyomi 标签页：同时开着多个时，Agent 看到的工具名会带上标签页后缀。
+- 页面给出的配置里的地址取自你打开页面时的地址；换一个地址访问（例如 `localhost` 换成 `127.0.0.1`，或换了域名）后需要重新复制配置。
+- 浏览器开着旧版的 WebMCP 实验开关时，应用会在本页自动改用内置实现；个别情况下无法替换，页面会提示去 `chrome://flags/#enable-webmcp-testing` 关闭该开关。
 - 本页必须通过 HTTPS 或 localhost 打开，否则无法开启。
 - 浏览器环境因跨域限制无法抓取部分站点时，可让 Agent 自行获取正文后调用 `create_book` 与 `add_chapters` 直接导入。
 

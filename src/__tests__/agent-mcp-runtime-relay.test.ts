@@ -16,6 +16,7 @@ describe('AgentMcp runtime × WebMCP relay', () => {
 
   it('浏览器端开启时先接通中继再注册工具；关闭时先注销工具再断开中继', async () => {
     const order: string[] = [];
+    const relayStates: string[] = [];
     const registerTool = vi.fn(() => {
       if (!order.includes('register')) order.push('register');
     });
@@ -46,12 +47,16 @@ describe('AgentMcp runtime × WebMCP relay', () => {
         navigator: {},
       }),
       webMcpRelay: relay,
+      onWebMcpRelayStateChange: (state) => relayStates.push(state),
     });
     expect(order).toEqual(['relay.enable', 'register']);
+    // 中继的接通结果上报给宿主，用于界面提示
+    expect(relayStates).toEqual(['enabled']);
 
     await settings.updateAgentMcpSettings({ webMcpEnabled: false });
     await handle.syncNow();
     expect(order.slice(2)).toEqual(['unregister', 'relay.disable']);
+    expect(relayStates).toEqual(['enabled', 'idle']);
 
     handle.dispose();
   });

@@ -293,6 +293,32 @@ describe('useAgentMcpPage composable', () => {
     unmount();
   });
 
+  it('中继接不上时在页面上说明原因：旧版原生接口无法替换、运行时加载失败', async () => {
+    platformState.isElectron = false;
+    const settings = useSettingsStore();
+    await settings.setUiLocale('zh-CN');
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
+    const store = useAgentMcpStore();
+    store.setWebMcpRelayState('enabled');
+
+    const { unmount, getCtx } = mountHarness();
+    const ctx = getCtx();
+    expect(ctx.webMcpRelayIssue.value).toBe('');
+
+    store.setWebMcpRelayState('legacy-native');
+    expect(ctx.webMcpRelayIssue.value).toContain('chrome://flags/#enable-webmcp-testing');
+
+    store.setWebMcpRelayState('failed');
+    expect(ctx.webMcpRelayIssue.value).toMatch(/刷新/);
+
+    // 页面不安全的情况由单独的提示说明，这里不重复
+    store.setWebMcpRelayState('insecure');
+    expect(ctx.webMcpRelayIssue.value).toBe('');
+
+    unmount();
+    store.setWebMcpRelayState('idle');
+  });
+
   it('页面不在安全上下文时 WebMCP 开关不可开启，但允许关闭', async () => {
     platformState.isElectron = false;
     const settings = useSettingsStore();

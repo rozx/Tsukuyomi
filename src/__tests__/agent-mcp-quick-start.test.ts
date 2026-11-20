@@ -60,6 +60,8 @@ describe('buildAgentQuickStartGuide', () => {
     expect(guide).toMatch(/保持.*打开/);
     for (const tool of ['webmcp_list_sources', 'webmcp_list_tools', 'webmcp_call_tool'])
       expect(guide).toContain(tool);
+    // 多个标签页同时连接时工具名会带后缀
+    expect(guide).toMatch(/后缀/);
     expect(guide).toContain('get_workflow_guide');
     expect(guide).not.toContain('prompts/get');
     // 中继配置里没有令牌，不需要令牌提醒

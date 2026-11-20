@@ -41,8 +41,6 @@ export default {
       enableWebMcp: 'Turn on WebMCP',
       webInsecure:
         'This page was not opened over HTTPS or localhost, and browsers do not allow WebMCP on such pages. Use an HTTPS address instead.',
-      webKeepOpen:
-        'Keep this page open while you work: the tools come from this tab, and the agent temporarily loses them when it is closed or reloaded.',
       relayClientHint:
         "Add the WebMCP local relay to your agent client. The relay only accepts connections from this page's address.",
       tabRelayJson: 'Other clients (JSON)',
@@ -57,6 +55,11 @@ export default {
       manualToggle: 'Add the MCP manually',
       manualHint:
         'Expand this only if you prefer to add it to your agent client yourself instead of using the guide.',
+      webKeepOpen:
+        'Keep this page open while you work, and keep only one Tsukuyomi tab open: the tools come from this tab, and the agent temporarily loses them when it is closed or reloaded. With several tabs open, the tool names the agent sees get a per-tab suffix.',
+      webLegacyNative:
+        'The browser has an old WebMCP experimental flag turned on, and the relay cannot forward the tools on this page. Open chrome://flags/#enable-webmcp-testing, turn it off and restart the browser, or update the browser to the latest version.',
+      webRelayFailed: 'The WebMCP runtime failed to load. Reload the page and try again.',
     },
     guide: {
       overviewContext:
@@ -71,8 +74,6 @@ export default {
         'Submit strictly one translation per returned paragraph ID; do not merge, split or skip paragraphs.',
       ruleNoRepeat:
         'Do not submit different translations for the same paragraph repeatedly. If a submission is rejected, fix it using the returned reason and resubmit only the rejected paragraphs.',
-      overviewRelay:
-        'Call webmcp_list_sources first to confirm the Tsukuyomi page is connected. If the tools mentioned below are missing from your tool list, list them with webmcp_list_tools and call them by name with webmcp_call_tool.',
       intro:
         "This is the usage guide for Tsukuyomi, a novel translation tool. It provides tools through an MCP server (server name: tsukuyomi): use them to read and write the user's library directly, and write results back into the app rather than only printing them in the chat.",
       introWeb:
@@ -183,6 +184,8 @@ export default {
         'Prerequisite: the user has the External Agent page of Tsukuyomi open in a browser with WebMCP turned on, and keeps that page open. Running the relay requires Node.js 22 or later. If you cannot connect, ask the user to confirm these points first.',
       setupTokenWarning:
         'Note: the command above and the saved file contain an access token. Do not commit this folder to a public repository.',
+      overviewRelay:
+        'Call webmcp_list_sources first to confirm the Tsukuyomi page is connected. If the tools mentioned below are missing from your tool list, list them with webmcp_list_tools and call them by name with webmcp_call_tool. Tool names with a suffix such as `_a1b2` mean the user has several Tsukuyomi pages open: ask them to keep only one, or call the tools by their full suffixed names.',
     },
     activity: {
       title: 'Call activity',

@@ -1,4 +1,8 @@
-import type { RecordAgentMcpActivityInput, WebMcpRuntimeStatus } from 'src/models/agent-mcp';
+import type {
+  RecordAgentMcpActivityInput,
+  WebMcpRelayState,
+  WebMcpRuntimeStatus,
+} from 'src/models/agent-mcp';
 import type { DesktopMcpAPI, DesktopMcpServerStatus } from 'src/models/desktop-mcp';
 import { useSettingsStore } from 'src/stores/settings';
 import { isElectron } from 'src/utils/platform';
@@ -22,6 +26,8 @@ export interface StartAgentMcpRuntimeOptions {
   onRecordActivity?: (entry: RecordAgentMcpActivityInput) => void;
   onDesktopStatusChange?: (status: DesktopMcpServerStatus) => void;
   onWebMcpStatusChange?: (status: WebMcpRuntimeStatus) => void;
+  /** 浏览器端本地中继接通状态变化（含接不上的原因），用于界面提示 */
+  onWebMcpRelayStateChange?: (state: WebMcpRelayState) => void;
 }
 
 export interface AgentMcpRuntimeHandle {
@@ -110,11 +116,13 @@ export async function startAgentMcpRuntime(
     const cfg = settingsStore.agentMcp;
     if (cfg.webMcpEnabled) {
       // 先让 document.modelContext 存在并接上本机中继，再注册工具
-      await webMcpRelay?.enable();
+      const relayState = await webMcpRelay?.enable();
+      if (relayState) options.onWebMcpRelayStateChange?.(relayState);
       await webMcpAdapter.sync(true);
     } else {
       await webMcpAdapter.sync(false);
       webMcpRelay?.disable();
+      if (webMcpRelay) options.onWebMcpRelayStateChange?.('idle');
     }
   };
 

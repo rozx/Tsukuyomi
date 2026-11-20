@@ -37,8 +37,6 @@ export default {
       enableWebMcp: '开启 WebMCP',
       webInsecure:
         '本页不是通过 HTTPS 或 localhost 打开的，浏览器不允许在这样的页面上提供 WebMCP。请改用 HTTPS 地址访问。',
-      webKeepOpen:
-        '使用期间请保持本页打开：工具来自这个标签页，关闭或刷新后 Agent 会暂时看不到它们。',
       relayClientHint: '在 Agent 客户端里添加 WebMCP 本地中继。中继只接受来自本页地址的连接。',
       tabRelayJson: '其他客户端（JSON）',
       placeRelayClaudeCode:
@@ -51,6 +49,11 @@ export default {
       copyGuide: '复制指南',
       manualToggle: '手动添加 MCP',
       manualHint: '不使用指南、想自己在 Agent 客户端里添加时再展开。',
+      webKeepOpen:
+        '使用期间请保持本页打开，并且只开一个 Tsukuyomi 标签页：工具来自这个标签页，关闭或刷新后 Agent 会暂时看不到它们；同时开着多个时，Agent 看到的工具名会带上标签页后缀。',
+      webLegacyNative:
+        '浏览器开着旧版的 WebMCP 实验开关，中继无法转发本页的工具。请打开 chrome://flags/#enable-webmcp-testing 把它关闭并重启浏览器，或把浏览器升级到最新版本。',
+      webRelayFailed: 'WebMCP 运行时加载失败，请刷新页面后重试。',
     },
     guide: {
       overviewContext: 'get_app_context：用户当前打开的书、章节，以及界面语言。',
@@ -62,8 +65,6 @@ export default {
       ruleIds: '严格按返回的段落 ID 一一对应提交，不要合并、拆分或省略段落。',
       ruleNoRepeat:
         '同一段不要重复提交不同的译文；提交被拒绝时按返回的原因修正，只重提被拒绝的段落。',
-      overviewRelay:
-        '先调用 webmcp_list_sources 确认 Tsukuyomi 页面已连接。如果在工具列表里看不到下面提到的工具，用 webmcp_list_tools 列出它们，再用 webmcp_call_tool 按名称调用。',
       intro:
         '这是小说翻译工具 Tsukuyomi 的使用说明。它通过 MCP 服务（服务名 tsukuyomi）提供工具：用这些工具直接读写用户的书库，结果写回应用，不要只输出在对话里。',
       introWeb:
@@ -162,6 +163,8 @@ export default {
         '前提：用户已在浏览器里打开 Tsukuyomi 的「外部 Agent」页面并开启 WebMCP，且保持该页面打开；运行中继需要 Node.js 22 或更高版本。连不上时先请用户确认这几点。',
       setupTokenWarning:
         '注意：上面的命令和保存下来的文件里包含访问令牌，不要把这个文件夹提交到公开仓库。',
+      overviewRelay:
+        '先调用 webmcp_list_sources 确认 Tsukuyomi 页面已连接。如果在工具列表里看不到下面提到的工具，用 webmcp_list_tools 列出它们，再用 webmcp_call_tool 按名称调用。工具名带有类似 `_a1b2` 的后缀时，说明用户同时开着多个 Tsukuyomi 页面：请用户只保留一个，或者调用时使用带后缀的完整名称。',
     },
     activity: {
       title: '调用活动',

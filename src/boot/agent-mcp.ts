@@ -47,6 +47,9 @@ export async function initAgentMcpBoot({ app, router }: AgentMcpBootDeps): Promi
     onWebMcpStatusChange: (status) => {
       agentMcpStore.setWebMcpStatus(status);
     },
+    onWebMcpRelayStateChange: (state) => {
+      agentMcpStore.setWebMcpRelayState(state);
+    },
     onWriteNotify: ({ channel, toolName }) => {
       const channelLabel = getExternalChannelDisplayName(channel);
       const summary = translateText(settingsStore.uiLocale, 'agentMcp.notify.writeTitle');

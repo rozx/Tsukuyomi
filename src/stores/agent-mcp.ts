@@ -2,6 +2,7 @@ import { defineStore, acceptHMRUpdate } from 'pinia';
 import type {
   AgentMcpActivityEntry,
   RecordAgentMcpActivityInput,
+  WebMcpRelayState,
   WebMcpRuntimeStatus,
 } from 'src/models/agent-mcp';
 import type { DesktopMcpServerStatus } from 'src/models/desktop-mcp';
@@ -23,12 +24,18 @@ export const useAgentMcpStore = defineStore('agent-mcp', {
       registeredToolNames: [],
       error: null,
     } as WebMcpRuntimeStatus,
+    /** 浏览器端本地中继的接通状态 */
+    webMcpRelayState: 'idle' as WebMcpRelayState,
     activities: [] as AgentMcpActivityEntry[],
   }),
 
   actions: {
     setDesktopServerStatus(status: DesktopMcpServerStatus): void {
       this.desktopServerStatus = { ...status };
+    },
+
+    setWebMcpRelayState(state: WebMcpRelayState): void {
+      this.webMcpRelayState = state;
     },
 
     setWebMcpStatus(status: WebMcpRuntimeStatus): void {

@@ -133,6 +133,8 @@ export interface AgentMcpPageContext {
   webMcpToggleOn: ComputedRef<boolean>;
   /** 页面不是 HTTPS / localhost：此时无法提供 WebMCP */
   pageInsecure: ComputedRef<boolean>;
+  /** 中继接不上时的原因说明；没有问题时为空字符串 */
+  webMcpRelayIssue: ComputedRef<string>;
   /** 当前通道已可用：桌面端服务运行中，或浏览器端工具已注册 */
   connectionReady: ComputedRef<boolean>;
   /** 本次会话是否已收到过外部调用 */
@@ -256,6 +258,19 @@ function createAgentMcpPageContext(): AgentMcpPageContext {
   const pageInsecure = computed(
     () => typeof window !== 'undefined' && window.isSecureContext === false,
   );
+
+  const webMcpRelayIssue = computed(() => {
+    const locale = settingsStore.uiLocale;
+    switch (agentMcpStore.webMcpRelayState) {
+      case 'legacy-native':
+        return translateText(locale, 'agentMcp.steps.webLegacyNative');
+      case 'failed':
+        return translateText(locale, 'agentMcp.steps.webRelayFailed');
+      default:
+        // 页面不安全由 pageInsecure 的提示单独说明
+        return '';
+    }
+  });
 
   const webMcpToggleOn = computed(() => !pageInsecure.value && settings.value.webMcpEnabled);
 
@@ -574,6 +589,7 @@ function createAgentMcpPageContext(): AgentMcpPageContext {
     runtimeStatusSeverity,
     webMcpToggleOn,
     pageInsecure,
+    webMcpRelayIssue,
     connectionReady,
     firstCallReceived,
     endpointUrl,

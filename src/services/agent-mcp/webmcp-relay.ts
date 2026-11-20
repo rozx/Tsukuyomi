@@ -1,3 +1,5 @@
+import type { WebMcpRelayState } from 'src/models/agent-mcp';
+
 /**
  * 浏览器版的 WebMCP 本地中继桥接（@mcp-b/webmcp-local-relay）。
  *
@@ -23,7 +25,12 @@ export interface WebMcpPageRuntime {
   cleanupWebModelContext: () => void;
 }
 
-export type WebMcpRelayEnableResult = 'enabled' | 'insecure' | 'failed';
+/**
+ * - `insecure`：页面不在安全上下文，无法提供 WebMCP
+ * - `legacy-native`：浏览器自带旧版 WebMCP 且无法在本页替换，中继转发不了工具
+ * - `failed`：运行时加载或初始化失败
+ */
+export type WebMcpRelayEnableResult = Exclude<WebMcpRelayState, 'idle'>;
 
 export interface WebMcpRelayBridge {
   enable: () => Promise<WebMcpRelayEnableResult>;
@@ -36,6 +43,57 @@ export interface CreateWebMcpRelayBridgeOptions {
   loadRuntime?: () => Promise<WebMcpPageRuntime>;
   /** 应用部署的根路径，默认取构建时的 BASE_URL */
   baseUrl?: string;
+  /** 探测浏览器自带的 WebMCP 是否为中继无法使用的旧版；默认做一次真实探测 */
+  detectLegacyNative?: () => Promise<boolean>;
+  /** 在本页移除旧版原生接口，成功返回 true；默认从 Document.prototype 上删除 */
+  removeLegacyNative?: () => boolean;
+}
+
+const PROBE_TOOL_NAME = 'tsukuyomi_webmcp_probe';
+
+interface NativeModelContextLike {
+  registerTool?: (tool: unknown, options?: { signal?: AbortSignal }) => unknown;
+  getTools?: () => Promise<Array<{ name?: string; inputSchema?: unknown }>>;
+}
+
+/**
+ * 开着 WebMCP 实验开关的旧版 Chromium（155 之前）自带的 `document.modelContext`，
+ * `getTools()` 会把工具的 inputSchema 以 JSON 字符串返回。中继组件遇到这种格式会拒绝转发，
+ * 页面运行时也无法把这些工具暴露出去。这里临时注册一个探测工具来判断，用完即注销。
+ */
+async function detectLegacyNativeWebMcp(): Promise<boolean> {
+  if (typeof document === 'undefined' || !('modelContext' in document)) return false;
+  const native = (document as unknown as { modelContext?: NativeModelContextLike }).modelContext;
+  if (typeof native?.registerTool !== 'function' || typeof native.getTools !== 'function') {
+    return false;
+  }
+  const controller = new AbortController();
+  try {
+    await native.registerTool(
+      {
+        name: PROBE_TOOL_NAME,
+        description: 'Temporary capability probe. Ignore.',
+        inputSchema: { type: 'object', properties: {} },
+        execute: () => Promise.resolve('ok'),
+      },
+      { signal: controller.signal },
+    );
+    const tools = await native.getTools();
+    return typeof tools.find((tool) => tool.name === PROBE_TOOL_NAME)?.inputSchema === 'string';
+  } catch {
+    // 探测不了就按新版处理，交给运行时自己判断
+    return false;
+  } finally {
+    controller.abort();
+  }
+}
+
+/** 从 Document.prototype 上移除原生接口，让运行时在本页安装 polyfill；刷新页面后恢复 */
+function removeLegacyNativeWebMcp(): boolean {
+  const descriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'modelContext');
+  if (!descriptor?.configurable) return false;
+  delete (Document.prototype as { modelContext?: unknown }).modelContext;
+  return !('modelContext' in document);
 }
 
 function defaultBaseUrl(): string {
@@ -49,6 +107,10 @@ export function createWebMcpRelayBridge(
   const loadRuntime =
     options.loadRuntime ?? (() => import('@mcp-b/global') as Promise<WebMcpPageRuntime>);
   const baseUrl = options.baseUrl ?? defaultBaseUrl();
+  const detectLegacyNative = options.detectLegacyNative ?? detectLegacyNativeWebMcp;
+  const removeLegacyNative = options.removeLegacyNative ?? removeLegacyNativeWebMcp;
+  /** 原生接口只需探测一次；替换成 polyfill 之后再探测没有意义 */
+  let nativeChecked = false;
   let runtime: WebMcpPageRuntime | null = null;
   let enabled = false;
 
@@ -71,6 +133,17 @@ export function createWebMcpRelayBridge(
     // 运行时与浏览器都只在安全上下文（HTTPS / localhost）提供 WebMCP
     if (typeof window === 'undefined' || window.isSecureContext === false) return 'insecure';
     try {
+      if (!nativeChecked) {
+        nativeChecked = true;
+        if (await detectLegacyNative()) {
+          if (!removeLegacyNative()) {
+            // 换不掉就不要加载运行时：旧版接口上的工具既转发不出去，还会刷出大量告警
+            nativeChecked = false;
+            return 'legacy-native';
+          }
+          console.info('[agent-mcp] 浏览器自带的旧版 WebMCP 已在本页替换为 polyfill，刷新后恢复。');
+        }
+      }
       if (!runtime) {
         // 运行时模块加载即自动初始化（任意来源均可连接）；先关闭，再用仅限本页来源的配置初始化
         (

@@ -100,6 +100,97 @@ describe('WebMCP local relay bridge', () => {
     expect(bridge.isEnabled()).toBe(false);
   });
 
+  describe('浏览器自带旧版 WebMCP（实验开关开启、工具参数结构以字符串返回）', () => {
+    /** 在 Document.prototype 上装一个模拟的原生实现；legacy 为 true 时 getTools 返回字符串形式的 inputSchema */
+    function installFakeNative(legacy: boolean, configurable = true) {
+      const registered = new Map<string, { inputSchema: unknown; signal?: AbortSignal }>();
+      const native = {
+        registerTool: vi.fn(
+          (tool: { name: string; inputSchema: unknown }, options?: { signal?: AbortSignal }) => {
+            registered.set(tool.name, {
+              inputSchema: tool.inputSchema,
+              ...(options?.signal ? { signal: options.signal } : {}),
+            });
+            options?.signal?.addEventListener('abort', () => registered.delete(tool.name));
+            return Promise.resolve();
+          },
+        ),
+        getTools: vi.fn(() =>
+          Promise.resolve(
+            [...registered].map(([name, tool]) => ({
+              name,
+              inputSchema: legacy ? JSON.stringify(tool.inputSchema) : tool.inputSchema,
+            })),
+          ),
+        ),
+      };
+      Object.defineProperty(Document.prototype, 'modelContext', {
+        configurable,
+        enumerable: true,
+        get: () => native,
+      });
+      return { native, registered };
+    }
+
+    afterEach(() => {
+      const descriptor = Object.getOwnPropertyDescriptor(Document.prototype, 'modelContext');
+      if (descriptor?.configurable)
+        delete (Document.prototype as { modelContext?: unknown }).modelContext;
+    });
+
+    it('探测到旧版原生接口时在本页移除它，让运行时改用 polyfill，中继照常开启', async () => {
+      const { native, registered } = installFakeNative(true);
+      const runtime = fakeRuntime();
+      runtime.initializeWebModelContext.mockImplementation(() => {
+        // 运行时初始化时原生接口必须已经让位，否则 polyfill 不会安装
+        expect('modelContext' in document).toBe(false);
+      });
+      const bridge = createWebMcpRelayBridge({ loadRuntime: () => Promise.resolve(runtime) });
+
+      expect(await bridge.enable()).toBe('enabled');
+      expect(native.getTools).toHaveBeenCalled();
+      // 探测用的临时工具用完即注销，不留在浏览器里
+      expect(registered.size).toBe(0);
+      expect(runtime.initializeWebModelContext).toHaveBeenCalledTimes(1);
+      expect(document.querySelectorAll('script[data-agent-mcp-relay]')).toHaveLength(1);
+    });
+
+    it('原生接口是新版（参数结构为对象）时保持不动', async () => {
+      installFakeNative(false);
+      const runtime = fakeRuntime();
+      const bridge = createWebMcpRelayBridge({ loadRuntime: () => Promise.resolve(runtime) });
+
+      expect(await bridge.enable()).toBe('enabled');
+      expect('modelContext' in document).toBe(true);
+    });
+
+    it('旧版原生接口无法移除时不加载运行时，返回 legacy-native 供界面提示', async () => {
+      const loadRuntime = vi.fn(() => Promise.resolve(fakeRuntime()));
+      const bridge = createWebMcpRelayBridge({
+        loadRuntime,
+        detectLegacyNative: () => Promise.resolve(true),
+        removeLegacyNative: () => false,
+      });
+
+      expect(await bridge.enable()).toBe('legacy-native');
+      expect(loadRuntime).not.toHaveBeenCalled();
+      expect(document.querySelector('script[data-agent-mcp-relay]')).toBeNull();
+      expect(bridge.isEnabled()).toBe(false);
+    });
+
+    it('只探测一次：关闭后再次开启不重复注册探测工具', async () => {
+      const detectLegacyNative = vi.fn(() => Promise.resolve(false));
+      const bridge = createWebMcpRelayBridge({
+        loadRuntime: () => Promise.resolve(fakeRuntime()),
+        detectLegacyNative,
+      });
+      await bridge.enable();
+      bridge.disable();
+      await bridge.enable();
+      expect(detectLegacyNative).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('public/ 下随应用分发的中继文件与已安装的中继包完全一致', () => {
     const root = resolve(__dirname, '../..');
     for (const file of ['embed.js', 'widget.html']) {

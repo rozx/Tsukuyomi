@@ -18,6 +18,9 @@ Use the **External Agent Workbench** (`/mcp`) to connect local agents such as Cl
 - Add the relay to your agent client: for Claude Code run `claude mcp add webmcp-local-relay -- npx -y @mcp-b/webmcp-local-relay@latest --widget-origin <this page's address>`; for other clients merge the JSON shown on the page into the MCP configuration. Node.js 22 or later is required. The configuration shown on the page already contains this page's address, and the relay only accepts connections from it.
 - Ask the agent to call `webmcp_list_sources`; seeing this page there means it is connected. If the page's tools are missing from the agent's tool list, list them with `webmcp_list_tools` and call them by name with `webmcp_call_tool`.
 - Keep the page open while you work: the tools come from this tab, and the agent temporarily loses them when it is closed or reloaded.
+- Keep only one Tsukuyomi tab open: with several open, the tool names the agent sees get a per-tab suffix.
+- The address in the configuration shown on the page is the address you opened the page with; if you access it at a different address (for example `127.0.0.1` instead of `localhost`, or another domain), copy the configuration again.
+- If the browser has an old WebMCP experimental flag turned on, the app automatically switches to its built-in implementation on this page; in the rare case it cannot, the page asks you to turn the flag off at `chrome://flags/#enable-webmcp-testing`.
 - The page must be opened over HTTPS or localhost; otherwise WebMCP cannot be turned on.
 - If a site is blocked by browser CORS when calling `import_book_from_url`, have your agent fetch the text itself and call `create_book` followed by `add_chapters`.
 

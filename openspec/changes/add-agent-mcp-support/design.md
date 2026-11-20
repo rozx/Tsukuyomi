@@ -131,10 +131,14 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
   - `webmcp-adapter.ts` 保持不变，仍向 `document.modelContext`（回退 `navigator.modelContext`）注册工具：定义含 `name`、`description`、`inputSchema`、`annotations: { readOnlyHint }` 与 `execute(args)`，支持 `registerTool(def, { signal })` 与 `unregisterTool(name)` 两种注销方式，重注册前先注销。
   - 运行时顺序：开启时先接通运行时与中继再注册工具；关闭时先注销工具，再移除中继脚本与 iframe 并清理运行时。Electron 渲染进程不创建适配器和中继。
   - 页面不在安全上下文时不加载运行时，开关不可开启。
+  - **旧版原生实现**：开着 WebMCP 实验开关的旧版 Chromium（155 之前）自带的 `document.modelContext`，`getTools()` 以 JSON 字符串返回 `inputSchema`；中继组件遇到这种格式拒绝转发，`@mcp-b/global` 也无法暴露这些工具并会刷出大量告警，而 polyfill 在已有原生接口时不安装且没有强制选项。因此开启时先注册一个临时探测工具判断是否为旧版（用完即注销，只探测一次）；是旧版就从 `Document.prototype` 删除原生 getter，让运行时在本页安装 polyfill（刷新后恢复）；删不掉时返回 `legacy-native`、不加载运行时，界面提示关闭实验开关或升级浏览器。这会让本页的浏览器内置 Agent 看不到原生接口，权衡后以中继可用为先。
+  - 中继接通状态（`idle` / `enabled` / `insecure` / `legacy-native` / `failed`）经运行时回调写入 `useAgentMcpStore`，页面据此显示原因。
+  - 多个标签页同时连接同一中继时，中继会给同名工具加标签页后缀（如 `list_books_5cc1`）；页面提示只开一个标签页，指南说明遇到后缀时的处理。
+  - 配置里的 `--widget-origin` 取 `window.location.origin`，换地址访问后需重新复制。
   - 客户端配置：`claude mcp add webmcp-local-relay -- npx -y @mcp-b/webmcp-local-relay@latest --widget-origin <本页来源>`，以及通用 `mcpServers` JSON。中继默认接受任何网站接入，因此页面给出的配置一律带 `--widget-origin` 限定为本页来源。
   - Agent 侧看到的是本页工具（按原名注册）加中继自带的 `webmcp_list_sources` / `webmcp_list_tools` / `webmcp_call_tool` / `webmcp_open_page`；快速上手指南的浏览器版据此说明如何确认连接与兜底调用。
 - **理由**：浏览器原生 WebMCP 仍是实验特性，各浏览器开启方式不一且不稳定（曾做过按浏览器的开启指南，随后弃用）；本地中继不依赖浏览器开关，并让浏览器版也能接入 Claude Code 等本地 Agent，这正是复用订阅额度的主要场景。
-- **已验证**：用真实浏览器加本机中继进程做过端到端检查——中继列出本页 22 个工具与 4 个管理工具，`list_books`、`get_workflow_guide` 调用成功，页面调用活动同步记录。
+- **已验证**：用真实浏览器加本机中继进程做过端到端检查——中继列出本页 22 个工具与 4 个管理工具，`list_books`、`get_workflow_guide` 调用成功，页面调用活动同步记录。分别在「没有原生接口」和「启动参数开启旧版原生接口」（Edge 154）两种情况下验证通过；后者是在用户真实浏览器报出工具未被转发之后补做的。
 - **已知限制**：页面必须保持打开；需要 Node.js 22+ 来运行中继；从 HTTPS 页面连接 `ws://127.0.0.1` 在部分浏览器可能受限或弹出本地网络访问授权（未逐一验证）；中继没有令牌鉴权，安全边界是回环地址加来源限定；页面侧没有连接状态接口，是否连通靠「已收到首次调用」体现。
 
 ### 7. 设备本地配置持久化与 Gist 同步隔离

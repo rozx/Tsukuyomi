@@ -71,6 +71,10 @@
               <i class="pi pi-exclamation-triangle" aria-hidden="true" />
               <span>{{ t('agentMcp.steps.webInsecure') }}</span>
             </div>
+            <div v-if="ctx.webMcpRelayIssue.value" class="amcp-alert amcp-alert--error">
+              <i class="pi pi-exclamation-triangle" aria-hidden="true" />
+              <span>{{ ctx.webMcpRelayIssue.value }}</span>
+            </div>
             <p class="amcp-hint">{{ t('agentMcp.steps.webKeepOpen') }}</p>
           </template>
         </div>
