@@ -53,16 +53,6 @@ function serializeSettingsWrite(owner: object, mutation: () => Promise<void>): P
   return next;
 }
 
-// MCP 本机配置的补丁按调用顺序依次合并：每次都等上一次保存完成后再读取最新状态。
-// 提前读取状态的话，连续两次修改会都基于同一份旧状态，后一次保存把前一次改回去。
-const agentMcpPatches = new WeakMap<object, Promise<unknown>>();
-function afterPreviousAgentMcpPatch<T>(owner: object, patch: () => Promise<T>): Promise<T> {
-  const previous = agentMcpPatches.get(owner) ?? Promise.resolve();
-  const next = previous.catch(() => undefined).then(patch);
-  agentMcpPatches.set(owner, next);
-  return next;
-}
-
 /** 清空的 Key 不保留字段值，修改时间仍保留供同步传播。 */
 function removeEmptyApiKeys(settings: AppSettings): void {
   for (const field of API_KEY_FIELDS) {
@@ -599,8 +589,13 @@ export const useSettingsStore = defineStore('settings', {
      * 更新设置
      * 需要深度合并 taskDefaultModels
      */
-    async updateSettings(updates: Partial<AppSettings>): Promise<void> {
+    async updateSettings(
+      input: Partial<AppSettings> | ((latest: AppSettings) => Partial<AppSettings>),
+    ): Promise<void> {
       return serializeSettingsWrite(this, async () => {
+        // 传入函数时，在真正轮到这次写入时才根据最新状态算出要改什么：
+        // 提前算好的话，排在前面的保存完成后，这里会用过时的值把它改回去
+        const updates = typeof input === 'function' ? input(this.settings) : input;
         // 深度合并 taskDefaultModels
         // 更新时自动设置 lastEdited 为当前时间（除非调用者明确提供了 lastEdited）
         const current = normalizeTaskModelSettings(this.settings);
@@ -875,15 +870,17 @@ export const useSettingsStore = defineStore('settings', {
      * 保留原 lastEdited，避免修改本机端口/令牌/开关产生待同步的远端设置变更。
      */
     async updateAgentMcpSettings(updates: Partial<AgentMcpSettings>): Promise<AgentMcpSettings> {
-      return afterPreviousAgentMcpPatch(this, async () => {
-        const current = normalizeAgentMcpSettings(this.settings.agentMcp);
-        const merged = normalizeAgentMcpSettings(updates, current);
-        await this.updateSettings({
-          agentMcp: merged,
-          lastEdited: this.settings.lastEdited,
-        });
-        return merged;
+      // 合并与保留修改时间都在真正写入时读取最新状态：连续修改不会互相覆盖，
+      // 也不会把排在前面的普通设置保存刚更新的修改时间改回旧值
+      let merged = normalizeAgentMcpSettings(
+        updates,
+        normalizeAgentMcpSettings(this.settings.agentMcp),
+      );
+      await this.updateSettings((latest) => {
+        merged = normalizeAgentMcpSettings(updates, normalizeAgentMcpSettings(latest.agentMcp));
+        return { agentMcp: merged, lastEdited: latest.lastEdited };
       });
+      return merged;
     },
 
     /**

@@ -77,6 +77,21 @@ describe('agentMcp 本机配置与同步隔离', () => {
     expect((await second).permissionMode).toBe('read_only');
   });
 
+  it('普通设置还在保存时修改 MCP 配置：不把设置的修改时间改回旧值，刚改的普通设置仍会被同步', async () => {
+    const store = useSettingsStore();
+    const old = new Date(2020, 0, 1);
+    await store.updateSettings({ lastEdited: old });
+
+    // 两次保存都不等待完成：普通设置的修改会更新修改时间，MCP 配置不应该把它盖回去
+    const ordinary = store.updateSettings({ scraperConcurrencyLimit: 2 });
+    const mcp = store.updateAgentMcpSettings({ notifyOnWrite: false });
+    await Promise.all([ordinary, mcp]);
+
+    expect(store.settings.scraperConcurrencyLimit).toBe(2);
+    expect(store.agentMcp.notifyOnWrite).toBe(false);
+    expect(store.settings.lastEdited.getTime()).toBeGreaterThan(old.getTime());
+  });
+
   it('仅修改本机 MCP 配置不改变同步剥离后的设置内容（不触发待同步变更）', async () => {
     const store = useSettingsStore();
     const beforeStripped = JSON.stringify(stripAppSettingsLocalFields(store.getAllSettings()));
