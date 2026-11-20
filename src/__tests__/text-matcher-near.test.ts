@@ -56,9 +56,10 @@ describe('近似匹配：原文写法与名称非常接近但不完全相同', (
   });
 
   it('角色的全名和别名同样适用，名字里的空格不计', () => {
-    const chars = [character('alex', 'アレク サンドラ', ['サンドラ姫殿下'])];
-    const byName = findNearCharactersInText('アレクサンドロが笑った。', chars);
-    expect(byName.map((m) => [m.item.id, m.matchedText])).toEqual([['alex', 'アレクサンドロ']]);
+    const chars = [character('alex', 'ミハイル ゴルバ', ['サンドラ姫殿下'])];
+    // 姓和名都没有原样出现（否则精确匹配就认出来了），连起来与全名相差两个字
+    const byName = findNearCharactersInText('ミハエルゴルパが笑った。', chars);
+    expect(byName.map((m) => [m.item.id, m.matchedText])).toEqual([['alex', 'ミハエルゴルパ']]);
 
     const byAlias = findNearCharactersInText('サンドラ妃殿下、こちらへ。', chars);
     expect(byAlias.map((m) => [m.item.id, m.name, m.matchedText])).toEqual([
@@ -112,6 +113,34 @@ describe('近似匹配：原文写法与名称非常接近但不完全相同', (
     const kana = [term('k', 'おにぎり定食')];
     expect(findNearTermsInText('おにがり定食を頼んだ。', kana).map((m) => m.matchedText)).toEqual([
       'おにがり定食',
+    ]);
+  });
+
+  it('已经被精确匹配认出的条目不再列为近似匹配', () => {
+    // 全名带分隔符：精确匹配能认出「アリシア・ラ・アエラス」，近似匹配不应再拿它去碰别的片段
+    const chars = [character('alicia', 'アリシア・ラ・アエラス')];
+    const text = 'アリシア・ラ・アエラスは頷いた。「アリア、行こう」';
+    expect(findNearCharactersInText(text, chars)).toEqual([]);
+
+    // 姓名之间有空格：「優」单独出现由精确匹配负责，换了敬称的称呼不再重复报告
+    const yu = [character('yu', '月岡 優', ['優ちゃん'])];
+    expect(findNearCharactersInText('「優さん、おはようございます」', yu)).toEqual([]);
+
+    // 术语同理：注音写法由精确匹配认出后不再重复
+    const terms = [term('stone', '月光石'), term('saint', 'エロ聖女')];
+    expect(findNearTermsInText('月光石とエロ性女。', terms).map((m) => m.item.id)).toEqual([
+      'saint',
+    ]);
+  });
+
+  it('命中的片段里夹着标点或空白时不算', () => {
+    const chars = [character('alicia', 'アリシア')];
+    expect(findNearCharactersInText('「アリア、行こう」', chars)).toEqual([]);
+    expect(findNearCharactersInText('アリ シアンが来た。', chars)).toEqual([]);
+    // 片段里没有标点时，少一个字仍然算
+    const terms = [term('order', '聖銀騎士団本部')];
+    expect(findNearTermsInText('聖銀騎士本部へ向かう。', terms).map((m) => m.item.id)).toEqual([
+      'order',
     ]);
   });
 

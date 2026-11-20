@@ -318,6 +318,56 @@ describe('AgentMcp translation tools', () => {
     ]);
   });
 
+  it('确定命中的角色不会同时出现在「可能相关」里', async () => {
+    const base = createTestBook();
+    const book = createTestBook({
+      terminologies: [],
+      characterSettings: [
+        {
+          id: 'char-alicia',
+          name: 'アリシア・ラ・アエラス',
+          sex: 'female',
+          description: '',
+          speakingStyle: '',
+          translation: { id: 'ct-al', translation: '艾莉西亚', aiModelId: 'm1' },
+          aliases: [],
+        },
+      ],
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            {
+              ...base.volumes![0]!.chapters![0]!,
+              content: [
+                {
+                  id: 'p0000001',
+                  text: 'アリシア・ラ・アエラスは頷いた。「アリア、行こう」',
+                  selectedTranslationId: '',
+                  translations: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const data = (
+      await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-1' },
+        { channel: 'desktop-mcp' },
+      )
+    ).data as {
+      matched_characters: Array<{ name: string }>;
+      possible_characters: unknown[];
+    };
+    expect(data.matched_characters.map((c) => c.name)).toEqual(['アリシア・ラ・アエラス']);
+    expect(data.possible_characters).toEqual([]);
+  });
+
   it('新章节的第一块带上上一章末尾的已译段落，以及最近几章的标题译法', async () => {
     const base = createTestBook();
     const firstChapter = base.volumes![0]!.chapters![0]!;

@@ -814,13 +814,16 @@ function locateNearText(
 const HIRAGANA_CHAR = /[\u3041-\u3096]/;
 
 /**
- * 命中的片段是否像是「同一个词写错了字」。只在恰好错一个字时判断（多字、少字时片段是错位的，
- * 逐字对比没有意义）。以下两种差异不算：
- * - 不同的那个位置在原文里是标点或空白；
+ * 命中的片段是否像是「同一个词写错了字」。片段里夹着名称里没有的标点或空白时不算。
+ * 另外在恰好错一个字时再判断一条（多字、少字时片段是错位的，逐字对比没有意义）：
  * - 名称里是汉字或片假名、原文里却是平假名：多半是名称的一部分后面跟了助词
  *   （如「向こう側」之于「向こうに」），而不是错字。
  */
 function isPlausibleVariant(candidate: string, name: string): boolean {
+  // 片段里夹着名称里没有的标点或空白：它跨过了词的边界（如「アリア、」之于「アリシア」）
+  for (const char of candidate) {
+    if (!NEAR_MATCH_WORD_CHAR.test(char) && !name.includes(char)) return false;
+  }
   if (candidate.length !== name.length) return true;
   const mismatches: number[] = [];
   for (let i = 0; i < name.length; i++) {
@@ -829,7 +832,6 @@ function isPlausibleVariant(candidate: string, name: string): boolean {
   if (mismatches.length !== 1) return true;
   const actual = candidate[mismatches[0]!]!;
   const expected = name[mismatches[0]!]!;
-  if (!NEAR_MATCH_WORD_CHAR.test(actual)) return false;
   return !(HIRAGANA_CHAR.test(actual) && !HIRAGANA_CHAR.test(expected));
 }
 
@@ -951,9 +953,13 @@ export function findNearTermsInText(
   terms: readonly Terminology[],
   characters: readonly CharacterSetting[] = [],
 ): NearNameMatch<Terminology>[] {
+  // 精确匹配能认出的（含注音写法）不再作为近似匹配重复报告
+  const exactIds = new Set(findUniqueTermsInText(text, [...terms]).map((term) => term.id));
   return findNearMatches(
     text,
-    terms.map((term) => ({ item: term, names: [term.name] })),
+    terms
+      .filter((term) => !exactIds.has(term.id))
+      .map((term) => ({ item: term, names: [term.name] })),
     collectKnownNames(terms, characters),
   );
 }
@@ -967,12 +973,18 @@ export function findNearCharactersInText(
   characters: readonly CharacterSetting[],
   terms: readonly Terminology[] = [],
 ): NearNameMatch<CharacterSetting>[] {
+  // 精确匹配能认出的（含姓、名单独出现与带分隔符的全名）不再作为近似匹配重复报告
+  const exactIds = new Set(
+    findUniqueCharactersInText(text, [...characters]).map((character) => character.id),
+  );
   return findNearMatches(
     text,
-    characters.map((character) => ({
-      item: character,
-      names: [character.name, ...(character.aliases ?? []).map((alias) => alias.name)],
-    })),
+    characters
+      .filter((character) => !exactIds.has(character.id))
+      .map((character) => ({
+        item: character,
+        names: [character.name, ...(character.aliases ?? []).map((alias) => alias.name)],
+      })),
     collectKnownNames(terms, characters),
     { honorifics: true },
   );
