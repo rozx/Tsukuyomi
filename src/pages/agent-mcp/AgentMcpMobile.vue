@@ -7,18 +7,22 @@
     </header>
 
     <div class="mcp-mobile-stack">
-      <AgentMcpConnectionCard />
-      <AgentMcpQuickConnectCard />
-      <AgentMcpToolsAndLogCard />
+      <AgentMcpSetupSteps />
+      <AgentMcpActivityLog />
+      <AgentMcpPermissionPanel />
+      <AgentMcpConnectionSettings />
+      <AgentMcpToolCatalog />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import AgentMcpConnectionCard from 'src/components/agent-mcp/AgentMcpConnectionCard.vue';
-import AgentMcpQuickConnectCard from 'src/components/agent-mcp/AgentMcpQuickConnectCard.vue';
-import AgentMcpToolsAndLogCard from 'src/components/agent-mcp/AgentMcpToolsAndLogCard.vue';
+import AgentMcpActivityLog from 'src/components/agent-mcp/AgentMcpActivityLog.vue';
+import AgentMcpConnectionSettings from 'src/components/agent-mcp/AgentMcpConnectionSettings.vue';
+import AgentMcpPermissionPanel from 'src/components/agent-mcp/AgentMcpPermissionPanel.vue';
+import AgentMcpSetupSteps from 'src/components/agent-mcp/AgentMcpSetupSteps.vue';
+import AgentMcpToolCatalog from 'src/components/agent-mcp/AgentMcpToolCatalog.vue';
 
 const { t } = useI18n();
 </script>

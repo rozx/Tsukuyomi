@@ -4,19 +4,19 @@
       :eyebrow="t('agentMcp.eyebrow')"
       :title="t('agentMcp.title')"
       :description="t('agentMcp.subtitle')"
-    >
-      <template #metrics>
-        <DesktopWorkbenchMetrics :items="ctx.metrics.value" />
-      </template>
-    </DesktopWorkbenchHeader>
+    />
 
     <div class="mcp-desktop-grid">
+      <!-- 主栏：按使用顺序完成接入，随后盯着调用活动 -->
       <div class="mcp-desktop-col">
-        <AgentMcpConnectionCard />
+        <AgentMcpSetupSteps />
+        <AgentMcpActivityLog />
       </div>
+      <!-- 侧栏：一次设好就很少再动的内容 -->
       <div class="mcp-desktop-col">
-        <AgentMcpQuickConnectCard />
-        <AgentMcpToolsAndLogCard />
+        <AgentMcpPermissionPanel />
+        <AgentMcpConnectionSettings />
+        <AgentMcpToolCatalog />
       </div>
     </div>
   </div>
@@ -25,14 +25,13 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
 import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
-import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
-import AgentMcpConnectionCard from 'src/components/agent-mcp/AgentMcpConnectionCard.vue';
-import AgentMcpQuickConnectCard from 'src/components/agent-mcp/AgentMcpQuickConnectCard.vue';
-import AgentMcpToolsAndLogCard from 'src/components/agent-mcp/AgentMcpToolsAndLogCard.vue';
-import { injectAgentMcpPage } from 'src/composables/agent-mcp-page/useAgentMcpPage';
+import AgentMcpActivityLog from 'src/components/agent-mcp/AgentMcpActivityLog.vue';
+import AgentMcpConnectionSettings from 'src/components/agent-mcp/AgentMcpConnectionSettings.vue';
+import AgentMcpPermissionPanel from 'src/components/agent-mcp/AgentMcpPermissionPanel.vue';
+import AgentMcpSetupSteps from 'src/components/agent-mcp/AgentMcpSetupSteps.vue';
+import AgentMcpToolCatalog from 'src/components/agent-mcp/AgentMcpToolCatalog.vue';
 
 const { t } = useI18n();
-const ctx = injectAgentMcpPage();
 </script>
 
 <style scoped>
@@ -47,7 +46,7 @@ const ctx = injectAgentMcpPage();
 
 .mcp-desktop-grid {
   display: grid;
-  grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: 20px;
   align-items: start;
 }

@@ -14,18 +14,20 @@
 ### 瀏覽器版：WebMCP 橋接 {#agent-mcp-guide-section-4}
 
 - 在瀏覽器版開啟 `/mcp` 頁面時，應用會自動偵測 `document.modelContext` 或 `navigator.modelContext`。
-- 開啟「啟用 WebMCP 工具註冊」後，目前權限允許的工具（以及唯讀工作流指南 `get_workflow_guide`）會自動註冊到瀏覽器模型上下文。
+- 在頁面第一步開啟 WebMCP 後，目前權限允許的工具（以及唯讀工作流指南 `get_workflow_guide`）會自動註冊到瀏覽器模型上下文。
 - 瀏覽器環境因跨網域限制無法抓取部分站點時，可讓 Agent 自行取得正文後呼叫 `create_book` 與 `add_chapters` 直接匯入。
 
 ## 權限分級與多版本寫回 {#agent-mcp-guide-section-5}
 
 - **僅唯讀（`read_only`）**：僅開放書庫、章節、術語、角色、記憶查詢與分塊上下文拉取。
-- **讀寫翻譯與設定（`translate_and_edit`，預設）**：允許建書、匯入、批次加章、提交譯文與維護術語/角色/記憶，但禁止刪除書籍。
-- **完全控制（`full`）**：額外開放 `delete_book`。
+- **翻譯與編輯（`translate_and_edit`，預設）**：允許建書、匯入、批次加章、檢查並匯入書籍更新、提交譯文與維護術語/角色/記憶，但禁止刪除書籍。
+- **完全控制（`full`）**：額外開放 `delete_book`；切換到該模式時頁面會要求再確認一次。
 - **譯文版本策略**：預設以 `append` 追加新譯文版本並設為選中；每種語言每段最多保留 5 個歷史版本，超過上限時會逐出最早版本，因此請避免對同一段落反覆提交不同譯文。
 
 ## 推薦翻譯工作流 {#agent-mcp-guide-section-6}
 
-1. 在 `/mcp` 頁面開啟服務並複製對應客戶端（Claude Code / Pi / Antigravity）的設定片段。
-2. 在外部 Agent 中呼叫 `translate-chapter` 或 `import-and-translate` 工作流（長篇網頁小說透過 `import_book_from_url` 預設按批抓取最多 20 章，可依回傳的 `pending_chapter_count` 重複呼叫續傳，並透過 `max_chapters` 調整單批章數）。
-3. 譯文寫入後會立即更新書庫與閱讀頁面，譯文歷史會顯示對應的外部來源標籤（例如 `MCP · claude-opus-4`）。
+1. 在 `/mcp` 頁面依序完成三步：開啟服務 → 把設定複製到用戶端（Claude Code / Pi / Antigravity）→ 複製「快速上手指南」並貼給 Agent。服務沒有執行時設定無法複製。
+2. 「快速上手指南」是一份給 Agent 看的通用說明：有哪些工具、怎樣了解書庫現狀、翻譯 / 潤飾 / 匯入 / 跟進更新各用哪些工具，以及必須遵守的規則。可以直接貼到對話裡，也可以放進 Agent 的專案說明檔。
+3. 長篇網頁小說透過 `import_book_from_url` 預設按批抓取最多 20 章，可依回傳的 `pending_chapter_count` 重複呼叫續傳，並透過 `max_chapters` 調整單批章數。
+4. 連載中的書籍可用 `check_book_updates` 檢查來源站點的新章節，再用 `apply_book_updates` 匯入。預設只匯入新章節；套用已匯入章節的正文改動（`include_updated`）會清除被改段落的譯文。
+5. 譯文寫入後會立即更新書庫與閱讀頁面，頁面上的「呼叫活動」會即時顯示每次工具呼叫，譯文歷史會顯示對應的外部來源標籤（例如 `MCP · claude-opus-4`）。

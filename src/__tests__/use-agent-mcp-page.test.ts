@@ -78,7 +78,6 @@ describe('useAgentMcpPage composable', () => {
     const ctx = getCtx();
 
     expect(ctx.isElectronEnv.value).toBe(true);
-    expect(ctx.metrics.value).toHaveLength(4);
     expect(ctx.connectTabs.value).toEqual(['claude-code', 'pi', 'antigravity']);
     expect(ctx.prompts.value[0]?.displayDescription).toContain('按块拉取');
     expect(
@@ -88,9 +87,9 @@ describe('useAgentMcpPage composable', () => {
     expect(ctx.activeSnippet.value).toContain('http://127.0.0.1:49123/mcp');
     expect(ctx.activeSnippet.value).toContain(token1);
 
-    // 切到 Pi 标签页、填搜索词、修改端口草稿，然后切换断点验证状态保持
+    // 切到 Pi 标签页、展开工具分类、修改端口草稿，然后切换断点验证状态保持
     ctx.activeConnectTab.value = 'pi';
-    ctx.toolSearchQuery.value = 'translation';
+    ctx.toggleToolCategory('translation');
     ctx.portDraft.value = 49999;
 
     variant.value = 'mobile';
@@ -98,7 +97,7 @@ describe('useAgentMcpPage composable', () => {
 
     const ctxAfterSwitch = getCtx();
     expect(ctxAfterSwitch.activeConnectTab.value).toBe('pi');
-    expect(ctxAfterSwitch.toolSearchQuery.value).toBe('translation');
+    expect(ctxAfterSwitch.expandedToolCategories.value).toEqual(['translation']);
     expect(ctxAfterSwitch.portDraft.value).toBe(49999);
     expect(ctxAfterSwitch.activeSnippet.value).toContain('"tsukuyomi"');
     expect(ctxAfterSwitch.activeSnippet.value).toContain(token1);
@@ -118,20 +117,49 @@ describe('useAgentMcpPage composable', () => {
     const ctx = getCtx();
 
     expect(ctx.isElectronEnv.value).toBe(false);
-    expect(ctx.connectTabs.value).toContain('webmcp');
-    expect(ctx.activeSnippet.value).toContain('WebMCP');
-    expect(ctx.activeSnippet.value).toContain('get_workflow_guide');
+    // 浏览器端没有需要粘贴到客户端的配置，接入指引由交接提示承担
+    expect(ctx.connectTabs.value).toEqual([]);
 
     const initialCount = ctx.exposedTools.value.length;
     expect(ctx.exposedTools.value.some((t) => t.name === 'submit_translations')).toBe(true);
     expect(ctx.exposedTools.value.some((t) => t.name === 'delete_book')).toBe(false);
 
-    await ctx.setPermissionMode('read_only');
+    await ctx.requestPermissionMode('read_only');
     expect(ctx.exposedTools.value.length).toBeLessThan(initialCount);
     expect(ctx.exposedTools.value.every((t) => t.readOnlyHint)).toBe(true);
 
-    await ctx.setPermissionMode('full');
+    // 完全控制允许删书：选择后先进入待确认，取消则不生效
+    await ctx.requestPermissionMode('full');
+    expect(ctx.pendingFullPermission.value).toBe(true);
+    expect(useSettingsStore().agentMcp.permissionMode).toBe('read_only');
+    ctx.cancelFullPermission();
+    expect(ctx.pendingFullPermission.value).toBe(false);
+    expect(useSettingsStore().agentMcp.permissionMode).toBe('read_only');
+
+    await ctx.requestPermissionMode('full');
+    await ctx.confirmFullPermission();
+    expect(ctx.pendingFullPermission.value).toBe(false);
     expect(ctx.exposedTools.value.some((t) => t.name === 'delete_book')).toBe(true);
+
+    // 各权限选项标明开放的工具数量，且逐级递增；完全控制标记为危险
+    const [readOnly, translateEdit, full] = ctx.permissionOptions.value;
+    expect(readOnly!.toolCount).toBeLessThan(translateEdit!.toolCount);
+    expect(translateEdit!.toolCount).toBeLessThan(full!.toolCount);
+    expect(full!.danger).toBe(true);
+    expect(full!.toolCount).toBe(ctx.exposedTools.value.length);
+
+    // 工具按类别分组，分组总数与已开放工具一致
+    const grouped = ctx.toolGroups.value;
+    expect(grouped.map((g) => g.category)).toEqual([
+      'context',
+      'library',
+      'translation',
+      'worldbuilding',
+    ]);
+    expect(grouped.reduce((sum, g) => sum + g.tools.length, 0)).toBe(ctx.exposedTools.value.length);
+
+    // WebMCP 通道的快速上手指南改用 get_workflow_guide
+    expect(ctx.quickStartGuide.value).toContain('get_workflow_guide');
 
     // toggleWebMcp 仅更新设置，不再手动重复调用 adapter.sync（统一交由 boot watch 单通道触发）
     const { startAgentMcpRuntime, getActiveWebMcpAdapter } =
@@ -147,6 +175,90 @@ describe('useAgentMcpPage composable', () => {
 
     unmount();
     webRuntime.dispose();
+  });
+
+  it('服务未运行时配置片段不可复制；运行后可复制，并能感知首次调用', async () => {
+    platformState.isElectron = true;
+    const settings = useSettingsStore();
+    await settings.setUiLocale('zh-CN');
+    await settings.regenerateAgentMcpAuthToken();
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    const store = useAgentMcpStore();
+    store.setDesktopServerStatus({ state: 'stopped', port: null, error: null });
+
+    const { unmount, getCtx } = mountHarness();
+    const ctx = getCtx();
+
+    expect(ctx.connectionReady.value).toBe(false);
+    await ctx.copyActiveSnippet();
+    expect(writeText).not.toHaveBeenCalled();
+    expect(toastAdd).toHaveBeenLastCalledWith(expect.objectContaining({ severity: 'warn' }));
+
+    store.setDesktopServerStatus({ state: 'running', port: 48321, error: null });
+    expect(ctx.connectionReady.value).toBe(true);
+    await ctx.copyActiveSnippet();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(ctx.snippetPlacementHint.value).toContain('claude mcp list');
+
+    // 尚未有调用 -> 记录一次调用后标记为已连通
+    expect(ctx.firstCallReceived.value).toBe(false);
+    store.recordActivity({
+      channel: 'desktop-mcp',
+      toolName: 'list_books',
+      argsSummary: '{}',
+      status: 'success',
+      durationMs: 3,
+    });
+    expect(ctx.firstCallReceived.value).toBe(true);
+
+    unmount();
+  });
+
+  it('提供可一键复制的 Agent 快速上手指南，内容随通道与界面语言变化', async () => {
+    platformState.isElectron = true;
+    const settings = useSettingsStore();
+    await settings.setUiLocale('zh-CN');
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+
+    const { unmount, getCtx } = mountHarness();
+    const ctx = getCtx();
+
+    expect(ctx.quickStartGuide.value).toContain('tsukuyomi');
+    expect(ctx.quickStartGuide.value).toContain('prompts/get');
+    expect(ctx.quickStartGuide.value).toContain('check_book_updates');
+
+    // 服务没开也可以先复制指南
+    expect(ctx.connectionReady.value).toBe(false);
+    await ctx.copyQuickStartGuide();
+    expect(writeText).toHaveBeenCalledWith(ctx.quickStartGuide.value);
+
+    await settings.setUiLocale('en-US');
+    expect(ctx.quickStartGuide.value).toMatch(/Quick start/i);
+
+    unmount();
+  });
+
+  it('重新生成令牌需要二次确认，取消后令牌不变', async () => {
+    platformState.isElectron = true;
+    const settings = useSettingsStore();
+    const before = await settings.regenerateAgentMcpAuthToken();
+    const { unmount, getCtx } = mountHarness();
+    const ctx = getCtx();
+
+    ctx.requestRegenerateToken();
+    expect(ctx.regenerateArmed.value).toBe(true);
+    ctx.cancelRegenerateToken();
+    expect(ctx.regenerateArmed.value).toBe(false);
+    expect(settings.agentMcp.desktopAuthToken).toBe(before);
+
+    ctx.requestRegenerateToken();
+    const next = await ctx.regenerateToken();
+    expect(next).not.toBe(before);
+    expect(ctx.regenerateArmed.value).toBe(false);
+
+    unmount();
   });
 
   it('运行中切换端口遇到端口冲突时回退 desktopServerEnabled 并提示错误而非成功', async () => {

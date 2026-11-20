@@ -14,7 +14,12 @@ export interface DesktopMcpStartConfig {
 export type DesktopMcpMethod = 'tools/list' | 'tools/call' | 'prompts/list' | 'prompts/get';
 
 /** 需要更长 IPC 超时的外部工具名称清单，实际超时时长由主进程协调器统一配置 */
-export const DESKTOP_MCP_LONG_OPERATION_TOOLS = ['import_book_from_url', 'add_chapters'] as const;
+export const DESKTOP_MCP_LONG_OPERATION_TOOLS = [
+  'import_book_from_url',
+  'add_chapters',
+  'check_book_updates',
+  'apply_book_updates',
+] as const;
 
 export interface DesktopMcpIpcRequest {
   requestId: string;

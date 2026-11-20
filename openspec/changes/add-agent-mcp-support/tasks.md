@@ -29,6 +29,9 @@
 - [x] 5.2 实现 `/mcp` 页面逻辑与三变体 UI：新增 `src/composables/agent-mcp-page/useAgentMcpPage.ts`（`provideAgentMcpPage` / `injectAgentMcpPage`，包含桌面启停、端口保存与校验、Token 复制/重置、按 Electron/Web 环境区分展示的控件与 Claude Code / Pi / Antigravity / WebMCP 动态配置片段生成、权限与默认写回策略切换、工具筛选与日志管理）、共享 UI 碎片组件 `src/components/agent-mcp/`，以及 `src/pages/AgentMcpPage.vue` + `src/pages/agent-mcp/AgentMcp{Desktop,Tablet,Mobile}.vue`；通过 `src/__tests__/use-agent-mcp-page.test.ts` 验证配置片段随端口/Token 实时更新、Electron 不展示 WebMCP 开关、权限变更联动与跨断点状态保持。
 - [x] 5.3 补齐 `src/i18n/{zh-CN,zh-TW,en-US}/` 三语界面文案，并在 `public/help/{zh-CN,zh-TW,en-US}/` 新增外部 Agent / MCP 使用与接入指南且同步更新三语 `index.json`；运行 `bun run check:i18n` 验证三语键名完整无缺失。
 
+- [x] 5.4 按使用顺序重新设计 `/mcp` 工作台：用 `AgentMcpPanel` / `AgentMcpSetupSteps` / `AgentMcpActivityLog` / `AgentMcpPermissionPanel` / `AgentMcpConnectionSettings` / `AgentMcpToolCatalog` 取代原三张卡片；服务未运行时配置不可复制；新增 `src/services/agent-mcp/agent-quick-start.ts` 生成可直接粘贴给 Agent 的快速上手指南（通用说明，不按任务或书籍定制）；权限选项带后果说明与工具数量，切换到 `full` 与重新生成令牌需二次确认；通过 `src/__tests__/agent-mcp-quick-start.test.ts` 与 `src/__tests__/use-agent-mcp-page.test.ts` 验证。
+- [x] 5.5 新增 `check_book_updates` 与 `apply_book_updates`（`src/services/agent-mcp/tools/book-updates.ts`，复用 `BookSyncService`），加入长操作清单并补齐三语工具说明与帮助文档；通过 `src/__tests__/agent-mcp-book-update-tools.test.ts` 验证检查结果、默认只导入新章节、显式应用正文改动、限定范围、来源缺失/失效与权限拦截。
+
 ## 6. 集成验证与代码质量门禁
 
 - [x] 6.1 运行完整代码质量检查与全量测试：`bun run lint && bun run type-check && bun run test:coverage && bun run quality-check`，确认零 ESLint/TypeScript/Fallow/i18n 错误且全部单元测试通过。

@@ -1,5 +1,6 @@
 import type { RecordAgentMcpActivityInput } from 'src/models/agent-mcp';
 import { createAgentMcpKernel, type AgentMcpKernel } from './kernel';
+import { agentMcpBookUpdateTools } from './tools/book-updates';
 import { agentMcpContextTools } from './tools/context';
 import { agentMcpLibraryTools } from './tools/library';
 import { agentMcpTranslationTools } from './tools/translation';
@@ -9,6 +10,7 @@ import type { AgentMcpToolSpec, AgentMcpWriteNotification } from './types';
 export const ALL_AGENT_MCP_TOOLS: readonly AgentMcpToolSpec[] = [
   ...agentMcpContextTools,
   ...agentMcpLibraryTools,
+  ...agentMcpBookUpdateTools,
   ...agentMcpTranslationTools,
   ...agentMcpWorldbuildingTools,
 ];

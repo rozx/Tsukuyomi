@@ -24,17 +24,20 @@ import type {
 import { translateText } from 'src/i18n/translate';
 import type { MessageKey } from 'src/i18n/types';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { getAgentMcpKernel } from 'src/services/agent-mcp';
+import { ALL_AGENT_MCP_TOOLS, getAgentMcpKernel } from 'src/services/agent-mcp';
+import { buildAgentQuickStartGuide } from 'src/services/agent-mcp/agent-quick-start';
+import { isToolAllowedByPermission } from 'src/services/agent-mcp/kernel';
 import { getActiveDesktopMcpBridge, getActiveWebMcpAdapter } from 'src/services/agent-mcp/runtime';
 import type {
   AgentMcpPromptDescriptor,
+  AgentMcpToolCategory,
   AgentMcpToolDescriptor,
 } from 'src/services/agent-mcp/types';
 import { useAgentMcpStore } from 'src/stores/agent-mcp';
 import { useSettingsStore } from 'src/stores/settings';
 import { isElectron } from 'src/utils/platform';
 
-export type AgentMcpConnectTab = 'claude-code' | 'pi' | 'antigravity' | 'webmcp';
+export type AgentMcpConnectTab = 'claude-code' | 'pi' | 'antigravity';
 
 export interface LocalizedAgentMcpToolDescriptor extends AgentMcpToolDescriptor {
   displayDescription: string;
@@ -44,10 +47,57 @@ export interface LocalizedAgentMcpPromptDescriptor extends AgentMcpPromptDescrip
   displayDescription: string;
 }
 
-export interface AgentMcpMetricItem {
+export interface AgentMcpToolGroup {
+  category: AgentMcpToolCategory;
   label: string;
-  value: string | number;
+  tools: LocalizedAgentMcpToolDescriptor[];
 }
+
+export interface AgentMcpPermissionOption {
+  value: AgentMcpPermissionMode;
+  label: string;
+  description: string;
+  /** 该权限下当前通道开放的工具数量 */
+  toolCount: number;
+  recommended: boolean;
+  danger: boolean;
+}
+
+const TOOL_CATEGORY_META: ReadonlyArray<{ category: AgentMcpToolCategory; labelKey: MessageKey }> =
+  [
+    { category: 'context', labelKey: 'agentMcp.catalog.categoryContext' },
+    { category: 'library', labelKey: 'agentMcp.catalog.categoryLibrary' },
+    { category: 'translation', labelKey: 'agentMcp.catalog.categoryTranslation' },
+    { category: 'worldbuilding', labelKey: 'agentMcp.catalog.categoryWorldbuilding' },
+  ];
+
+const PERMISSION_META: ReadonlyArray<{
+  value: AgentMcpPermissionMode;
+  labelKey: MessageKey;
+  descriptionKey: MessageKey;
+}> = [
+  {
+    value: 'read_only',
+    labelKey: 'agentMcp.permission.readOnly',
+    descriptionKey: 'agentMcp.permission.readOnlyDesc',
+  },
+  {
+    value: 'translate_and_edit',
+    labelKey: 'agentMcp.permission.translateEdit',
+    descriptionKey: 'agentMcp.permission.translateEditDesc',
+  },
+  {
+    value: 'full',
+    labelKey: 'agentMcp.permission.full',
+    descriptionKey: 'agentMcp.permission.fullDesc',
+  },
+];
+
+const SNIPPET_PLACEMENT_KEYS: Record<AgentMcpConnectTab, MessageKey> = {
+  'claude-code': 'agentMcp.steps.placeClaudeCode',
+  pi: 'agentMcp.steps.placePi',
+  antigravity: 'agentMcp.steps.placeAntigravity',
+};
 
 const DESKTOP_STATUS_META: Record<
   DesktopMcpServerState,
@@ -77,7 +127,10 @@ export interface AgentMcpPageContext {
   runtimeStatusSeverity: ComputedRef<'success' | 'info' | 'danger' | 'secondary'>;
   webAvailabilityLabel: ComputedRef<string>;
   webAvailabilitySeverity: ComputedRef<'success' | 'info' | 'secondary'>;
-  metrics: ComputedRef<AgentMcpMetricItem[]>;
+  /** 当前通道已可用：桌面端服务运行中，或浏览器端工具已注册 */
+  connectionReady: ComputedRef<boolean>;
+  /** 本次会话是否已收到过外部调用 */
+  firstCallReceived: ComputedRef<boolean>;
   endpointUrl: ComputedRef<string>;
   portDraft: Ref<number>;
   tokenRevealed: Ref<boolean>;
@@ -85,19 +138,35 @@ export interface AgentMcpPageContext {
   activeConnectTab: Ref<AgentMcpConnectTab>;
   connectTabs: ComputedRef<AgentMcpConnectTab[]>;
   activeSnippet: ComputedRef<string>;
-  toolSearchQuery: Ref<string>;
+  /** 当前客户端的配置片段该放在哪里、如何确认已连接 */
+  snippetPlacementHint: ComputedRef<string>;
+  /** 给外部 Agent 的快速上手指南（Markdown），可直接粘贴或放进其项目说明 */
+  quickStartGuide: ComputedRef<string>;
   exposedTools: ComputedRef<LocalizedAgentMcpToolDescriptor[]>;
-  filteredTools: ComputedRef<LocalizedAgentMcpToolDescriptor[]>;
+  toolGroups: ComputedRef<AgentMcpToolGroup[]>;
+  expandedToolCategories: Ref<string[]>;
+  permissionOptions: ComputedRef<AgentMcpPermissionOption[]>;
+  /** 已选择「完全控制」但尚未确认 */
+  pendingFullPermission: Ref<boolean>;
+  /** 已点击重新生成令牌但尚未确认 */
+  regenerateArmed: Ref<boolean>;
   prompts: ComputedRef<LocalizedAgentMcpPromptDescriptor[]>;
   activities: ComputedRef<AgentMcpActivityEntry[]>;
   toggleDesktopServer: (enabled: boolean) => Promise<void>;
   applyPort: () => Promise<void>;
+  requestRegenerateToken: () => void;
+  cancelRegenerateToken: () => void;
   regenerateToken: () => Promise<string>;
   copyToken: () => Promise<void>;
   copyEndpoint: () => Promise<void>;
   copyActiveSnippet: () => Promise<void>;
+  copyQuickStartGuide: () => Promise<void>;
+  toggleToolCategory: (category: string) => void;
   toggleWebMcp: (enabled: boolean) => Promise<void>;
-  setPermissionMode: (mode: AgentMcpPermissionMode) => Promise<void>;
+  /** 选择权限模式；「完全控制」需再调用 confirmFullPermission 才生效 */
+  requestPermissionMode: (mode: AgentMcpPermissionMode) => Promise<void>;
+  confirmFullPermission: () => Promise<void>;
+  cancelFullPermission: () => void;
   setDefaultWriteMode: (mode: AgentMcpWriteMode) => Promise<void>;
   setNotifyOnWrite: (enabled: boolean) => Promise<void>;
   clearActivities: () => void;
@@ -110,12 +179,7 @@ function translateOrFallback(locale: AppLocale, key: string, fallback: string): 
   return translated === key ? fallback : translated;
 }
 
-function buildClientSnippet(
-  tab: AgentMcpConnectTab,
-  endpointUrl: string,
-  token: string,
-  locale: AppLocale,
-): string {
+function buildClientSnippet(tab: AgentMcpConnectTab, endpointUrl: string, token: string): string {
   const displayToken = token || '<YOUR_BEARER_TOKEN>';
   switch (tab) {
     case 'claude-code':
@@ -155,9 +219,6 @@ function buildClientSnippet(
         null,
         2,
       );
-
-    case 'webmcp':
-      return translateText(locale, 'agentMcp.quickConnect.webSnippet');
   }
 }
 
@@ -207,12 +268,11 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
 
   const portDraft = ref<number>(settings.value.desktopPort);
   const tokenRevealed = ref(false);
-  const toolSearchQuery = ref('');
 
   const connectTabs = computed<AgentMcpConnectTab[]>(() =>
-    isElectronEnv.value ? ['claude-code', 'pi', 'antigravity'] : ['webmcp'],
+    isElectronEnv.value ? ['claude-code', 'pi', 'antigravity'] : [],
   );
-  const activeConnectTab = ref<AgentMcpConnectTab>(isElectronEnv.value ? 'claude-code' : 'webmcp');
+  const activeConnectTab = ref<AgentMcpConnectTab>('claude-code');
 
   const maskedToken = computed(() => {
     const token = settings.value.desktopAuthToken;
@@ -223,12 +283,7 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
   });
 
   const activeSnippet = computed(() =>
-    buildClientSnippet(
-      activeConnectTab.value,
-      endpointUrl.value,
-      settings.value.desktopAuthToken,
-      settingsStore.uiLocale,
-    ),
+    buildClientSnippet(activeConnectTab.value, endpointUrl.value, settings.value.desktopAuthToken),
   );
 
   const activeChannel = computed<ExternalAgentChannel>(() =>
@@ -249,17 +304,52 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     }));
   });
 
-  const filteredTools = computed(() => {
-    const q = toolSearchQuery.value.trim().toLowerCase();
-    if (!q) return exposedTools.value;
-    return exposedTools.value.filter(
-      (tool) =>
-        tool.name.toLowerCase().includes(q) ||
-        tool.displayDescription.toLowerCase().includes(q) ||
-        tool.description.toLowerCase().includes(q) ||
-        tool.category.toLowerCase().includes(q),
-    );
+  const toolGroups = computed<AgentMcpToolGroup[]>(() => {
+    const locale = settingsStore.uiLocale;
+    return TOOL_CATEGORY_META.map(({ category, labelKey }) => ({
+      category,
+      label: translateText(locale, labelKey),
+      tools: exposedTools.value.filter((tool) => tool.category === category),
+    })).filter((group) => group.tools.length > 0);
   });
+
+  const expandedToolCategories = ref<string[]>([]);
+  const toggleToolCategory = (category: string): void => {
+    expandedToolCategories.value = expandedToolCategories.value.includes(category)
+      ? expandedToolCategories.value.filter((item) => item !== category)
+      : [...expandedToolCategories.value, category];
+  };
+
+  const permissionOptions = computed<AgentMcpPermissionOption[]>(() => {
+    const locale = settingsStore.uiLocale;
+    const channel = activeChannel.value;
+    return PERMISSION_META.map(({ value, labelKey, descriptionKey }) => ({
+      value,
+      label: translateText(locale, labelKey),
+      description: translateText(locale, descriptionKey),
+      toolCount: ALL_AGENT_MCP_TOOLS.filter(
+        (tool) =>
+          (!tool.webMcpOnly || channel === 'webmcp') &&
+          isToolAllowedByPermission(tool.permission, value),
+      ).length,
+      recommended: value === 'translate_and_edit',
+      danger: value === 'full',
+    }));
+  });
+
+  const connectionReady = computed(() =>
+    isElectronEnv.value
+      ? desktopServerStatus.value.state === 'running'
+      : webMcpStatus.value.registered,
+  );
+
+  const snippetPlacementHint = computed(() =>
+    translateText(settingsStore.uiLocale, SNIPPET_PLACEMENT_KEYS[activeConnectTab.value]),
+  );
+
+  const quickStartGuide = computed(() =>
+    buildAgentQuickStartGuide({ locale: settingsStore.uiLocale, channel: activeChannel.value }),
+  );
 
   const prompts = computed<LocalizedAgentMcpPromptDescriptor[]>(() => {
     const locale = settingsStore.uiLocale;
@@ -273,30 +363,7 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     }));
   });
   const activities = computed(() => agentMcpStore.activities);
-
-  const metrics = computed<AgentMcpMetricItem[]>(() => {
-    const locale = settingsStore.uiLocale;
-    return [
-      {
-        label: translateText(locale, 'agentMcp.metrics.channel'),
-        value: isElectronEnv.value
-          ? translateText(locale, 'agentMcp.metrics.channelDesktop')
-          : translateText(locale, 'agentMcp.metrics.channelWeb'),
-      },
-      {
-        label: translateText(locale, 'agentMcp.metrics.status'),
-        value: runtimeStatusLabel.value,
-      },
-      {
-        label: translateText(locale, 'agentMcp.metrics.exposedTools'),
-        value: exposedTools.value.length,
-      },
-      {
-        label: translateText(locale, 'agentMcp.metrics.recentCalls'),
-        value: activities.value.length,
-      },
-    ];
-  });
+  const firstCallReceived = computed(() => activities.value.length > 0);
 
   const copyText = async (text: string): Promise<void> => {
     try {
@@ -361,7 +428,16 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     });
   };
 
+  const regenerateArmed = ref(false);
+  const requestRegenerateToken = (): void => {
+    regenerateArmed.value = true;
+  };
+  const cancelRegenerateToken = (): void => {
+    regenerateArmed.value = false;
+  };
+
   const regenerateToken = async (): Promise<string> => {
+    regenerateArmed.value = false;
     const nextToken = await settingsStore.regenerateAgentMcpAuthToken();
     const bridge = getActiveDesktopMcpBridge();
     if (bridge) {
@@ -388,18 +464,41 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
   };
 
   const copyActiveSnippet = async (): Promise<void> => {
-    if (isElectronEnv.value && !settings.value.desktopAuthToken) {
-      await settingsStore.ensureAgentMcpAuthToken();
+    // 服务没在运行时配置片段连不上，直接提示而不是让用户复制一份无效配置
+    if (!connectionReady.value) {
+      toast.add({
+        severity: 'warn',
+        summary: translateText(settingsStore.uiLocale, 'agentMcp.notify.serverNotRunning'),
+        life: 3000,
+      });
+      return;
     }
     await copyText(activeSnippet.value);
+  };
+
+  const copyQuickStartGuide = async (): Promise<void> => {
+    await copyText(quickStartGuide.value);
   };
 
   const toggleWebMcp = async (enabled: boolean): Promise<void> => {
     await settingsStore.updateAgentMcpSettings({ webMcpEnabled: enabled });
   };
 
-  const setPermissionMode = async (mode: AgentMcpPermissionMode): Promise<void> => {
+  const pendingFullPermission = ref(false);
+  const requestPermissionMode = async (mode: AgentMcpPermissionMode): Promise<void> => {
+    if (mode === 'full' && settings.value.permissionMode !== 'full') {
+      pendingFullPermission.value = true;
+      return;
+    }
+    pendingFullPermission.value = false;
     await settingsStore.updateAgentMcpSettings({ permissionMode: mode });
+  };
+  const confirmFullPermission = async (): Promise<void> => {
+    pendingFullPermission.value = false;
+    await settingsStore.updateAgentMcpSettings({ permissionMode: 'full' });
+  };
+  const cancelFullPermission = (): void => {
+    pendingFullPermission.value = false;
   };
 
   const setDefaultWriteMode = async (mode: AgentMcpWriteMode): Promise<void> => {
@@ -433,7 +532,8 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     runtimeStatusSeverity,
     webAvailabilityLabel,
     webAvailabilitySeverity,
-    metrics,
+    connectionReady,
+    firstCallReceived,
     endpointUrl,
     portDraft,
     tokenRevealed,
@@ -441,19 +541,30 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     activeConnectTab,
     connectTabs,
     activeSnippet,
-    toolSearchQuery,
+    snippetPlacementHint,
+    quickStartGuide,
     exposedTools,
-    filteredTools,
+    toolGroups,
+    expandedToolCategories,
+    permissionOptions,
+    pendingFullPermission,
+    regenerateArmed,
     prompts,
     activities,
     toggleDesktopServer,
     applyPort,
+    requestRegenerateToken,
+    cancelRegenerateToken,
     regenerateToken,
     copyToken,
     copyEndpoint,
     copyActiveSnippet,
+    copyQuickStartGuide,
+    toggleToolCategory,
     toggleWebMcp,
-    setPermissionMode,
+    requestPermissionMode,
+    confirmFullPermission,
+    cancelFullPermission,
     setDefaultWriteMode,
     setNotifyOnWrite,
     clearActivities,

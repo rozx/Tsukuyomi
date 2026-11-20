@@ -90,17 +90,17 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
 ### 3. 主进程 <-> 渲染进程请求关联 IPC 协议
 - **决策**：新增 `src-electron/mcp-ipc.ts` 并在 `electron-preload.ts` 暴露 `window.electronAPI.mcp`：
   - **渲染 -> 主进程**：`start(config)`、`stop()`、`updateConfig(config)`、`getStatus()`、`onStatus(cb)`、`onRequest(cb)`、`sendResponse(payload)`。
-  - **主进程 -> 渲染**：每收到一次需要内核处理的 MCP 请求，主进程生成唯一 `requestId`，通过 `webContents.send('agent-mcp:request', { requestId, method, params, clientName })` 投递给渲染进程并挂起带超时（默认 60s；`DESKTOP_MCP_LONG_OPERATION_TOOLS` 中的长操作 `import_book_from_url`、`add_chapters` 放宽至 180s，清单定义在 `src/models/desktop-mcp.ts` 并有测试校验其均为已注册工具）的 Promise；渲染进程通过 `ipcRenderer.send('agent-mcp:response', { requestId, result | error })` 回传。
+  - **主进程 -> 渲染**：每收到一次需要内核处理的 MCP 请求，主进程生成唯一 `requestId`，通过 `webContents.send('agent-mcp:request', { requestId, method, params, clientName })` 投递给渲染进程并挂起带超时（默认 60s；`DESKTOP_MCP_LONG_OPERATION_TOOLS` 中的长操作 `import_book_from_url`、`add_chapters`、`check_book_updates`、`apply_book_updates` 放宽至 180s，清单定义在 `src/models/desktop-mcp.ts` 并有测试校验其均为已注册工具）的 Promise；渲染进程通过 `ipcRenderer.send('agent-mcp:response', { requestId, result | error })` 回传。
   - **渲染就绪信号**：页面加载完成不代表 boot 已注册请求监听。渲染进程在桥接层注册 `onRequest` 之后发送 `agent-mcp:ready`，主进程收到可信来源的就绪信号前不转发请求。主框架跨文档导航（整页重载）、`render-process-gone` 与窗口关闭都会清除就绪状态并结束挂起请求，新页面须重新就绪。
   - 窗口已销毁、页面仍在加载或渲染进程尚未就绪时，主进程立即返回 JSON-RPC `-32002` 错误，避免客户端死等。
   - 主进程对 `agent-mcp:response` 及 `start` / `stop` / `updateConfig` / `getStatus` 一律用既有 `trustedDesktopSender(event, mainWindow)`（`src-electron/trusted-sender.ts`）校验来源，非主窗口顶层页面的消息直接丢弃（主窗口为 `webSecurity: false`，不能默认信任任意 frame）。
   - `mainWindow` 会被置空并重建（macOS 关窗后 `activate` 重新 `createWindow`）：服务端每次请求时动态取当前窗口而不是缓存 `webContents`；窗口 `closed` 时立即以 `-32002` 结束所有挂起请求。
 - **理由**：复用现有 `electron-preload.ts` 中 `desktop-update:prepare` / `prepared` 已验证的 `id` 关联模式，类型安全且无需在渲染进程暴露任何 Node 能力。
 
-### 4. 精选 20 个面向工作流的聚合工具（而非透传 30+ 内部工具）
+### 4. 精选 22 个面向工作流的聚合工具（而非透传 30+ 内部工具）
 - **决策**：对外提供 20 个高内聚工具（WebMCP 通道额外暴露 `get_workflow_guide`），底层复用现有 services 与验证逻辑：
   - **应用与导航（2）**：`get_app_context`（读）、`navigate_to`（写 UI，支持跳转首页/书库/书籍/章节/段落）。
-  - **书库与导入（6）**：`list_books`（读）、`get_book`（读）、`create_book`（写）、`add_chapters`（写，支持纯文本按空行/换行分段或段落数组，自动创建或追加到指定卷）、`import_book_from_url`（写，实现位于 `tools/url-import.ts`，调用 `NovelScraperFactory`；按规范化目录 URL 匹配已有书并增量合并目录，不覆盖用户改过的书名/作者/简介；每次调用抓取至多 `max_chapters` 个缺正文章节（默认 20、上限 50），返回 `pending_chapter_count` / `has_more` 供 Agent 续调；同一 URL 的重叠调用返回 `IMPORT_IN_PROGRESS`；已有正文的章节不重抓、不覆盖；新建书在未写入任何章节就失败时回滚删除空壳；失败时若书仍在书库则带回 `book_id` 且只建议 `add_chapters`，否则给出 `create_book` + `add_chapters` 的降级指引；Web 端 CORS 失败与站点不受支持同样返回结构化降级指引）、`delete_book`（危险写，仅 `full` 模式）。
+  - **书库与导入（6）**：`list_books`（读）、`get_book`（读）、`create_book`（写）、`add_chapters`（写，支持纯文本按空行/换行分段或段落数组，自动创建或追加到指定卷）、`import_book_from_url`（写，实现位于 `tools/url-import.ts`，调用 `NovelScraperFactory`；按规范化目录 URL 匹配已有书并增量合并目录，不覆盖用户改过的书名/作者/简介；每次调用抓取至多 `max_chapters` 个缺正文章节（默认 20、上限 50），返回 `pending_chapter_count` / `has_more` 供 Agent 续调；同一 URL 的重叠调用返回 `IMPORT_IN_PROGRESS`；已有正文的章节不重抓、不覆盖；新建书在未写入任何章节就失败时回滚删除空壳；失败时若书仍在书库则带回 `book_id` 且只建议 `add_chapters`，否则给出 `create_book` + `add_chapters` 的降级指引；Web 端 CORS 失败与站点不受支持同样返回结构化降级指引）、`delete_book`（危险写，仅 `full` 模式）；后补 `check_book_updates`（写级权限：快速检查可能把手动章节关联到目录网址，但不改章节内容；`deep` 时比对已导入章节正文）与 `apply_book_updates`（写：默认只导入站点新增章节，`include_updated` 才应用已导入章节的正文改动，`urls` 可限定范围），实现位于 `tools/book-updates.ts`，直接复用 `BookSyncService.openSession` 的检查与应用会话，每次调用重新检查而不跨调用保留会话。
   - **翻译核心循环（4）**：
     - `get_translation_chunk`（读）：分块大小取 `book.translationChunkSize`（经 `resolveTaskChunkSize`，显式 `chunk_size` 经 `resolveRuntimeTaskChunkSize`），复用 `buildChunks`、`resolveSpecialInstructionsForTask` 与术语/角色匹配；记忆使用只读的 `selectRelevantMemoriesForChunk`（返回结构化结果），**不**使用 `getRelatedMemoriesForChunk`——后者返回拼好的提示词字符串，并会写入按书共享的 `lastScoreBreakdownsByBook`，与站内同书任务并发时会互相覆盖打分明细。参数 `book_id?`、`chapter_id`、`mode: 'untranslated' | 'all'`、`cursor`、`chunk_size?`、`context_before?`（默认 3 段已译衔接）、`task_type?: 'translation' | 'polish' | 'proofreading'`（默认 `'translation'`，用于解析对应的书/章级特殊指令）。
       - **游标语义**：`cursor` 是章节原始段落序列中的起始段落索引（不是块序号）。`untranslated` 模式下每次提交后未翻集合都会缩小，块序号会跳块；因此该模式从 `cursor`（缺省为 0）起向后取第一批仍未翻译的段落，校验失败而未写入的段落在下一次不带 `cursor` 的调用中会再次返回。
@@ -160,11 +160,16 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
   - 路由：`{ path: 'mcp', component: () => import('src/pages/AgentMcpPage.vue') }`。
   - 文件组织严格遵循 `device-variant-dispatch` 与 `desktop-tool-pages`：
     - `src/pages/AgentMcpPage.vue`（Dispatcher，调用 `provideAgentMcpPage()`）
-    - `src/pages/agent-mcp/AgentMcpDesktop.vue`（双栏桌面工作台：左栏按运行环境分别展示 Electron 本地 MCP 服务端端口/Token 或 Web 桌面端 WebMCP 开关与检测状态，外加通用权限/写回策略；右栏按环境适配的客户端接入片段 + 工具目录与实时活动日志）
-    - `src/pages/agent-mcp/AgentMcpTablet.vue`（复用/适配桌面布局）
-    - `src/pages/agent-mcp/AgentMcpMobile.vue`（单列卡片流，适合移动端查看状态与调整 WebMCP/权限）
-    - `src/composables/agent-mcp-page/useAgentMcpPage.ts`（`provideAgentMcpPage` / `injectAgentMcpPage`，保存跨断点存活的选中配置 Tab、工具搜索词、端口草稿等状态）
-    - `src/components/agent-mcp/`（共享 UI 碎片：连接状态卡、客户端配置片段卡、工具目录与实时日志面板，消除三变体模板重复）。
+    - `src/pages/agent-mcp/AgentMcpDesktop.vue`（两栏：主栏为接入步骤与调用活动，侧栏为权限、连接设置与开放能力）
+    - `src/pages/agent-mcp/AgentMcpTablet.vue`（复用桌面布局）
+    - `src/pages/agent-mcp/AgentMcpMobile.vue`（同一组面板按使用顺序单列排列）
+    - `src/composables/agent-mcp-page/useAgentMcpPage.ts`（`provideAgentMcpPage` / `injectAgentMcpPage`，保存跨断点存活的配置标签页、已展开的工具类别、端口草稿与两处待确认状态）
+    - `src/components/agent-mcp/`：`AgentMcpPanel`（基于 `DesktopWorkbenchSurface` 的共用面板与小部件样式）、`AgentMcpSetupSteps`、`AgentMcpActivityLog`、`AgentMcpPermissionPanel`、`AgentMcpConnectionSettings`、`AgentMcpToolCatalog`。
+  - **页面按「用户要完成什么」组织，而不是按设置项平铺**：
+    - 接入步骤依次为开启服务 → 客户端配置（仅桌面端）→ 给 Agent 快速上手指南；服务未运行时配置片段置灰且不可复制；底部显示是否已收到首次调用。
+    - 最后一步是「快速上手指南」，由 `src/services/agent-mcp/agent-quick-start.ts` 的 `buildAgentQuickStartGuide` 生成 Markdown：已连接的服务、了解现状的工具、各类常见任务用哪些工具、必须遵守的规则。它是通用说明，不让用户选任务或书籍（最初做成按任务和书籍拼接的任务提示，用户反馈后改为指南）；桌面通道引用 MCP Prompt，WebMCP 通道改用 `get_workflow_guide`；测试校验指南里出现的工具名都是已注册工具。浏览器端没有需要粘贴的客户端配置，接入指引由这份指南承担。
+    - 调用活动放在主栏；工具目录收成按类别折叠的概览，不再提供搜索；页头不再重复展示状态与数量指标。
+    - 权限以带后果说明和工具数量的选项呈现；切换到 `full` 与重新生成令牌用页面内的二次确认（状态保存在 composable，不依赖全局确认对话框）。
   - 导航入口：
     - `MainNavTab` / `MainNavTarget` 新增 `'mcp'`；
     - `AppSideMenu.vue` 与 `TabletNavRail.vue` 在主功能区 `ai` 之后加入 `mcp` 入口；
