@@ -226,6 +226,7 @@ export function createAgentMcpKernel(options: CreateAgentMcpKernelOptions): Agen
       permissionMode: config.permissionMode,
       defaultWriteMode: config.defaultWriteMode,
       resolveBookId,
+      tools: options.tools,
       ...(options.navigate ? { navigate: options.navigate } : {}),
       ...(options.getCurrentPath ? { getCurrentPath: options.getCurrentPath } : {}),
     };

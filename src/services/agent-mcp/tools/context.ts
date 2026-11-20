@@ -1,3 +1,4 @@
+import { APP_VERSION } from 'src/constants/version';
 import type { AppLocale } from 'src/models/locale';
 import type { Chapter, Novel, Paragraph } from 'src/models/novel';
 import { getLanguageTranslation, getNameTranslation } from 'src/services/localization/selection';
@@ -8,6 +9,7 @@ import { useContextStore } from 'src/stores/context';
 import { useSettingsStore } from 'src/stores/settings';
 import { isElectron } from 'src/utils/platform';
 import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
+import { buildAgentQuickStartGuide } from '../agent-quick-start';
 import { getAgentMcpPrompt, listAgentMcpPrompts } from '../prompts';
 import { agentMcpError, type AgentMcpToolSpec } from '../types';
 import {
@@ -170,6 +172,8 @@ export const agentMcpContextTools: AgentMcpToolSpec[] = [
         selected_paragraph_id: contextStore.selectedParagraphId,
         selected_text: readSelectedText(),
         ui_locale: settingsStore.uiLocale,
+        // 与快速上手指南开头的版本对比，可以发现保存的指南已经过期
+        app_version: APP_VERSION,
         target_language: currentBook?.targetLanguage ?? 'zh-CN',
         is_electron: isElectron(),
         books_loaded: booksStore.isLoaded,
@@ -293,6 +297,37 @@ export const agentMcpContextTools: AgentMcpToolSpec[] = [
         book_id: book.id,
         ...(chapterId ? { chapter_id: chapterId } : {}),
         ...(paragraphId ? { paragraph_id: paragraphId } : {}),
+      };
+    },
+  },
+  {
+    name: 'get_quick_start_guide',
+    description:
+      'Return the quick start guide for the running Tsukuyomi version (the same text the user copies from the app), together with app_version. Call it when app_version from get_app_context differs from the version written at the top of your saved guide (AGENTS.md), then replace the saved copy with the returned guide. Keep the MCP configuration you already have: the setup section of the returned guide shows a placeholder instead of the access token.',
+    category: 'context',
+    permission: 'read_only',
+    readOnlyHint: true,
+    requiresBookStore: false,
+    inputSchema: { type: 'object', properties: {} },
+    execute: (_args, ctx) => {
+      const settingsStore = useSettingsStore();
+      return {
+        app_version: APP_VERSION,
+        locale: settingsStore.uiLocale,
+        guide: buildAgentQuickStartGuide({
+          locale: settingsStore.uiLocale,
+          channel: ctx.channel,
+          tools: ctx.tools,
+          connection:
+            ctx.channel === 'webmcp'
+              ? { kind: 'relay', pageOrigin: window.location.origin }
+              : {
+                  kind: 'desktop',
+                  endpointUrl: `http://127.0.0.1:${settingsStore.agentMcp.desktopPort}/mcp`,
+                  // 令牌不经工具返回：Agent 已经在用现有的配置连接，不需要它
+                  token: '',
+                },
+        }),
       };
     },
   },

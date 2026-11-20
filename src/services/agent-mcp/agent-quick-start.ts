@@ -8,10 +8,10 @@ import {
   buildRelayJsonConfig,
   TOKEN_PLACEHOLDER,
 } from './client-config';
-import { getPhaseChecklist } from 'src/services/ai/tasks/utils/todo-workflow';
+import { APP_VERSION } from 'src/constants/version';
 import { buildExternalTaskRules } from './task-rules';
-import { ALL_AGENT_MCP_TOOLS } from './tools/all-tools';
-import type { AgentMcpToolCategory } from './types';
+import type { AgentMcpToolCategory, AgentMcpToolSpec } from './types';
+import { AGENT_GENERAL_RULE_KEYS, AGENT_WORKFLOWS, renderWorkflowSteps } from './workflows';
 
 /** 指南里「如何添加 MCP」一节需要的连接信息 */
 export type AgentQuickStartConnection =
@@ -22,6 +22,8 @@ export interface AgentQuickStartOptions {
   locale: AppLocale;
   channel: ExternalAgentChannel;
   connection: AgentQuickStartConnection;
+  /** 指南的工具一览列出这些工具；界面与内核传入的都是已注册的全部工具 */
+  tools: readonly AgentMcpToolSpec[];
 }
 
 const CATEGORY_ORDER: ReadonlyArray<{ category: AgentMcpToolCategory; labelKey: MessageKey }> = [
@@ -43,81 +45,6 @@ const OVERVIEW_KEYS: readonly MessageKey[] = [
   'agentMcp.guide.overviewLibrary',
   'agentMcp.guide.overviewSearch',
   'agentMcp.guide.overviewHelp',
-];
-
-type ChecklistPhase = Parameters<typeof getPhaseChecklist>[0];
-/** 一个步骤；带 checklist 时，步骤下面列出站内对应阶段的待办清单 */
-type WorkflowStep = MessageKey | { key: MessageKey; checklist: ChecklistPhase };
-
-/**
- * 各工作流的标题与分步说明。翻译的顺序与站内任务相同：规划（准备）→ 翻译 → 复核，
- * 润色与校对没有复核阶段；准备与复核的清单直接取站内任务的待办文字。
- */
-const WORKFLOWS: ReadonlyArray<{ titleKey: MessageKey; stepKeys: readonly WorkflowStep[] }> = [
-  {
-    titleKey: 'agentMcp.guide.wfTranslateTitle',
-    stepKeys: [
-      'agentMcp.guide.wfTranslate1',
-      'agentMcp.guide.wfTranslate2',
-      { key: 'agentMcp.guide.wfTranslatePlan', checklist: 'planning' },
-      'agentMcp.guide.wfTranslate3',
-      'agentMcp.guide.wfTranslate4',
-      { key: 'agentMcp.guide.wfTranslateReview', checklist: 'review' },
-      'agentMcp.guide.wfTranslate5',
-      { key: 'agentMcp.guide.wfTranslateBrief', checklist: 'brief' },
-    ],
-  },
-  {
-    titleKey: 'agentMcp.guide.wfPolishTitle',
-    stepKeys: [
-      'agentMcp.guide.wfPolish1',
-      { key: 'agentMcp.guide.wfPolishPlan', checklist: 'planning' },
-      'agentMcp.guide.wfPolish2',
-      'agentMcp.guide.wfPolish3',
-      'agentMcp.guide.wfPolish4',
-    ],
-  },
-  {
-    titleKey: 'agentMcp.guide.wfImportTitle',
-    stepKeys: ['agentMcp.guide.wfImport1', 'agentMcp.guide.wfImport2', 'agentMcp.guide.wfImport3'],
-  },
-  {
-    titleKey: 'agentMcp.guide.wfUpdateTitle',
-    stepKeys: [
-      'agentMcp.guide.wfUpdate1',
-      'agentMcp.guide.wfUpdate2',
-      'agentMcp.guide.wfUpdate3',
-      'agentMcp.guide.wfUpdate4',
-    ],
-  },
-  {
-    titleKey: 'agentMcp.guide.wfWorldTitle',
-    stepKeys: [
-      'agentMcp.guide.wfWorld1',
-      'agentMcp.guide.wfWorld2',
-      'agentMcp.guide.wfWorld3',
-      'agentMcp.guide.wfWorld4',
-      'agentMcp.guide.wfWorld5',
-    ],
-  },
-  {
-    titleKey: 'agentMcp.guide.wfRenameTitle',
-    stepKeys: [
-      'agentMcp.guide.wfRename1',
-      'agentMcp.guide.wfRename2',
-      'agentMcp.guide.wfRename3',
-      'agentMcp.guide.wfRename4',
-      'agentMcp.guide.wfRename5',
-    ],
-  },
-];
-
-const RULE_KEYS: readonly MessageKey[] = [
-  'agentMcp.guide.ruleWriteBack',
-  'agentMcp.guide.ruleIds',
-  'agentMcp.guide.ruleNoRepeat',
-  'agentMcp.guide.ruleConfirm',
-  'agentMcp.guide.ruleAsk',
 ];
 
 const ERROR_KEYS: readonly MessageKey[] = [
@@ -147,9 +74,6 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
   const isWeb = channel === 'webmcp';
   const text = (key: MessageKey): string => translateText(locale, key);
   const bullets = (keys: readonly MessageKey[]): string[] => keys.map((key) => `- ${text(key)}`);
-  const numbered = (keys: readonly MessageKey[]): string[] =>
-    keys.map((key, index) => `${index + 1}. ${text(key)}`);
-
   // 首次设置：让 Agent 替用户建好项目文件夹、在其中配置 MCP、把本指南存为 AGENTS.md
   // 列表项内的续行与代码块缩进三格；多行内容逐行缩进
   const indent = (lines: string[]): string[] =>
@@ -195,7 +119,7 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
   ];
 
   // 工具一览：按类别列出该通道的全部工具，说明取自界面文案，标出写入与危险工具
-  const channelTools = ALL_AGENT_MCP_TOOLS.filter((tool) => !tool.webMcpOnly || isWeb);
+  const channelTools = options.tools.filter((tool) => !tool.webMcpOnly || isWeb);
   const toolReference = CATEGORY_ORDER.flatMap(({ category, labelKey }) => {
     const tools = channelTools.filter((tool) => tool.category === category);
     if (tools.length === 0) return [];
@@ -215,23 +139,20 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
     ];
   });
 
-  const workflows = WORKFLOWS.flatMap(({ titleKey, stepKeys }) => [
+  // 步骤与 MCP 工作流模板共用 workflows.ts 里的同一份
+  const workflows = AGENT_WORKFLOWS.flatMap(({ id, titleKey }) => [
     '',
     `### ${text(titleKey)}`,
-    ...stepKeys.flatMap((step, index) =>
-      typeof step === 'string'
-        ? [`${index + 1}. ${text(step)}`]
-        : [
-            `${index + 1}. ${text(step.key)}`,
-            ...getPhaseChecklist(step.checklist, locale, 'external').map((item) => `   - ${item}`),
-          ],
-    ),
+    ...renderWorkflowSteps(id, locale),
   ]);
 
   return [
     `# ${text('agentMcp.guide.title')}`,
     '',
     text(isWeb ? 'agentMcp.guide.introWeb' : 'agentMcp.guide.intro'),
+    '',
+    // 保存下来的指南不会随应用更新：带上版本，Agent 才能发现手里的是旧版
+    translateText(locale, 'agentMcp.guide.versionNote', { version: APP_VERSION }),
     '',
     `## ${text('agentMcp.guide.setupTitle')}`,
     ...setup,
@@ -244,6 +165,7 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
     ...(isWeb ? bullets(['agentMcp.guide.overviewRelay']) : []),
     ...bullets(OVERVIEW_KEYS),
     `- ${text(isWeb ? 'agentMcp.guide.overviewWorkflowsWeb' : 'agentMcp.guide.overviewWorkflows')}`,
+    `- ${text('agentMcp.guide.overviewVersion')}`,
     '',
     `## ${text('agentMcp.guide.toolsTitle')}`,
     text('agentMcp.guide.toolsNote'),
@@ -260,7 +182,7 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
     buildExternalTaskRules(['translation', 'polish', 'proofreading']),
     '',
     `## ${text('agentMcp.guide.rulesTitle')}`,
-    ...bullets(RULE_KEYS),
+    ...bullets(AGENT_GENERAL_RULE_KEYS),
     '',
     `## ${text('agentMcp.guide.errorsTitle')}`,
     ...bullets(ERROR_KEYS),

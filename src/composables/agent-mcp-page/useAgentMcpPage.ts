@@ -430,6 +430,7 @@ function createAgentMcpPageContext(): AgentMcpPageContext {
     buildAgentQuickStartGuide({
       locale: settingsStore.uiLocale,
       channel: activeChannel.value,
+      tools: ALL_AGENT_MCP_TOOLS,
       connection: isElectronEnv.value
         ? {
             kind: 'desktop',

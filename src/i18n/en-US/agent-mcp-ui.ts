@@ -90,9 +90,9 @@ export default {
       overviewHelp:
         'When the user asks how to use Tsukuyomi or where a feature is, find the relevant guide with search_help_docs, read it in full with get_help_doc, then answer. Do not answer from memory.',
       overviewWorkflows:
-        'The full procedure for each kind of task is in the MCP prompts translate-chapter, polish-chapter and import-and-translate; read the relevant one with prompts/get before starting.',
+        'The full procedure for each kind of task is written under "Workflows" below; there is nothing else to read. The MCP prompts translate-chapter, polish-chapter and import-and-translate (prompts/get) contain the same steps and exist so the user can start a task directly.',
       overviewWorkflowsWeb:
-        'Read the full procedure for each kind of task with get_workflow_guide; workflow can be "translate-chapter", "polish-chapter" or "import-and-translate".',
+        'The full procedure for each kind of task is written under "Workflows" below; there is nothing else to read. get_workflow_guide returns the same steps and is only needed to read the current procedure when this guide is out of date.',
       ruleIds:
         'Submit strictly one translation per returned paragraph ID; do not merge, split or skip paragraphs.',
       ruleNoRepeat:
@@ -101,6 +101,9 @@ export default {
         "This is the usage guide for Tsukuyomi, a novel translation tool. It provides tools through an MCP server (server name: tsukuyomi): use them to read and write the user's library directly, and write results back into the app rather than only printing them in the chat.",
       introWeb:
         "This is the usage guide for Tsukuyomi, a novel translation tool. It runs in the user's browser and provides tools through a local relay called webmcp-local-relay: use them to read and write the user's library directly, and write results back into the app rather than only printing them in the chat. The tools come from the open page and disappear temporarily when it is closed or reloaded.",
+      versionNote: 'This guide is for Tsukuyomi {version}.',
+      overviewVersion:
+        'If the app_version returned by get_app_context differs from the version at the top of this guide, the guide is out of date: call get_quick_start_guide to get the guide for the current version and replace the saved AGENTS.md with it; the existing MCP configuration stays as it is.',
       conceptsTitle: 'Data model',
       conceptStructure:
         'The hierarchy is book → volume → chapter → paragraph. Each book has one target language, and translations are for that language.',
@@ -118,8 +121,7 @@ export default {
       toolDangerMark: ' (danger)',
       toolSeparator: ': ',
       workflowsTitle: 'Workflows',
-      workflowsNote:
-        'These are the steps for each kind of task. Before starting, read the corresponding full workflow as described under "Get your bearings".',
+      workflowsNote: 'These are the steps for each kind of task; follow them as written.',
       wfTranslateTitle: 'Translate a chapter',
       wfTranslate1:
         'Call get_translation_chunk with the chapter_id and mode set to "untranslated".',
@@ -128,7 +130,7 @@ export default {
       wfTranslate3:
         'Translate paragraph by paragraph: one translated paragraph per source paragraph, with no merging, splitting or omission. Use the given renderings for terms and character names.',
       wfTranslate4:
-        'Call submit_translations; each item in paragraphs has paragraph_id and translated_text. If the book has source-prefix validation enabled, also include original_text_prefix (the first few characters of the source paragraph). With the first chunk of a chapter you can also submit the translated chapter title as chapter_title_translation; put the name of the model you are using in model_label.',
+        'Call submit_translations; each item in paragraphs has paragraph_id and translated_text. If the book has source-prefix validation enabled, also include original_text_prefix (the first 3 to 20 characters of the source paragraph). With the first chunk of a chapter you can also submit the translated chapter title as chapter_title_translation; put the name of the model you are using in model_label.',
       wfTranslate5:
         'Check failed_items in the result and fix and resubmit only those paragraphs. While remaining_untranslated_count is greater than 0, go back to step 1; when it reaches 0 the chapter is done.',
       wfTranslatePlan:
@@ -139,7 +141,7 @@ export default {
         'For every later chunk a short preparation is enough, followed by the same translate, submit and review steps:',
       wfPolishTitle: 'Polish and proofread',
       wfPolish1:
-        'Call get_translation_chunk with mode "all" and task_type "polish" (use "proofreading" for proofreading). Each paragraph then includes current_translation.',
+        'Call get_translation_chunk with mode "all" and task_type "polish" (use "proofreading" for proofreading); without task_type you get the special instructions meant for translation. Each paragraph then includes current_translation.',
       wfPolish2:
         'Call submit_translations only for paragraphs that really need improvement; do not submit unchanged paragraphs.',
       wfPolish3:
@@ -310,6 +312,8 @@ export default {
     tools: {
       get_app_context:
         'Read which page the user is on, the open book and chapter, the selected paragraph with its text and translation, highlighted text, plus UI locale and runtime environment.',
+      get_quick_start_guide:
+        'Returns the quick start guide for the current version, to replace an outdated copy the agent saved.',
       navigate_to:
         'Navigate the UI to home, library, a book, a chapter, or scroll directly to a paragraph.',
       get_workflow_guide:

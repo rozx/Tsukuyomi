@@ -83,9 +83,9 @@ export default {
       overviewHelp:
         '用户问 Tsukuyomi 怎么用、某个功能在哪里时，先用 search_help_docs 找到相关文档，再用 get_help_doc 读完全文后回答，不要凭印象回答。',
       overviewWorkflows:
-        '每类任务的完整流程在 MCP 提示词 translate-chapter、polish-chapter、import-and-translate 里，开工前用 prompts/get 读取。',
+        '每类任务的完整流程就写在下面的「工作流」里，不需要另外读取。MCP 提示词 translate-chapter、polish-chapter、import-and-translate（prompts/get）给出的是同一份步骤，供用户直接发起任务。',
       overviewWorkflowsWeb:
-        '每类任务的完整流程用 get_workflow_guide 读取，workflow 可取 "translate-chapter"、"polish-chapter"、"import-and-translate"。',
+        '每类任务的完整流程就写在下面的「工作流」里，不需要另外读取。get_workflow_guide 返回的是同一份步骤，只有本指南已经过期时才需要用它读取最新的流程。',
       ruleIds: '严格按返回的段落 ID 一一对应提交，不要合并、拆分或省略段落。',
       ruleNoRepeat:
         '同一段不要重复提交不同的译文；提交被拒绝时按返回的原因修正，只重提被拒绝的段落。',
@@ -93,6 +93,9 @@ export default {
         '这是小说翻译工具 Tsukuyomi 的使用说明。它通过 MCP 服务（服务名 tsukuyomi）提供工具：用这些工具直接读写用户的书库，结果写回应用，不要只输出在对话里。',
       introWeb:
         '这是小说翻译工具 Tsukuyomi 的使用说明。它运行在用户的浏览器里，通过 webmcp-local-relay 这个本地中继提供工具：用这些工具直接读写用户的书库，结果写回应用，不要只输出在对话里。工具来自打开着的页面，页面被关闭或刷新时会暂时消失。',
+      versionNote: '本指南对应 Tsukuyomi {version}。',
+      overviewVersion:
+        'get_app_context 返回的 app_version 与本指南开头写的版本不同时，这份指南已经过期：调用 get_quick_start_guide 取得当前版本的指南，用它替换保存的 AGENTS.md，现有的 MCP 配置不用改。',
       conceptsTitle: '数据模型',
       conceptStructure:
         '层级是 书籍 → 卷 → 章节 → 段落。每本书有一个目标语言，译文都针对这个语言。',
@@ -110,7 +113,7 @@ export default {
       toolDangerMark: '（危险）',
       toolSeparator: '：',
       workflowsTitle: '工作流',
-      workflowsNote: '下面是每类任务的步骤。开始之前按「先了解现状」里的方式读取对应的完整工作流。',
+      workflowsNote: '下面是每类任务的步骤，照着执行即可。',
       wfTranslateTitle: '翻译一章',
       wfTranslate1: '调用 get_translation_chunk，传入 chapter_id，mode 设为 "untranslated"。',
       wfTranslate2:
@@ -118,7 +121,7 @@ export default {
       wfTranslate3:
         '逐段翻译：一个原文段落对应一个译文段落，不合并、不拆分、不省略；术语和角色名使用给出的译法。',
       wfTranslate4:
-        '调用 submit_translations，paragraphs 里每项包含 paragraph_id 和 translated_text。书籍启用了原文前缀校验时，还要带上 original_text_prefix（对应原文开头的几个字符）。翻译章节第一块时可以同时用 chapter_title_translation 提交章节标题译文；model_label 填你使用的模型名称。',
+        '调用 submit_translations，paragraphs 里每项包含 paragraph_id 和 translated_text。书籍启用了原文前缀校验时，还要带上 original_text_prefix（对应原文开头 3~20 个字符）。翻译章节第一块时可以同时用 chapter_title_translation 提交章节标题译文；model_label 填你使用的模型名称。',
       wfTranslate5:
         '查看返回的 failed_items：只修正并重提失败的段落。remaining_untranslated_count 大于 0 时取下一块继续，等于 0 时本章完成。',
       wfTranslatePlan:
@@ -127,7 +130,7 @@ export default {
       wfTranslateBrief: '之后的每一块只需简短准备，然后同样翻译、提交、复核：',
       wfPolishTitle: '润色校对',
       wfPolish1:
-        '调用 get_translation_chunk，mode 设为 "all"，task_type 设为 "polish"（校对用 "proofreading"）。每个段落会带上 current_translation。',
+        '调用 get_translation_chunk，mode 设为 "all"，task_type 设为 "polish"（校对用 "proofreading"）；不写 task_type 时拿到的是翻译用的特殊指令。每个段落会带上 current_translation。',
       wfPolish2: '只对确实需要改进的段落调用 submit_translations，没有改动的段落不要提交。',
       wfPolish3:
         '默认会新增一个译文版本并选用它；只有用户明确要求直接改写当前版本时才把 write_mode 设为 "overwrite"。',
@@ -277,6 +280,7 @@ export default {
     tools: {
       get_app_context:
         '读取用户所在页面、打开的书籍与章节、选中段落的原文与译文、划选的文字，以及界面语言与运行环境。',
+      get_quick_start_guide: '返回当前版本的快速上手指南，用来更新 Agent 保存的旧指南。',
       navigate_to: '切换界面到首页、书库、指定书籍、章节或定位到具体段落。',
       get_workflow_guide:
         '获取 translate-chapter / polish-chapter / import-and-translate 标准工作流指引。',

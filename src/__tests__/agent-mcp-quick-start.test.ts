@@ -12,9 +12,19 @@ const DESKTOP = {
 const WEB = { kind: 'relay' as const, pageOrigin: 'https://app.example' };
 
 const desktopGuide = (locale: 'zh-CN' | 'zh-TW' | 'en-US' = 'zh-CN') =>
-  buildAgentQuickStartGuide({ locale, channel: 'desktop-mcp', connection: DESKTOP });
+  buildAgentQuickStartGuide({
+    locale,
+    channel: 'desktop-mcp',
+    tools: ALL_AGENT_MCP_TOOLS,
+    connection: DESKTOP,
+  });
 const webGuide = (locale: 'zh-CN' | 'zh-TW' | 'en-US' = 'zh-CN') =>
-  buildAgentQuickStartGuide({ locale, channel: 'webmcp', connection: WEB });
+  buildAgentQuickStartGuide({
+    locale,
+    channel: 'webmcp',
+    tools: ALL_AGENT_MCP_TOOLS,
+    connection: WEB,
+  });
 
 describe('buildAgentQuickStartGuide', () => {
   it('是一份快速上手指南，开头让 Agent 替用户完成首次设置：建项目文件夹、配置 MCP、把指南存为 AGENTS.md', () => {

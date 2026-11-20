@@ -51,6 +51,8 @@ export interface AgentMcpExecutionContext {
   navigate?: (path: string) => Promise<void> | void;
   /** 用户当前所在的应用内路径（如 /books/abc）；未接入路由时不提供 */
   getCurrentPath?: () => string | null;
+  /** 内核注册的全部工具：需要列出工具的工具（如返回快速上手指南）从这里取，不反过来依赖工具清单 */
+  tools: readonly AgentMcpToolSpec[];
 }
 
 export interface AgentMcpToolSpec {

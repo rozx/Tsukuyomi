@@ -228,7 +228,7 @@ describe('AgentMcpKernel', () => {
     const text = (name: string) =>
       kernel.getPrompt(name, { chapter_id: 'ch-1' })!.messages[0]!.content.text;
     // get_translation_chunk 默认按翻译任务取特殊指令，润色必须写明 task_type
-    expect(text('polish-chapter')).toContain('`task_type: "polish"`');
+    expect(text('polish-chapter')).toContain('task_type 设为 "polish"');
     // submit_translations 接受 3~20 个字符的原文前缀
     expect(text('translate-chapter')).toContain('3~20 个字符');
     expect(text('translate-chapter')).not.toContain('3~12');
@@ -244,7 +244,7 @@ describe('AgentMcpKernel', () => {
     const translate = text('translate-chapter');
     for (const item of [...planning, ...review]) expect(translate).toContain(item);
     expect(translate.indexOf(planning[0]!)).toBeLessThan(
-      translate.indexOf('`submit_translations`'),
+      translate.indexOf('调用 submit_translations'),
     );
     expect(translate).not.toContain('add_translation_batch');
 

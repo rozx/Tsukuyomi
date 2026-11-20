@@ -105,8 +105,7 @@ function defaultBaseUrl(): string {
 export function createWebMcpRelayBridge(
   options: CreateWebMcpRelayBridgeOptions = {},
 ): WebMcpRelayBridge {
-  const loadRuntime =
-    options.loadRuntime ?? (() => import('@mcp-b/global') as Promise<WebMcpPageRuntime>);
+  const loadRuntime = options.loadRuntime ?? (() => import('@mcp-b/global'));
   const baseUrl = options.baseUrl ?? defaultBaseUrl();
   const detectLegacyNative = options.detectLegacyNative ?? detectLegacyNativeWebMcp;
   const removeLegacyNative = options.removeLegacyNative ?? removeLegacyNativeWebMcp;

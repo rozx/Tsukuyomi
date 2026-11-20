@@ -67,8 +67,7 @@ export function probeRelay(
     createSocket?: (url: string, protocols: string[]) => ProbeSocket;
   } = {},
 ): Promise<boolean> {
-  const createSocket =
-    options.createSocket ?? ((url, protocols) => new WebSocket(url, protocols) as ProbeSocket);
+  const createSocket = options.createSocket ?? ((url, protocols) => new WebSocket(url, protocols));
   return new Promise((resolve) => {
     let socket: ProbeSocket;
     try {
