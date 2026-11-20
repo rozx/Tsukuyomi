@@ -466,11 +466,20 @@ export function createElectronMcpServer(
     return setStatus({ state: 'stopped', port: null, error: null });
   };
 
-  const startNow = async (config: DesktopMcpStartConfig): Promise<DesktopMcpServerStatus> => {
+  /** 更换令牌的次数：排队中的启动据此判断自己带来的令牌是否已经过时 */
+  let tokenUpdates = 0;
+
+  const startNow = async (
+    config: DesktopMcpStartConfig,
+    tokenUpdatesWhenRequested: number,
+  ): Promise<DesktopMcpServerStatus> => {
     if (server) {
       await stopNow();
     }
-    activeToken = config.authToken.trim();
+    // 启动排队期间令牌被更换过的话，以更换后的为准，不能用启动请求里的旧令牌盖回去
+    if (tokenUpdates === tokenUpdatesWhenRequested) {
+      activeToken = config.authToken.trim();
+    }
     setStatus({ state: 'starting', port: config.port, error: null });
 
     const nextServer = createServer((req, res) => {
@@ -502,11 +511,14 @@ export function createElectronMcpServer(
     });
   };
 
-  const start = (config: DesktopMcpStartConfig): Promise<DesktopMcpServerStatus> =>
-    inOrder(() => startNow(config));
+  const start = (config: DesktopMcpStartConfig): Promise<DesktopMcpServerStatus> => {
+    const tokenUpdatesWhenRequested = tokenUpdates;
+    return inOrder(() => startNow(config, tokenUpdatesWhenRequested));
+  };
   const stop = (): Promise<DesktopMcpServerStatus> => inOrder(stopNow);
 
   const updateAuthToken = (token: string): void => {
+    tokenUpdates += 1;
     activeToken = token.trim();
   };
 

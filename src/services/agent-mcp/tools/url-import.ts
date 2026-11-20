@@ -276,6 +276,8 @@ async function prepareBookForUrlImport(
   url: string,
   catalogUrl: string,
   rawTargetLanguage: unknown,
+  /** 书库里已经有这本书时立刻调用：之后的写入即使失败，调用方也知道该让 Agent 续用哪本书 */
+  onExistingBook: (bookId: string) => void,
 ): Promise<{
   bookId: string;
   isNewBook: boolean;
@@ -290,6 +292,7 @@ async function prepareBookForUrlImport(
   ]);
 
   if (existing) {
+    onExistingBook(existing.id);
     const { volumes, addedCount } = mergeCatalogIntoExistingVolumes(existing, fetchedNovel);
     const mergedUrls = mergeUniqueUrls(existing.webUrl, [
       catalogUrl,
@@ -408,6 +411,9 @@ export const importBookFromUrlTool: AgentMcpToolSpec = {
         url,
         catalogUrl,
         args.target_language,
+        (bookId) => {
+          preparedBookId = bookId;
+        },
       );
       preparedBookId = prepared.bookId;
       if (prepared.isNewBook) {

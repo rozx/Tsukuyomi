@@ -166,6 +166,12 @@ export function createWebMcpRelayBridge(
     } catch (error) {
       console.warn('[agent-mcp] WebMCP 中继初始化失败:', error);
       removeRelayElements();
+      // 初始化可能进行到一半：与 disable() 一样清理页面上下文，下次开启才不会叠在半初始化的状态上
+      try {
+        runtime?.cleanupWebModelContext();
+      } catch {
+        // 清理本身失败不影响返回初始化失败
+      }
       return 'failed';
     }
   };

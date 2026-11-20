@@ -174,6 +174,34 @@ describe('外部工具写入与抓取的网址限制', () => {
     expect(kept.filter((content) => content && content.length > 0)).toHaveLength(1);
   });
 
+  it('书已经在书库里、合并目录时写入失败：错误里仍带回这本书的 book_id，不会引导 Agent 再建一本', async () => {
+    const created = await call('create_book', { title: '已有的书', web_url: CATALOG });
+    const bookId = (created.data as { book_id: string }).book_id;
+    vi.spyOn(NovelScraperFactory, 'getScraper').mockReturnValue({
+      isValidUrl: () => true,
+      catalogUrl: () => CATALOG,
+      fetchNovel: () =>
+        Promise.resolve({
+          success: true,
+          novel: {
+            id: 'scraped-other-id',
+            title: '站点上的书',
+            webUrl: [CATALOG],
+            volumes: [],
+            createdAt: new Date(),
+            lastEdited: new Date(),
+          },
+        }),
+      fetchChapterContent: () => Promise.resolve('正文'),
+    } as unknown as NovelScraper);
+    vi.spyOn(useBooksStore(), 'updateBook').mockRejectedValueOnce(new Error('QuotaExceededError'));
+
+    const res = await call('import_book_from_url', { url: CATALOG });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain(bookId);
+    expect(res.errorMessage).not.toContain('create_book');
+  });
+
   it('get_book 统计进度时分批读取正文，不逐章单独读取', async () => {
     const created = await call('create_book', {
       title: '统计',

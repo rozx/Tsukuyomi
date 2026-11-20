@@ -110,6 +110,23 @@ describe('WebMCP local relay bridge', () => {
     expect(runtime.initializeWebModelContext).toHaveBeenCalledTimes(1);
   });
 
+  it('运行时初始化到一半失败时清理页面上下文，下次开启不会叠在半初始化的状态上', async () => {
+    const runtime = fakeRuntime();
+    runtime.initializeWebModelContext.mockImplementationOnce(() => {
+      throw new Error('init failed');
+    });
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const bridge = createWebMcpRelayBridge({
+      loadRuntime: () => Promise.resolve(runtime),
+      baseUrl: '/',
+      detectLegacyNative: () => Promise.resolve(false),
+    });
+
+    expect(await bridge.enable()).toBe('failed');
+    expect(runtime.cleanupWebModelContext).toHaveBeenCalledTimes(1);
+    expect(await bridge.enable()).toBe('enabled');
+  });
+
   it('页面不在安全上下文时不加载运行时，返回 insecure', async () => {
     Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true });
     const loadRuntime = vi.fn(() => Promise.resolve(fakeRuntime()));

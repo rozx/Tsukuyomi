@@ -201,7 +201,15 @@ describe('AgentMcp 全书搜索与批量替换工具', () => {
 
     it('可能让页面卡死的正则（嵌套的重复、过长的表达式）直接拒绝', async () => {
       const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
-      for (const query of ['(a+)+b', '((月|光)+)*石', '(?:x*)*y', '(.*a){12}', 'a'.repeat(301)]) {
+      for (const query of [
+        '(a+)+b',
+        '((月|光)+)*石',
+        '(?:x*)*y',
+        '(.*a){12}',
+        'a'.repeat(301),
+        // 没有分组，但一连串不定次数的重复同样会大量回溯
+        'a*a*a*a*a*a*a*b',
+      ]) {
         const res = await kernel.callTool(
           'search_paragraphs',
           { book_id: BOOK_ID, query, regex: true },
@@ -534,6 +542,22 @@ describe('AgentMcp 全书搜索与批量替换工具', () => {
         '月光石碎片发着微光。是月光石碎片。',
       );
       expect(await selectedTranslation('ch-2', 'p2000002')).toBe('塔顶也有月光石碎片。');
+    });
+
+    it('预览（dry_run）不返回续传位置：把预览的位置带进正式替换会跳过还没写入的那一批', async () => {
+      const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
+      const res = await kernel.callTool(
+        'replace_in_translations',
+        {
+          book_id: BOOK_ID,
+          find: '月光石',
+          replace_with: '月辉石',
+          max_paragraphs: 1,
+          dry_run: true,
+        },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.data).toMatchObject({ dry_run: true, has_more: true, next_cursor: null });
     });
 
     it('续传位置无效时报错，不做任何替换', async () => {

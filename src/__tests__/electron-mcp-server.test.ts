@@ -316,6 +316,31 @@ describe('Electron Streamable HTTP MCP Server (dual-era)', () => {
     expect(server.getStatus().state).toBe('running');
   });
 
+  it('启动还在排队时更换令牌：启动完成后生效的是新令牌，旧令牌被拒绝', async () => {
+    const server = createElectronMcpServer({
+      version: '0.19.2',
+      dispatch: () => Promise.resolve({}),
+    });
+    servers.push(server);
+    await server.start({ port: 0, authToken: 'first-token-000000' });
+
+    // 一次带旧令牌的重启排在停止之后，还没执行时用户更换了令牌
+    void server.stop();
+    const restarting = server.start({ port: 0, authToken: 'old-token-111111' });
+    server.updateAuthToken('new-token-222222');
+    const status = await restarting;
+    expect(status.state).toBe('running');
+
+    const call = (token: string) =>
+      fetch(`http://127.0.0.1:${status.port}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+      }).then((res) => res.status);
+    expect(await call('old-token-111111')).toBe(401);
+    expect(await call('new-token-222222')).not.toBe(401);
+  });
+
   it('校验 Bearer Token（401）、非本机 Host / 跨站 Origin（403）、Token 轮换立即失效、两代并发与端口冲突报错', async () => {
     const { server, postJson, token, port } = await startTestServer('token-v1');
 

@@ -28,7 +28,8 @@ export default defineConfig({
       provider: 'istanbul',
       reporter: ['json', 'text-summary'],
       reportsDirectory: 'coverage',
-      include: ['src/**/*.ts'],
+      // Electron 主进程的代码也有测试：不收集的话，质量检查只能按估计的覆盖率给它们打分
+      include: ['src/**/*.ts', 'src-electron/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/__tests__/**', 'src/auto-*.d.ts', 'src/**/*.d.ts'],
     },
   },

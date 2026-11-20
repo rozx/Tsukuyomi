@@ -69,6 +69,8 @@ export interface ParagraphSearchHit {
 
 /** 正则表达式的长度上限 */
 const MAX_PATTERN_LENGTH = 300;
+/** 不定次数的重复（* + {n,} {n,m}）最多出现几处：没有分组的一长串 a*a*a*… 同样会大量回溯 */
+const MAX_VARIABLE_QUANTIFIERS = 6;
 
 /** 读出 pos 处的重复次数写法（* + ? {n} {n,} {n,m}）；不是的话返回 null */
 function readQuantifier(
@@ -87,11 +89,14 @@ function readQuantifier(
 }
 
 /**
- * 被重复的分组里又有不定次数的重复，如 (a+)+、(x*)*、(.*a){12}。
- * 这类写法遇到不匹配的文本时回溯次数随长度指数增长，同步执行会让整个页面卡死。
- * 只识别这一种常见写法，不保证拦住所有耗时的表达式。
+ * 找出可能大量回溯的写法：
+ * - nested：被重复的分组里又有不定次数的重复，如 (a+)+、(x*)*、(.*a){12}
+ * - variableCount：不定次数的重复一共出现了几处
+ * 遇到不匹配的文本时这类写法的回溯次数增长极快，同步执行会让整个页面卡死。
+ * 只识别这两种常见写法，不保证拦住所有耗时的表达式。
  */
-function hasNestedRepetition(source: string): boolean {
+function inspectRepetition(source: string): { nested: boolean; variableCount: number } {
+  let variableCount = 0;
   /** 各层分组里是否已经出现不定次数的重复 */
   const groups: boolean[] = [];
   const markVariable = (): void => {
@@ -114,16 +119,20 @@ function hasNestedRepetition(source: string): boolean {
     } else if (ch === ')') {
       const innerVariable = groups.pop() ?? false;
       const quantifier = readQuantifier(source, i + 1);
-      if (innerVariable && quantifier?.repeats) return true;
+      if (innerVariable && quantifier?.repeats) return { nested: true, variableCount };
+      if (quantifier?.variable) variableCount += 1;
       if (innerVariable || quantifier?.variable) markVariable();
       i += 1 + (quantifier?.length ?? 0);
     } else {
       const quantifier = readQuantifier(source, i);
-      if (quantifier?.variable) markVariable();
+      if (quantifier?.variable) {
+        variableCount += 1;
+        markVariable();
+      }
       i += quantifier?.length ?? 1;
     }
   }
-  return false;
+  return { nested: false, variableCount };
 }
 
 function compileExactMatcher(query: ParagraphSearchQuery): (text: string) => boolean {
@@ -133,9 +142,15 @@ function compileExactMatcher(query: ParagraphSearchQuery): (text: string) => boo
         `the pattern is longer than ${MAX_PATTERN_LENGTH} characters`,
       );
     }
-    if (hasNestedRepetition(query.query)) {
+    const repetition = inspectRepetition(query.query);
+    if (repetition.nested) {
       throw new InvalidSearchPatternError(
         'a repeated group that itself contains * / + / {n,} (such as "(a+)+") can freeze the app; rewrite the pattern without nested repetition',
+      );
+    }
+    if (repetition.variableCount > MAX_VARIABLE_QUANTIFIERS) {
+      throw new InvalidSearchPatternError(
+        `more than ${MAX_VARIABLE_QUANTIFIERS} open-ended repetitions (* / + / {n,}) in one pattern can freeze the app; split it into simpler searches`,
       );
     }
     try {

@@ -367,8 +367,9 @@ async function executeReplaceInTranslations(
     replacement_count: planned.reduce((sum, item) => sum + item.count, 0),
     skipped_empty_count: skippedEmpty,
     has_more: nextCursor !== null,
-    // 还有剩余时，下一次调用把它作为 cursor 传入，从停下的位置继续
-    next_cursor: nextCursor,
+    // 还有剩余时，下一次调用把它作为 cursor 传入，从停下的位置继续。
+    // 预览没有写入任何内容，不给续传位置：把它带进正式替换会跳过预览过的那一批
+    next_cursor: dryRun ? null : nextCursor,
     chapters: [...perChapter.entries()].map(([chapterId, count]) => ({
       chapter_id: chapterId,
       paragraph_count: count,
@@ -543,7 +544,7 @@ export const agentMcpSearchTools: AgentMcpToolSpec[] = [
         cursor: {
           type: 'string',
           description:
-            'Continue from where the previous call stopped: pass its next_cursor unchanged, with the same find, replace_with and chapter_id. Always use it to continue — calling again without it starts from the beginning, which replaces the same text twice when replace_with contains find (e.g. "王" → "王子").',
+            'Continue from where the previous call stopped: pass its next_cursor unchanged, with the same find, replace_with and chapter_id. A dry run never returns next_cursor (nothing was written), so start the real run without cursor. Always use it to continue — calling again without it starts from the beginning, which replaces the same text twice when replace_with contains find (e.g. "王" → "王子").',
         },
         write_mode: {
           type: 'string',
