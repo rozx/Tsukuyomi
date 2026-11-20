@@ -145,6 +145,45 @@ describe('AgentMcp worldbuilding tools', () => {
     expect(terms[0]?.translation).toBe('魔导炉');
   });
 
+  it('给了 id 时只按 id 找要更新的条目：名称撞上别的条目时报冲突，不会改到那个条目', async () => {
+    const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
+    type Row = { id?: string; name: string; action: string; error?: string };
+    const upsert = async (tool: 'upsert_terms' | 'upsert_characters', items: unknown[]) =>
+      (
+        (
+          await kernel.callTool(
+            tool,
+            { book_id: 'book-wb-1', [tool === 'upsert_terms' ? 'terms' : 'characters']: items },
+            { channel: 'desktop-mcp' },
+          )
+        ).data as { results: Row[] }
+      ).results;
+
+    for (const tool of ['upsert_terms', 'upsert_characters'] as const) {
+      const [first, second] = await upsert(tool, [
+        { name: `${tool}-甲`, translation: '甲的译名' },
+        { name: `${tool}-乙`, translation: '乙的译名' },
+      ]);
+      // 用乙的 id、甲的名称提交：目标是乙，改名撞上甲，应当报冲突
+      const [conflict] = await upsert(tool, [
+        { id: second!.id, name: `${tool}-甲`, translation: '写错对象的译名' },
+      ]);
+      expect(conflict!.action).toBe('failed');
+      // id 不存在时不退回按名称匹配
+      const [missing] = await upsert(tool, [
+        { id: 'no-such-id', name: `${tool}-甲`, translation: '写错对象的译名' },
+      ]);
+      expect(missing!.action).toBe('failed');
+
+      const book = useBooksStore().getBookById('book-wb-1')!;
+      const entries = tool === 'upsert_terms' ? book.terminologies : book.characterSettings;
+      const translationOf = (id: string | undefined) =>
+        (entries ?? []).find((entry) => entry.id === id)?.translation.translation;
+      expect(translationOf(first!.id)).toBe('甲的译名');
+      expect(translationOf(second!.id)).toBe('乙的译名');
+    }
+  });
+
   it('upsert_characters 与 list_characters 支持批量创建、别名与幂等更新', async () => {
     const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
 

@@ -12,11 +12,11 @@ import { isAppLocale } from 'src/models/locale';
 import type { Chapter, Novel, Volume } from 'src/models/novel';
 import { getLanguageTranslation, getNameTranslation } from 'src/services/localization/selection';
 import { titleOriginal } from 'src/services/localization/title-edit';
+import { scanChapters } from 'src/services/library-query/paragraph-scan';
 import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
 import { agentMcpError, type AgentMcpToolSpec } from '../types';
 import {
-  loadChapterParagraphs,
   parseNonNegativeInt,
   readStringList,
   readTrimmedString,
@@ -26,6 +26,7 @@ import {
   countChaptersInVolumes,
   createEmptyVolume,
   linesToParagraphs,
+  readSourceUrl,
   textToParagraphs,
 } from './library-helpers';
 import { importBookFromUrlTool } from './url-import';
@@ -50,7 +51,10 @@ function formatTitle(
   };
 }
 
-function parseChapterInputs(raw: unknown): ChapterInput[] | null {
+const INVALID_WEB_URL_MESSAGE = 'web_url must be an http or https URL.';
+
+/** 解析章节列表；格式不对时返回 null，章节的 web_url 不是 http(s) 网址时返回 'invalid_url' */
+function parseChapterInputs(raw: unknown): ChapterInput[] | null | 'invalid_url' {
   if (!Array.isArray(raw) || raw.length === 0) return null;
   const result: ChapterInput[] = [];
   for (const item of raw) {
@@ -64,12 +68,13 @@ function parseChapterInputs(raw: unknown): ChapterInput[] | null {
       : undefined;
     const text = typeof rec.text === 'string' ? rec.text : undefined;
     if (!paragraphs && text === undefined) return null;
-    const webUrl = readTrimmedString(rec.web_url);
+    const webUrl = readSourceUrl(rec.web_url);
+    if (!webUrl.ok) return 'invalid_url';
     result.push({
       title,
       ...(text !== undefined ? { text } : {}),
       ...(paragraphs ? { paragraphs } : {}),
-      ...(webUrl ? { web_url: webUrl } : {}),
+      ...(webUrl.url ? { web_url: webUrl.url } : {}),
     });
   }
   return result;
@@ -120,14 +125,19 @@ function selectListedChapters(
   return new Set(options.recentCount > 0 ? ids.slice(-options.recentCount) : ids);
 }
 
-async function countChapterStats(chapter: Chapter, language: AppLocale) {
-  const nonEmpty = (await loadChapterParagraphs(chapter)).filter((p) => p.text.trim().length > 0);
-  return {
-    paragraph_count: nonEmpty.length,
-    translated_count: nonEmpty.filter((p) =>
-      Boolean(getLanguageTranslation(p, language)?.translation.trim()),
-    ).length,
-  };
+/** 各章的段落数与已译段落数（空段落不计）；正文不在内存里的章节分批读取 */
+async function countChapterStats(chapters: readonly Chapter[], language: AppLocale) {
+  const stats = new Map<string, { paragraph_count: number; translated_count: number }>();
+  for await (const { chapter, paragraphs } of scanChapters(chapters)) {
+    const nonEmpty = paragraphs.filter((p) => p.text.trim().length > 0);
+    stats.set(chapter.id, {
+      paragraph_count: nonEmpty.length,
+      translated_count: nonEmpty.filter((p) =>
+        Boolean(getLanguageTranslation(p, language)?.translation.trim()),
+      ).length,
+    });
+  }
+  return stats;
 }
 
 /**
@@ -249,6 +259,13 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
         includeChapters: args.include_chapters !== false,
       });
       const includeStats = args.include_chapter_stats !== false;
+      // 进度统计要读正文：分批读取，长篇不必一章一章单独读
+      const stats = includeStats
+        ? await countChapterStats(
+            volumes.flatMap((vol) => vol.chapters ?? []).filter((ch) => listed.has(ch.id)),
+            targetLanguage,
+          )
+        : null;
 
       const formattedVolumes = [];
       for (const vol of volumes) {
@@ -260,7 +277,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
             id: ch.id,
             title_original: chTitle.original,
             title_translation: chTitle.translation,
-            ...(includeStats ? await countChapterStats(ch, targetLanguage) : {}),
+            ...(stats?.get(ch.id) ?? {}),
             ...(ch.webUrl ? { web_url: ch.webUrl } : {}),
           });
         }
@@ -312,7 +329,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
           enum: ['zh-CN', 'zh-TW', 'en-US'],
           description: 'Target translation language (default zh-CN).',
         },
-        web_url: { type: 'string', description: 'Optional source URL.' },
+        web_url: { type: 'string', description: 'Optional source URL (http or https).' },
         volume_title: {
           type: 'string',
           description: 'Optional initial volume title when providing chapters.',
@@ -339,6 +356,8 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
       if (!title) {
         return agentMcpError('INVALID_ARGS', 'Book title must be a non-empty string.');
       }
+      const webUrl = readSourceUrl(args.web_url);
+      if (!webUrl.ok) return agentMcpError('INVALID_ARGS', INVALID_WEB_URL_MESSAGE);
 
       const rawLang = typeof args.target_language === 'string' ? args.target_language : 'zh-CN';
       const targetLanguage: AppLocale = isAppLocale(rawLang) ? rawLang : 'zh-CN';
@@ -347,6 +366,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
 
       if (args.chapters !== undefined) {
         const parsed = parseChapterInputs(args.chapters);
+        if (parsed === 'invalid_url') return agentMcpError('INVALID_ARGS', INVALID_WEB_URL_MESSAGE);
         if (!parsed) {
           return agentMcpError(
             'INVALID_ARGS',
@@ -361,7 +381,6 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
         );
       }
 
-      const webUrl = readTrimmedString(args.web_url);
       const book: Novel = {
         id: v4(),
         title,
@@ -372,7 +391,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
               .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
               .map((t) => t.trim())
           : undefined,
-        webUrl: webUrl ? [webUrl] : undefined,
+        webUrl: webUrl.url ? [webUrl.url] : undefined,
         targetLanguage,
         volumes,
         terminologies: [],
@@ -447,6 +466,9 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
       if (!bookRes.ok) return bookRes.error;
 
       const parsedChapters = parseChapterInputs(args.chapters);
+      if (parsedChapters === 'invalid_url') {
+        return agentMcpError('INVALID_ARGS', INVALID_WEB_URL_MESSAGE);
+      }
       if (!parsedChapters) {
         return agentMcpError(
           'INVALID_ARGS',

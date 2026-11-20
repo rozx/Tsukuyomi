@@ -117,6 +117,13 @@ describe('HelpDocsTools', () => {
       expect(parsed.error).toBeDefined();
     });
 
+    test('当查询只有空白时应返回错误，而不是列出全部文档', async () => {
+      const tool = getTool('search_help_docs');
+      const parsed = JSON.parse(await tool!.handler({ query: '   ' }, context));
+      expect(parsed.success).toBe(false);
+      expect(parsed.error).toBeDefined();
+    });
+
     test('当查询为非字符串时应返回错误', async () => {
       const tool = getTool('search_help_docs');
       expect(tool).toBeDefined();

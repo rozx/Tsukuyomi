@@ -131,6 +131,12 @@ export default {
         'Call submit_translations; each item in paragraphs has paragraph_id and translated_text. If the book has source-prefix validation enabled, also include original_text_prefix (the first few characters of the source paragraph). With the first chunk of a chapter you can also submit the translated chapter title as chapter_title_translation; put the name of the model you are using in model_label.',
       wfTranslate5:
         'Check failed_items in the result and fix and resubmit only those paragraphs. While remaining_untranslated_count is greater than 0, go back to step 1; when it reaches 0 the chapter is done.',
+      wfTranslatePlan:
+        'Before submitting any translation, prepare the same way the built-in translation does in its planning phase. Create new terms, new characters and reusable translation decisions at this point instead of leaving them until afterwards:',
+      wfTranslateReview:
+        'After submitting this chunk, review it the same way the built-in translation does in its review phase:',
+      wfTranslateBrief:
+        'For every later chunk a short preparation is enough, followed by the same translate, submit and review steps:',
       wfPolishTitle: 'Polish and proofread',
       wfPolish1:
         'Call get_translation_chunk with mode "all" and task_type "polish" (use "proofreading" for proofreading). Each paragraph then includes current_translation.',
@@ -140,6 +146,8 @@ export default {
         'By default a new version is added and selected. Set write_mode to "overwrite" only when the user explicitly asks to rewrite the current version in place.',
       wfPolish4:
         'Use the returned next_cursor as the cursor of the next call until the chapter ends.',
+      wfPolishPlan:
+        'Before changing anything, prepare the same way the built-in polishing and proofreading do in their planning phase (they have no review phase):',
       wfImportTitle: 'Import a new book',
       wfImport1:
         'When you have a URL, call import_book_from_url. Each call fetches at most 20 chapters (adjust with max_chapters, up to 50); when has_more is true, call it again to continue.',
@@ -150,7 +158,7 @@ export default {
       wfUpdateTitle: 'Follow an ongoing serial',
       wfUpdate1: 'Call check_book_updates to see which chapters are new on the source site.',
       wfUpdate2:
-        'Call apply_book_updates to import them; by default only new chapters are imported. The returned applied_chapters already contains the chapter_id of each new chapter, so there is no need to fetch the table of contents again.',
+        'Call apply_book_updates to import them; by default only new chapters are imported. The returned applied_chapters already contains the chapter_id of each new chapter, so there is no need to fetch the table of contents again. A status of partial means some chapters could not be checked or imported (see failed); do not treat the book as up to date.',
       wfUpdate3:
         "include_updated applies text changes to chapters already imported and clears the translations of revised paragraphs. Get the user's consent before using it.",
       wfUpdate4: 'After importing, handle the new chapters as described in "Translate a chapter".',
@@ -173,7 +181,7 @@ export default {
       wfRename3:
         'Call replace_in_translations with dry_run set to true to preview: find is the old rendering, replace_with the new one, and original_contains the name in the original text, so unrelated words spelled the same are left alone. Check the returned samples.',
       wfRename4:
-        'When the preview looks right, call it again without dry_run. While has_more is true, keep calling until it is false. By default each changed paragraph gets a new version and the old one is kept.',
+        'When the preview looks right, call it again without dry_run. While has_more is true, call again with cursor set to the returned next_cursor (all other arguments unchanged) until it is false; without cursor the call starts over, which replaces the same text twice when the replacement contains the search text. By default each changed paragraph gets a new version and the old one is kept.',
       wfRename5:
         'Finally run count_occurrences again to confirm nothing is left, and tell the user how many places changed.',
       translationRulesTitle: 'Translation rules',

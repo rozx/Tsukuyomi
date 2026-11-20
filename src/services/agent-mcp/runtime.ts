@@ -116,38 +116,54 @@ export async function startAgentMcpRuntime(
 
   const syncWebMcp = async (): Promise<void> => {
     if (disposed || !webMcpAdapter) return;
-    const cfg = settingsStore.agentMcp;
-    if (cfg.webMcpEnabled) {
+    if (settingsStore.agentMcp.webMcpEnabled) {
       // 先让 document.modelContext 存在并接上本机中继，再注册工具
       const relayState = await webMcpRelay?.enable();
-      if (relayState) options.onWebMcpRelayStateChange?.(relayState);
-      await webMcpAdapter.sync(true);
-    } else {
-      await webMcpAdapter.sync(false);
-      webMcpRelay?.disable();
-      if (webMcpRelay) options.onWebMcpRelayStateChange?.('idle');
+      if (disposed) return;
+      // 接通中继需要时间：期间开关被关掉的话不注册工具，按关闭处理
+      if (settingsStore.agentMcp.webMcpEnabled) {
+        if (relayState) options.onWebMcpRelayStateChange?.(relayState);
+        await webMcpAdapter.sync(true);
+        return;
+      }
     }
+    await webMcpAdapter.sync(false);
+    webMcpRelay?.disable();
+    if (webMcpRelay) options.onWebMcpRelayStateChange?.('idle');
   };
 
-  const syncNow = async (): Promise<void> => {
-    if (electronMode) {
-      await syncDesktop();
-    } else {
-      await syncWebMcp();
-    }
+  /**
+   * 同步按调用顺序一个接一个执行。设置的监听不等待上一次同步结束就会再次调用，
+   * 交错执行会让较早的「开启」在较晚的「关闭」之后才完成，把已经关掉的通道重新打开。
+   */
+  let syncQueue: Promise<void> = Promise.resolve();
+  const syncNow = (): Promise<void> => {
+    const run = syncQueue.then(() => (electronMode ? syncDesktop() : syncWebMcp()));
+    syncQueue = run.catch(() => undefined);
+    return run;
   };
 
-  await syncNow();
+  const releaseChannels = (): void => {
+    disposed = true;
+    desktopBridge?.dispose();
+    void webMcpAdapter?.unregisterAll();
+    webMcpRelay?.disable();
+    if (activeDesktopBridge === desktopBridge) activeDesktopBridge = null;
+    if (activeWebMcpAdapter === webMcpAdapter) activeWebMcpAdapter = null;
+  };
+
+  try {
+    await syncNow();
+  } catch (error) {
+    // 桥接此时已经挂上监听：首次同步失败就卸下，否则下次启动会再挂一份，每个请求被处理两次
+    releaseChannels();
+    throw error;
+  }
 
   const handle: AgentMcpRuntimeHandle = {
     syncNow,
     dispose: () => {
-      disposed = true;
-      desktopBridge?.dispose();
-      void webMcpAdapter?.unregisterAll();
-      webMcpRelay?.disable();
-      if (activeDesktopBridge === desktopBridge) activeDesktopBridge = null;
-      if (activeWebMcpAdapter === webMcpAdapter) activeWebMcpAdapter = null;
+      releaseChannels();
       if (activeRuntime === handle) activeRuntime = null;
     },
   };

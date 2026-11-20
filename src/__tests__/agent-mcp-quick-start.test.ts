@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ALL_AGENT_MCP_TOOLS } from 'src/services/agent-mcp';
 import { buildAgentQuickStartGuide } from 'src/services/agent-mcp/agent-quick-start';
+import { translateText } from 'src/i18n/translate';
+import { getPhaseChecklist } from 'src/services/ai/tasks/utils/todo-workflow';
 
 const DESKTOP = {
   kind: 'desktop' as const,
@@ -179,6 +181,41 @@ describe('buildAgentQuickStartGuide', () => {
     // 指南不再让 Agent 把剧情记进记忆
     expect(guide).not.toMatch(/剧情转折[^\n]*upsert_memory/);
     expect(guide).not.toContain('剧情与世界观要点');
+  });
+
+  it('翻译流程与站内相同：先准备、再翻译、最后复核，清单取自站内的同一份文字', () => {
+    for (const locale of ['zh-CN', 'zh-TW', 'en-US'] as const) {
+      const guide = desktopGuide(locale);
+      const planning = getPhaseChecklist('planning', locale, 'external');
+      const brief = getPhaseChecklist('brief', locale, 'external');
+      const review = getPhaseChecklist('review', locale, 'external');
+      expect(planning).toHaveLength(5);
+      for (const item of [...planning, ...brief, ...review]) expect(guide).toContain(item);
+
+      const translate = guide.slice(
+        guide.indexOf(`### ${translateText(locale, 'agentMcp.guide.wfTranslateTitle')}`),
+        guide.indexOf(`### ${translateText(locale, 'agentMcp.guide.wfPolishTitle')}`),
+      );
+      // 准备在提交译文之前，复核在提交之后
+      const submitStep = translate.indexOf(translateText(locale, 'agentMcp.guide.wfTranslate4'));
+      expect(translate.indexOf(planning[0]!)).toBeGreaterThan(-1);
+      expect(translate.indexOf(planning[4]!)).toBeLessThan(submitStep);
+      expect(translate.indexOf(review[0]!)).toBeGreaterThan(submitStep);
+      // 清单里的提交工具换成外部的名字
+      expect(translate).not.toContain('add_translation_batch');
+      expect(review[1]).toContain('submit_translations');
+    }
+    // 站内的待办文字不变
+    expect(getPhaseChecklist('review', 'zh-CN')[1]).toBe(
+      '修正发现的问题段落（直接使用 add_translation_batch 提交修正）',
+    );
+  });
+
+  it('批量替换与导入更新的步骤写明续传位置和「没检查完」的状态', () => {
+    const guide = desktopGuide();
+    expect(guide).toContain('next_cursor');
+    expect(guide).toMatch(/replace_in_translations[\s\S]*cursor/);
+    expect(guide).toContain('partial');
   });
 
   it('是通用说明而不是具体任务：不包含书名或待填占位', () => {

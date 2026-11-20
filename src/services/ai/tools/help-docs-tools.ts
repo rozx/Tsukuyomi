@@ -58,7 +58,8 @@ export const helpDocsTools: ToolDefinition[] = [
     }),
     handler: helpHandler(async (args, { onAction }, locale) => {
       const { query } = args;
-      if (!validToolQuery(query, 'HelpDocs'))
+      // 只有空白的查询没有可搜的词，共用搜索会把它当作「不过滤」而返回全部文档
+      if (!validToolQuery(query, 'HelpDocs') || !query.trim())
         return toolErrorJson('HELP_QUERY_REQUIRED', 'helpFeedback.queryRequired');
       // 搜索与外部 Agent 的工具共用 library-query/help-search；站内保留按标题找更新日志的能力
       const hits = await searchHelpDocs(locale, query, {

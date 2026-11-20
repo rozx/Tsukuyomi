@@ -199,6 +199,27 @@ describe('AgentMcp 全书搜索与批量替换工具', () => {
       expect(invalid.errorCode).toBe('INVALID_REGEX');
     });
 
+    it('可能让页面卡死的正则（嵌套的重复、过长的表达式）直接拒绝', async () => {
+      const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
+      for (const query of ['(a+)+b', '((月|光)+)*石', '(?:x*)*y', '(.*a){12}', 'a'.repeat(301)]) {
+        const res = await kernel.callTool(
+          'search_paragraphs',
+          { book_id: BOOK_ID, query, regex: true },
+          { channel: 'desktop-mcp' },
+        );
+        expect(res.isError).toBe(true);
+        expect(res.errorCode).toBe('INVALID_REGEX');
+      }
+      // 普通的分组与重复不受影响
+      const ok = await kernel.callTool(
+        'search_paragraphs',
+        { book_id: BOOK_ID, query: '(月光石|塔)[はがに]+', regex: true, search_in: 'original' },
+        { channel: 'desktop-mcp' },
+      );
+      expect(ok.isError).toBe(false);
+      expect((ok.data as { matches: SearchMatch[] }).matches.length).toBeGreaterThan(0);
+    });
+
     it('结果超过上限时说明还有更多，并可用 offset 翻页', async () => {
       const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
 
@@ -471,6 +492,62 @@ describe('AgentMcp 全书搜索与批量替换工具', () => {
       );
       expect(res.data).toMatchObject({ replaced_paragraph_count: 2, has_more: true });
       expect(await selectedTranslation('ch-2', 'p2000002')).toBe('塔顶也有月光石。');
+    });
+
+    it('替换内容包含查找内容时，用 next_cursor 续传，不会重复替换已处理的段落', async () => {
+      const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
+      const call = (extra: Record<string, unknown>) =>
+        kernel.callTool(
+          'replace_in_translations',
+          {
+            book_id: BOOK_ID,
+            find: '月光石',
+            replace_with: '月光石碎片',
+            max_paragraphs: 1,
+            write_mode: 'overwrite',
+            ...extra,
+          },
+          { channel: 'desktop-mcp' },
+        );
+      type Result = {
+        replaced_paragraph_count: number;
+        has_more: boolean;
+        next_cursor: string | null;
+      };
+
+      const first = (await call({})).data as Result;
+      expect(first).toMatchObject({ replaced_paragraph_count: 1, has_more: true });
+      expect(typeof first.next_cursor).toBe('string');
+
+      const second = (await call({ cursor: first.next_cursor })).data as Result;
+      expect(second).toMatchObject({ replaced_paragraph_count: 1, has_more: true });
+      const third = (await call({ cursor: second.next_cursor })).data as Result;
+      expect(third).toMatchObject({
+        replaced_paragraph_count: 1,
+        has_more: false,
+        next_cursor: null,
+      });
+
+      // 每一段只被替换一次：续传从上次停下的位置继续，而不是从头再来
+      expect(await selectedTranslation('ch-1', 'p1000001')).toBe('爱丽丝捡起了月光石碎片。');
+      expect(await selectedTranslation('ch-1', 'p1000002')).toBe(
+        '月光石碎片发着微光。是月光石碎片。',
+      );
+      expect(await selectedTranslation('ch-2', 'p2000002')).toBe('塔顶也有月光石碎片。');
+    });
+
+    it('续传位置无效时报错，不做任何替换', async () => {
+      const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
+      for (const cursor of ['no-such-chapter:p1000001', 'ch-1:no-such-paragraph', 'garbage']) {
+        const res = await kernel.callTool(
+          'replace_in_translations',
+          { book_id: BOOK_ID, find: '月光石', replace_with: '月辉石', cursor },
+          { channel: 'desktop-mcp' },
+        );
+        expect(res.isError).toBe(true);
+        expect(res.errorCode).toBe('INVALID_CURSOR');
+      }
+      expect(await selectedTranslation('ch-1', 'p1000001')).toBe('爱丽丝捡起了月光石。');
     });
 
     it('替换后译文会变成空白的段落跳过不改', async () => {

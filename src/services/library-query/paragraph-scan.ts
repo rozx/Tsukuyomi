@@ -67,8 +67,77 @@ export interface ParagraphSearchHit {
   translation: string;
 }
 
+/** 正则表达式的长度上限 */
+const MAX_PATTERN_LENGTH = 300;
+
+/** 读出 pos 处的重复次数写法（* + ? {n} {n,} {n,m}）；不是的话返回 null */
+function readQuantifier(
+  source: string,
+  pos: number,
+): { length: number; repeats: boolean; variable: boolean } | null {
+  const lazy = (length: number) => (source[pos + length] === '?' ? length + 1 : length);
+  const ch = source[pos];
+  if (ch === '*' || ch === '+') return { length: lazy(1), repeats: true, variable: true };
+  if (ch === '?') return { length: lazy(1), repeats: false, variable: false };
+  const braces = /^\{(\d+)(,(\d*))?\}/.exec(source.slice(pos));
+  if (!braces) return null;
+  const min = Number(braces[1]);
+  const max = braces[2] === undefined ? min : braces[3] === '' ? Infinity : Number(braces[3]);
+  return { length: lazy(braces[0].length), repeats: max > 1, variable: max !== min };
+}
+
+/**
+ * 被重复的分组里又有不定次数的重复，如 (a+)+、(x*)*、(.*a){12}。
+ * 这类写法遇到不匹配的文本时回溯次数随长度指数增长，同步执行会让整个页面卡死。
+ * 只识别这一种常见写法，不保证拦住所有耗时的表达式。
+ */
+function hasNestedRepetition(source: string): boolean {
+  /** 各层分组里是否已经出现不定次数的重复 */
+  const groups: boolean[] = [];
+  const markVariable = (): void => {
+    if (groups.length > 0) groups[groups.length - 1] = true;
+  };
+  let inClass = false;
+  for (let i = 0; i < source.length; ) {
+    const ch = source[i];
+    if (ch === '\\') {
+      i += 2;
+    } else if (inClass) {
+      inClass = ch !== ']';
+      i += 1;
+    } else if (ch === '[') {
+      inClass = true;
+      i += 1;
+    } else if (ch === '(') {
+      groups.push(false);
+      i += 1;
+    } else if (ch === ')') {
+      const innerVariable = groups.pop() ?? false;
+      const quantifier = readQuantifier(source, i + 1);
+      if (innerVariable && quantifier?.repeats) return true;
+      if (innerVariable || quantifier?.variable) markVariable();
+      i += 1 + (quantifier?.length ?? 0);
+    } else {
+      const quantifier = readQuantifier(source, i);
+      if (quantifier?.variable) markVariable();
+      i += quantifier?.length ?? 1;
+    }
+  }
+  return false;
+}
+
 function compileExactMatcher(query: ParagraphSearchQuery): (text: string) => boolean {
   if (query.regex) {
+    if (query.query.length > MAX_PATTERN_LENGTH) {
+      throw new InvalidSearchPatternError(
+        `the pattern is longer than ${MAX_PATTERN_LENGTH} characters`,
+      );
+    }
+    if (hasNestedRepetition(query.query)) {
+      throw new InvalidSearchPatternError(
+        'a repeated group that itself contains * / + / {n,} (such as "(a+)+") can freeze the app; rewrite the pattern without nested repetition',
+      );
+    }
     try {
       const pattern = new RegExp(query.query, query.caseSensitive ? '' : 'i');
       return (text) => pattern.test(text);

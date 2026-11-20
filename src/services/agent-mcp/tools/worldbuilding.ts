@@ -70,6 +70,27 @@ function parseNamedEntityItem(
   return { ok: true, rec, id, name, translation };
 }
 
+/**
+ * 找出要更新的已有条目。给了 id 就只按 id 找：按「id 或名称」一起找时，
+ * 名称撞上排在前面的另一个条目，会把内容写到那个条目上。
+ * id 找不到时返回 missingId，不退回按名称匹配。
+ */
+function findUpsertTarget<T extends { id: string; name: string }>(
+  entries: readonly T[],
+  id: string,
+  name: string,
+): { existing: T | undefined; missingId: boolean } {
+  if (!id) return { existing: entries.find((entry) => entry.name === name), missingId: false };
+  const existing = entries.find((entry) => entry.id === id);
+  return { existing, missingId: !existing };
+}
+
+const missingIdFailure = (name: string, id: string): UpsertItemResult => ({
+  name,
+  action: 'failed',
+  error: `No entry with id ${id}. Omit id to update by name or create a new entry.`,
+});
+
 async function upsertSingleTerm(
   bookId: string,
   language: AppLocale,
@@ -82,9 +103,8 @@ async function upsertSingleTerm(
 
   try {
     const freshBook = useBooksStore().getBookById(bookId);
-    const existing = (freshBook?.terminologies ?? []).find(
-      (t) => (id && t.id === id) || t.name === name,
-    );
+    const { existing, missingId } = findUpsertTarget(freshBook?.terminologies ?? [], id, name);
+    if (missingId) return missingIdFailure(name, id);
     const payload = {
       name,
       translation,
@@ -134,9 +154,8 @@ async function upsertSingleCharacter(
 
   try {
     const freshBook = useBooksStore().getBookById(bookId);
-    const existing = (freshBook?.characterSettings ?? []).find(
-      (c) => (id && c.id === id) || c.name === name,
-    );
+    const { existing, missingId } = findUpsertTarget(freshBook?.characterSettings ?? [], id, name);
+    if (missingId) return missingIdFailure(name, id);
     if (existing) {
       const updated = await CharacterSettingService.updateCharacterSetting(
         bookId,

@@ -8,6 +8,7 @@ import {
   buildRelayJsonConfig,
   TOKEN_PLACEHOLDER,
 } from './client-config';
+import { getPhaseChecklist } from 'src/services/ai/tasks/utils/todo-workflow';
 import { buildExternalTaskRules } from './task-rules';
 import { ALL_AGENT_MCP_TOOLS } from './tools/all-tools';
 import type { AgentMcpToolCategory } from './types';
@@ -44,22 +45,33 @@ const OVERVIEW_KEYS: readonly MessageKey[] = [
   'agentMcp.guide.overviewHelp',
 ];
 
-/** 各工作流的标题与分步说明 */
-const WORKFLOWS: ReadonlyArray<{ titleKey: MessageKey; stepKeys: readonly MessageKey[] }> = [
+type ChecklistPhase = Parameters<typeof getPhaseChecklist>[0];
+/** 一个步骤；带 checklist 时，步骤下面列出站内对应阶段的待办清单 */
+type WorkflowStep = MessageKey | { key: MessageKey; checklist: ChecklistPhase };
+
+/**
+ * 各工作流的标题与分步说明。翻译的顺序与站内任务相同：规划（准备）→ 翻译 → 复核，
+ * 润色与校对没有复核阶段；准备与复核的清单直接取站内任务的待办文字。
+ */
+const WORKFLOWS: ReadonlyArray<{ titleKey: MessageKey; stepKeys: readonly WorkflowStep[] }> = [
   {
     titleKey: 'agentMcp.guide.wfTranslateTitle',
     stepKeys: [
       'agentMcp.guide.wfTranslate1',
       'agentMcp.guide.wfTranslate2',
+      { key: 'agentMcp.guide.wfTranslatePlan', checklist: 'planning' },
       'agentMcp.guide.wfTranslate3',
       'agentMcp.guide.wfTranslate4',
+      { key: 'agentMcp.guide.wfTranslateReview', checklist: 'review' },
       'agentMcp.guide.wfTranslate5',
+      { key: 'agentMcp.guide.wfTranslateBrief', checklist: 'brief' },
     ],
   },
   {
     titleKey: 'agentMcp.guide.wfPolishTitle',
     stepKeys: [
       'agentMcp.guide.wfPolish1',
+      { key: 'agentMcp.guide.wfPolishPlan', checklist: 'planning' },
       'agentMcp.guide.wfPolish2',
       'agentMcp.guide.wfPolish3',
       'agentMcp.guide.wfPolish4',
@@ -206,7 +218,14 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
   const workflows = WORKFLOWS.flatMap(({ titleKey, stepKeys }) => [
     '',
     `### ${text(titleKey)}`,
-    ...numbered(stepKeys),
+    ...stepKeys.flatMap((step, index) =>
+      typeof step === 'string'
+        ? [`${index + 1}. ${text(step)}`]
+        : [
+            `${index + 1}. ${text(step.key)}`,
+            ...getPhaseChecklist(step.checklist, locale, 'external').map((item) => `   - ${item}`),
+          ],
+    ),
   ]);
 
   return [

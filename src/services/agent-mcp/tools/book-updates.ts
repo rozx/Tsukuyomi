@@ -139,7 +139,7 @@ export const agentMcpBookUpdateTools: AgentMcpToolSpec[] = [
   {
     name: 'apply_book_updates',
     description:
-      'Import updates from the source site into a book. By default only chapters that are new on the site are imported. Set include_updated to true to also apply text changes to already imported chapters — revised paragraphs lose their existing translations, so confirm with the user first. Use urls to limit the import to specific chapters reported by check_book_updates. The result lists the imported chapters in applied_chapters (chapter_id, volume_id, title_original, url), so there is no need to call get_book afterwards to find them.',
+      'Import updates from the source site into a book. By default only chapters that are new on the site are imported. Set include_updated to true to also apply text changes to already imported chapters — revised paragraphs lose their existing translations, so confirm with the user first. Use urls to limit the import to specific chapters reported by check_book_updates. status is "up_to_date" only when everything was checked and nothing needed importing; "partial" means some chapters could not be checked or imported and are listed in failed. The result lists the imported chapters in applied_chapters (chapter_id, volume_id, title_original, url), so there is no need to call get_book afterwards to find them.',
     category: 'library',
     permission: 'translate_and_edit',
     readOnlyHint: false,
@@ -193,18 +193,21 @@ export const agentMcpBookUpdateTools: AgentMcpToolSpec[] = [
         urls = available.filter((url) => requested.includes(url));
       }
 
-      // 按日期看已变化但本次不处理的已导入章节数，提示 Agent 还有内容没跟上
-      const skippedUpdatedCount = includeUpdated ? 0 : changes.dateNewer.length;
+      // 按日期看已变化、但正文没有比对的已导入章节数，提示 Agent 还有内容没跟上。
+      // 比对正文时抓取失败或额度用尽的章节也留在这里，所以 include_updated 时不能直接当作 0
+      const skippedUpdatedCount = changes.dateNewer.length;
+      // 检查阶段没能比对的章节：不带回去的话，Agent 会把没检查完当成已经更新
+      const checkFailures = summarizeFailures(changes.failed);
 
       if (urls.length === 0) {
         return {
           book_id: bookId,
-          status: 'up_to_date',
+          status: checkFailures.length > 0 ? 'partial' : 'up_to_date',
           applied_count: 0,
           applied_urls: [],
           applied_chapters: [],
           skipped_updated_count: skippedUpdatedCount,
-          failed: [],
+          failed: checkFailures,
         };
       }
 
@@ -215,7 +218,8 @@ export const agentMcpBookUpdateTools: AgentMcpToolSpec[] = [
         const fresh = applied.size > 0 ? await refreshBookKeepingOpenChapter(bookId) : undefined;
         return {
           book_id: bookId,
-          status: result.status,
+          status:
+            result.status === 'success' && checkFailures.length > 0 ? 'partial' : result.status,
           applied_count: result.appliedUrls.length,
           applied_urls: result.appliedUrls,
           applied_chapters: fresh
@@ -224,7 +228,7 @@ export const agentMcpBookUpdateTools: AgentMcpToolSpec[] = [
               )
             : [],
           skipped_updated_count: skippedUpdatedCount,
-          failed: summarizeFailures(result.failed),
+          failed: [...checkFailures, ...summarizeFailures(result.failed)],
         };
       } catch (error) {
         return agentMcpError(errorCodeOf(error) ?? 'BOOK_UPDATE_FAILED', errorMessageOf(error), {

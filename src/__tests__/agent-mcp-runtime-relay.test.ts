@@ -61,6 +61,86 @@ describe('AgentMcp runtime × WebMCP relay', () => {
     handle.dispose();
   });
 
+  it('中继还在接通时用户关掉开关：最后工具是注销的、中继是断开的', async () => {
+    const registered = new Set<string>();
+    let finishEnable: (value: 'enabled') => void = () => undefined;
+    let relayOn = false;
+    const relay = {
+      enable: vi.fn(
+        () =>
+          new Promise<'enabled'>((resolve) => {
+            finishEnable = (value) => {
+              relayOn = true;
+              resolve(value);
+            };
+          }),
+      ),
+      disable: vi.fn(() => {
+        relayOn = false;
+      }),
+      isEnabled: () => relayOn,
+    };
+    const relayStates: string[] = [];
+    const settings = useSettingsStore();
+    await settings.updateAgentMcpSettings({ webMcpEnabled: false });
+    const handle = await startAgentMcpRuntime({
+      isElectronEnv: false,
+      webMcpEnv: () => ({
+        document: {
+          modelContext: {
+            registerTool: (tool: { name: string }) => {
+              registered.add(tool.name);
+            },
+            unregisterTool: (name: string) => {
+              registered.delete(name);
+            },
+          },
+        },
+        navigator: {},
+      }),
+      webMcpRelay: relay,
+      onWebMcpRelayStateChange: (state) => relayStates.push(state),
+    });
+
+    // 开启（中继接通需要时间），接通完成前又关闭；两次同步都不等待，与设置监听的调用方式一致
+    await settings.updateAgentMcpSettings({ webMcpEnabled: true });
+    const enabling = handle.syncNow();
+    await vi.waitFor(() => expect(relay.enable).toHaveBeenCalledTimes(1));
+    await settings.updateAgentMcpSettings({ webMcpEnabled: false });
+    const disabling = handle.syncNow();
+    finishEnable('enabled');
+    await Promise.all([enabling, disabling]);
+
+    expect(registered.size).toBe(0);
+    expect(relayOn).toBe(false);
+    expect(relayStates.at(-1)).toBe('idle');
+    handle.dispose();
+  });
+
+  it('桌面端首次同步失败时卸下已挂载的桥接，不留下重复监听', async () => {
+    const offStatus = vi.fn();
+    const offRequest = vi.fn();
+    const desktopApi = {
+      start: vi.fn(() => Promise.reject(new Error('main process failed'))),
+      stop: vi.fn(() => Promise.resolve({ state: 'stopped' })),
+      getStatus: vi.fn(() => Promise.resolve({ state: 'stopped' })),
+      onStatus: vi.fn(() => offStatus),
+      onRequest: vi.fn(() => offRequest),
+      respond: vi.fn(),
+      notifyReady: vi.fn(),
+    };
+    await useSettingsStore().updateAgentMcpSettings({ desktopServerEnabled: true });
+
+    await expect(
+      startAgentMcpRuntime({ isElectronEnv: true, desktopApi: desktopApi as never }),
+    ).rejects.toThrow('main process failed');
+    expect(desktopApi.onRequest).toHaveBeenCalledTimes(1);
+    expect(offRequest).toHaveBeenCalledTimes(1);
+    expect(offStatus).toHaveBeenCalledTimes(1);
+
+    await useSettingsStore().updateAgentMcpSettings({ desktopServerEnabled: false });
+  });
+
   it('桌面端不创建中继', async () => {
     const relay = { enable: vi.fn(), disable: vi.fn(), isEnabled: () => false };
     const handle = await startAgentMcpRuntime({

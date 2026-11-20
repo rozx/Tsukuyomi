@@ -1,4 +1,5 @@
 import './setup';
+import { getPhaseChecklist } from 'src/services/ai/tasks/utils/todo-workflow';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSettingsStore } from 'src/stores/settings';
 import { useBooksStore } from 'src/stores/books';
@@ -220,6 +221,37 @@ describe('AgentMcpKernel', () => {
     expect(polish).toContain('摆脱翻译腔');
     expect(polish).toContain('【校对检查项】');
     expect(polish).toContain('原文中黑点・及重复中黑点必须原样保留');
+  });
+
+  it('工作流模板与工具的实际约定一致：润色取润色指令，原文前缀长度与校验一致', () => {
+    const kernel = createAgentMcpKernel({ tools: [] });
+    const text = (name: string) =>
+      kernel.getPrompt(name, { chapter_id: 'ch-1' })!.messages[0]!.content.text;
+    // get_translation_chunk 默认按翻译任务取特殊指令，润色必须写明 task_type
+    expect(text('polish-chapter')).toContain('`task_type: "polish"`');
+    // submit_translations 接受 3~20 个字符的原文前缀
+    expect(text('translate-chapter')).toContain('3~20 个字符');
+    expect(text('translate-chapter')).not.toContain('3~12');
+  });
+
+  it('工作流模板的步骤与站内一致：翻译有准备与复核清单，润色校对只有准备清单', () => {
+    const kernel = createAgentMcpKernel({ tools: [] });
+    const text = (name: string) =>
+      kernel.getPrompt(name, { chapter_id: 'ch-1' })!.messages[0]!.content.text;
+    const planning = getPhaseChecklist('planning', 'zh-CN', 'external');
+    const review = getPhaseChecklist('review', 'zh-CN', 'external');
+
+    const translate = text('translate-chapter');
+    for (const item of [...planning, ...review]) expect(translate).toContain(item);
+    expect(translate.indexOf(planning[0]!)).toBeLessThan(
+      translate.indexOf('`submit_translations`'),
+    );
+    expect(translate).not.toContain('add_translation_batch');
+
+    // 站内的润色、校对没有复核阶段
+    const polish = text('polish-chapter');
+    for (const item of planning) expect(polish).toContain(item);
+    expect(polish).not.toContain(review[0]!);
   });
 
   it('提供 3 个内置翻译工作流模板并支持按参数渲染', () => {

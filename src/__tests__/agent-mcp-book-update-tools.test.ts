@@ -232,6 +232,44 @@ describe('AgentMcp book update tools', () => {
     });
   });
 
+  it('比对正文时有章节抓取失败：不报告「已是最新」，并带回失败的章节', async () => {
+    const checkFailure = {
+      url: 'https://example.com/n/5/',
+      code: 'FETCH_HTTP_FAILED',
+      message: 'HTTP 503',
+    };
+    // 没有新章节、没有比对出变化，但有一章没能比对
+    const deepFailedOnly = changeset({ failed: [checkFailure], dateNewer: [checkFailure.url] });
+    const { session } = fakeSession(changeset(), deepFailedOnly);
+
+    const nothing = await kernel.callTool(
+      'apply_book_updates',
+      { book_id: bookId, include_updated: true },
+      { channel: 'desktop-mcp' },
+    );
+    expect(session.apply).not.toHaveBeenCalled();
+    expect(nothing.data).toMatchObject({
+      status: 'partial',
+      applied_count: 0,
+      skipped_updated_count: 1,
+      failed: [checkFailure],
+    });
+
+    // 有可导入的内容时，检查阶段与应用阶段的失败合并返回
+    const deepMixed = changeset({ new: [NEW_1], failed: [checkFailure] });
+    fakeSession(changeset({ new: [NEW_1] }), deepMixed);
+    const mixed = await kernel.callTool(
+      'apply_book_updates',
+      { book_id: bookId, include_updated: true },
+      { channel: 'desktop-mcp' },
+    );
+    expect(mixed.data).toMatchObject({
+      status: 'partial',
+      applied_count: 1,
+      failed: [checkFailure],
+    });
+  });
+
   it('工具说明里写明导入后会返回章节 ID，Agent 不需要先试一次才知道', () => {
     const apply = agentMcpBookUpdateTools.find((tool) => tool.name === 'apply_book_updates');
     expect(apply?.description).toContain('applied_chapters');

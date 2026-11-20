@@ -120,7 +120,11 @@ export default {
       wfTranslate4:
         '调用 submit_translations，paragraphs 里每项包含 paragraph_id 和 translated_text。书籍启用了原文前缀校验时，还要带上 original_text_prefix（对应原文开头的几个字符）。翻译章节第一块时可以同时用 chapter_title_translation 提交章节标题译文；model_label 填你使用的模型名称。',
       wfTranslate5:
-        '查看返回的 failed_items：只修正并重提失败的段落。remaining_untranslated_count 大于 0 时回到第 1 步，等于 0 时本章完成。',
+        '查看返回的 failed_items：只修正并重提失败的段落。remaining_untranslated_count 大于 0 时取下一块继续，等于 0 时本章完成。',
+      wfTranslatePlan:
+        '提交译文之前先做准备，与内置翻译的规划阶段相同。新术语、新角色和可复用的翻译决定在这一步就建好，不要留到译完之后：',
+      wfTranslateReview: '这一块提交之后复核，与内置翻译的复核阶段相同：',
+      wfTranslateBrief: '之后的每一块只需简短准备，然后同样翻译、提交、复核：',
       wfPolishTitle: '润色校对',
       wfPolish1:
         '调用 get_translation_chunk，mode 设为 "all"，task_type 设为 "polish"（校对用 "proofreading"）。每个段落会带上 current_translation。',
@@ -128,6 +132,7 @@ export default {
       wfPolish3:
         '默认会新增一个译文版本并选用它；只有用户明确要求直接改写当前版本时才把 write_mode 设为 "overwrite"。',
       wfPolish4: '用返回的 next_cursor 作为下一次调用的 cursor，直到章节结束。',
+      wfPolishPlan: '修改之前先做准备，与内置润色、校对的规划阶段相同（润色与校对没有复核阶段）：',
       wfImportTitle: '导入新书',
       wfImport1:
         '有网址时调用 import_book_from_url。每次调用最多抓取 20 章（可用 max_chapters 调整，上限 50）；返回 has_more 为 true 时再次调用以继续。',
@@ -138,7 +143,7 @@ export default {
       wfUpdateTitle: '跟进连载更新',
       wfUpdate1: '调用 check_book_updates 查看来源站点的新章节。',
       wfUpdate2:
-        '调用 apply_book_updates 导入，默认只导入新章节。返回的 applied_chapters 里就有新章节的 chapter_id，不需要再读整本目录。',
+        '调用 apply_book_updates 导入，默认只导入新章节。返回的 applied_chapters 里就有新章节的 chapter_id，不需要再读整本目录。status 为 partial 表示有章节没能检查或导入，见 failed，不要当作已经更新完。',
       wfUpdate3:
         'include_updated 会应用已导入章节的正文改动，并清除被改段落的译文，使用前必须先得到用户同意。',
       wfUpdate4: '导入完成后按「翻译一章」处理新章节。',
@@ -159,7 +164,7 @@ export default {
       wfRename3:
         '调用 replace_in_translations 并把 dry_run 设为 true 预览：find 填旧译名，replace_with 填新译名，original_contains 填原文里的名字，避免误改同字的其他词。检查返回的 samples。',
       wfRename4:
-        '确认无误后去掉 dry_run 再调用一次。返回 has_more 为 true 时继续调用，直到为 false。默认会给每个改动的段落追加一个新版本，旧版本仍然保留。',
+        '确认无误后去掉 dry_run 再调用一次。返回 has_more 为 true 时，把返回的 next_cursor 作为 cursor 传入继续调用（其余参数不变），直到为 false；不带 cursor 会从头再来，替换内容包含查找内容时会把同一处替换两遍。默认会给每个改动的段落追加一个新版本，旧版本仍然保留。',
       wfRename5: '最后再用 count_occurrences 确认旧译名已经没有残留，并向用户汇报改了多少处。',
       translationRulesTitle: '翻译规则',
       translationRulesNote:

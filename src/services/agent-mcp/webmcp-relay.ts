@@ -29,8 +29,9 @@ export interface WebMcpPageRuntime {
  * - `insecure`：页面不在安全上下文，无法提供 WebMCP
  * - `legacy-native`：浏览器自带旧版 WebMCP 且无法在本页替换，中继转发不了工具
  * - `failed`：运行时加载或初始化失败
+ * - `idle`：开启还没完成就被 disable() 取消了
  */
-export type WebMcpRelayEnableResult = Exclude<WebMcpRelayState, 'idle'>;
+export type WebMcpRelayEnableResult = WebMcpRelayState;
 
 export interface WebMcpRelayBridge {
   enable: () => Promise<WebMcpRelayEnableResult>;
@@ -113,6 +114,10 @@ export function createWebMcpRelayBridge(
   let nativeChecked = false;
   let runtime: WebMcpPageRuntime | null = null;
   let enabled = false;
+  /** 每次 disable() 加一：开启途中发现它变了，说明这次开启已经被取消 */
+  let disableCount = 0;
+  /** 进行中的开启；同一时间只跑一个 */
+  let inFlight: Promise<WebMcpRelayEnableResult> | null = null;
 
   const removeRelayElements = (): void => {
     document.querySelectorAll(`script[${SCRIPT_MARKER}]`).forEach((el) => el.remove());
@@ -128,10 +133,10 @@ export function createWebMcpRelayBridge(
     document.head.appendChild(script);
   };
 
-  const enable = async (): Promise<WebMcpRelayEnableResult> => {
-    if (enabled) return 'enabled';
+  const runEnable = async (): Promise<WebMcpRelayEnableResult> => {
     // 运行时与浏览器都只在安全上下文（HTTPS / localhost）提供 WebMCP
     if (typeof window === 'undefined' || window.isSecureContext === false) return 'insecure';
+    const startedAt = disableCount;
     try {
       if (!nativeChecked) {
         nativeChecked = true;
@@ -151,6 +156,8 @@ export function createWebMcpRelayBridge(
         ).__webModelContextOptions = { autoInitialize: false };
         runtime = await loadRuntime();
       }
+      // 探测与加载都要等待；期间被关闭的话到此为止，不初始化运行时、不注入中继脚本
+      if (startedAt !== disableCount) return 'idle';
       runtime.initializeWebModelContext({
         transport: { tabServer: { allowedOrigins: [window.location.origin] } },
       });
@@ -164,7 +171,19 @@ export function createWebMcpRelayBridge(
     }
   };
 
+  const enable = async (): Promise<WebMcpRelayEnableResult> => {
+    // 上一次开启还没结束（可能已被取消）就等它结束，再按当时的状态决定
+    while (inFlight) await inFlight;
+    if (enabled) return 'enabled';
+    const run = runEnable().finally(() => {
+      if (inFlight === run) inFlight = null;
+    });
+    inFlight = run;
+    return run;
+  };
+
   const disable = (): void => {
+    disableCount += 1;
     if (!enabled) return;
     enabled = false;
     removeRelayElements();

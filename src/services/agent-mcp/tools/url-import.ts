@@ -134,25 +134,30 @@ async function fetchChapterTargets(
   };
 }
 
+/**
+ * 找出还没有正文、需要抓取的章节。
+ * 只抓取属于本站点的网址：章节上的网址可以由外部工具写入（create_book / add_chapters 的 web_url），
+ * 不加限制的话，导入时会去请求任意地址（包括本机与内网），桌面版的抓取还不受浏览器跨域限制。
+ * 不属于本站点的章节放进 ignored，如实报告但不请求。
+ */
 async function collectEmptyChapterTargets(
   volumes: readonly Volume[],
-): Promise<ChapterFetchTarget[]> {
+  scraper: NovelScraper,
+): Promise<{ targets: ChapterFetchTarget[]; ignored: ChapterFetchTarget[] }> {
   const targets: ChapterFetchTarget[] = [];
+  const ignored: ChapterFetchTarget[] = [];
   for (const vol of volumes) {
     for (const ch of vol.chapters ?? []) {
       if (!ch.webUrl) continue;
       if (ch.content && ch.content.length > 0) continue;
       const stored = await loadChapterParagraphs(ch);
       if (stored.length === 0) {
-        targets.push({
-          chapterId: ch.id,
-          title: titleOriginal(ch.title),
-          webUrl: ch.webUrl,
-        });
+        const target = { chapterId: ch.id, title: titleOriginal(ch.title), webUrl: ch.webUrl };
+        (scraper.isValidUrl(ch.webUrl) ? targets : ignored).push(target);
       }
     }
   }
-  return targets;
+  return { targets, ignored };
 }
 
 function collectBookChapterIds(book: Novel): Set<string> {
@@ -403,7 +408,7 @@ export const importBookFromUrlTool: AgentMcpToolSpec = {
         createdNewBookId = prepared.bookId;
       }
 
-      const targets = await collectEmptyChapterTargets(prepared.volumes);
+      const { targets, ignored } = await collectEmptyChapterTargets(prepared.volumes, scraper);
       const batch = await fetchChapterTargets(
         targets,
         scraper,
@@ -455,6 +460,17 @@ export const importBookFromUrlTool: AgentMcpToolSpec = {
         pending_chapter_count: batch.pendingCount,
         has_more: batch.pendingCount > 0,
         failed_chapters: batch.failedChapters,
+        // 没有正文、但网址不属于该站点的章节：不会去请求，也不计入待抓取
+        ...(ignored.length > 0
+          ? {
+              ignored_chapters: ignored.map((target) => ({
+                chapter_id: target.chapterId,
+                title: target.title,
+                url: target.webUrl,
+                reason: 'The chapter URL is not on the site being imported, so it was not fetched.',
+              })),
+            }
+          : {}),
       };
     } catch (error) {
       // 新建目录壳后若在落盘阶段意外抛错且尚无任何章节成功写入，则回滚删除空壳书避免产生重复书

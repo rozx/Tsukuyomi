@@ -47,21 +47,40 @@ const PLANNING_TEMPLATE = [1, 2, 3, 4, 5].map(
 const BRIEF_PLANNING_TEMPLATE = [1, 2].map((index) => `aiWorkflow.brief.${index}` as MessageKey);
 const REVIEW_TEMPLATE = [1, 2, 3].map((index) => `aiWorkflow.review.${index}` as MessageKey);
 
+const PHASE_TEMPLATES = {
+  planning: PLANNING_TEMPLATE,
+  brief: BRIEF_PLANNING_TEMPLATE,
+  review: REVIEW_TEMPLATE,
+} as const;
+
+/** 清单里提到的提交工具：站内与外部 Agent（MCP）的工具名不同 */
+const SUBMIT_TOOL = { builtin: 'add_translation_batch', external: 'submit_translations' } as const;
+
+/**
+ * 某个阶段的待办清单：完整规划、后续分块的简短规划、翻译后的复核。
+ * 站内任务的待办与给外部 Agent 的工作流说明取的是这同一份文字，只有提交工具名不同。
+ */
+export function getPhaseChecklist(
+  phase: keyof typeof PHASE_TEMPLATES,
+  locale: AppLocale,
+  audience: keyof typeof SUBMIT_TOOL = 'builtin',
+): string[] {
+  return PHASE_TEMPLATES[phase].map((key) =>
+    translateText(locale, key, { submit: SUBMIT_TOOL[audience] }),
+  );
+}
+
 function getTemplates(
   taskType: TaskType,
   state: TaskStatus,
   isBriefPlanning: boolean,
   uiLocale: AppLocale,
 ): TodoTemplate | null {
-  const keys =
-    state === 'planning'
-      ? isBriefPlanning
-        ? BRIEF_PLANNING_TEMPLATE
-        : PLANNING_TEMPLATE
-      : state === 'review' && taskType === 'translation'
-        ? REVIEW_TEMPLATE
-        : null;
-  return keys?.map((key) => translateText(uiLocale, key)) ?? null;
+  if (state === 'planning')
+    return getPhaseChecklist(isBriefPlanning ? 'brief' : 'planning', uiLocale);
+  return state === 'review' && taskType === 'translation'
+    ? getPhaseChecklist('review', uiLocale)
+    : null;
 }
 
 function buildWorkingTodos(

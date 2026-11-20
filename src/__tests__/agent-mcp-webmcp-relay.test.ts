@@ -79,6 +79,37 @@ describe('WebMCP local relay bridge', () => {
     expect(document.querySelectorAll('script[data-agent-mcp-relay]')).toHaveLength(1);
   });
 
+  it('开启还没完成就被关闭：不初始化运行时、不留下中继脚本；之后可以重新开启', async () => {
+    const runtime = fakeRuntime();
+    let finishLoad: (value: ReturnType<typeof fakeRuntime>) => void = () => undefined;
+    const loadRuntime = vi.fn(
+      () =>
+        new Promise<ReturnType<typeof fakeRuntime>>((resolve) => {
+          finishLoad = resolve;
+        }),
+    );
+    const bridge = createWebMcpRelayBridge({
+      loadRuntime,
+      baseUrl: '/',
+      detectLegacyNative: () => Promise.resolve(false),
+    });
+
+    const pending = bridge.enable();
+    await vi.waitFor(() => expect(loadRuntime).toHaveBeenCalledTimes(1));
+    bridge.disable();
+    finishLoad(runtime);
+
+    expect(await pending).toBe('idle');
+    expect(bridge.isEnabled()).toBe(false);
+    expect(runtime.initializeWebModelContext).not.toHaveBeenCalled();
+    expect(document.querySelector('script[data-agent-mcp-relay]')).toBeNull();
+
+    // 被取消的那次开启不影响下一次
+    loadRuntime.mockImplementation(() => Promise.resolve(runtime));
+    expect(await bridge.enable()).toBe('enabled');
+    expect(runtime.initializeWebModelContext).toHaveBeenCalledTimes(1);
+  });
+
   it('页面不在安全上下文时不加载运行时，返回 insecure', async () => {
     Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true });
     const loadRuntime = vi.fn(() => Promise.resolve(fakeRuntime()));

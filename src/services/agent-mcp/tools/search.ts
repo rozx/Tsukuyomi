@@ -197,7 +197,26 @@ interface PlannedReplacement {
   count: number;
 }
 
-/** 扫描范围内需要替换的段落，最多收集 maxParagraphs 条 */
+/** 续传位置：下一次从哪一章的哪一段开始 */
+interface ReplaceStart {
+  chapterId: string;
+  paragraphId: string;
+}
+
+/** 续传位置写成「章节 ID:段落 ID」；格式不对或章节不在范围内时返回 null */
+function parseReplaceCursor(cursor: string, scope: ScanScope): ReplaceStart | null {
+  const separator = cursor.lastIndexOf(':');
+  if (separator <= 0 || separator === cursor.length - 1) return null;
+  const chapterId = cursor.slice(0, separator);
+  if (!scope.chapters.some((chapter) => chapter.id === chapterId)) return null;
+  return { chapterId, paragraphId: cursor.slice(separator + 1) };
+}
+
+/**
+ * 扫描范围内需要替换的段落，最多收集 maxParagraphs 条。
+ * 还有剩余时给出 nextCursor，下一次从那一段继续：替换内容里包含查找内容时
+ * （如「王」→「王子」），从头再扫会把已经替换过的段落再替换一遍。
+ */
 async function planReplacements(
   scope: ScanScope,
   options: {
@@ -206,15 +225,33 @@ async function planReplacements(
     caseSensitive: boolean;
     originalContains: string;
     maxParagraphs: number;
+    startAt: ReplaceStart | undefined;
   },
-): Promise<{ planned: PlannedReplacement[]; hasMore: boolean; skippedEmpty: number }> {
+): Promise<
+  | { ok: true; planned: PlannedReplacement[]; nextCursor: string | null; skippedEmpty: number }
+  | { ok: false }
+> {
   const pattern = new RegExp(escapeRegExp(options.find), options.caseSensitive ? 'g' : 'gi');
   const originalNeedle = options.originalContains.toLowerCase();
   const planned: PlannedReplacement[] = [];
   let skippedEmpty = 0;
+  const { startAt } = options;
+  const chapters = startAt
+    ? scope.chapters.slice(scope.chapters.findIndex((chapter) => chapter.id === startAt.chapterId))
+    : scope.chapters;
+  /** 还没走到续传位置时，要找的那一段 */
+  let resumeAt = startAt?.paragraphId;
 
-  for await (const { chapter, paragraphs } of scanChapters(scope.chapters)) {
-    for (const paragraph of paragraphs) {
+  for await (const { chapter, paragraphs } of scanChapters(chapters)) {
+    let remaining = paragraphs;
+    if (resumeAt !== undefined) {
+      const index = paragraphs.findIndex((paragraph) => paragraph.id === resumeAt);
+      // 续传位置的段落已经不在这一章里（章节被改动过）：让调用方重新预览，而不是猜一个位置
+      if (index < 0) return { ok: false };
+      remaining = paragraphs.slice(index);
+      resumeAt = undefined;
+    }
+    for (const paragraph of remaining) {
       const before = selectedTranslationText(paragraph, scope.targetLanguage);
       if (!before) continue;
       if (originalNeedle && !paragraph.text.toLowerCase().includes(originalNeedle)) continue;
@@ -227,12 +264,12 @@ async function planReplacements(
         continue;
       }
       if (planned.length >= options.maxParagraphs) {
-        return { planned, hasMore: true, skippedEmpty };
+        return { ok: true, planned, nextCursor: `${chapter.id}:${paragraph.id}`, skippedEmpty };
       }
       planned.push({ chapterId: chapter.id, paragraph, before, after, count });
     }
   }
-  return { planned, hasMore: false, skippedEmpty };
+  return { ok: true, planned, nextCursor: null, skippedEmpty };
 }
 
 async function persistReplacements(
@@ -288,13 +325,25 @@ async function executeReplaceInTranslations(
     args.write_mode === 'overwrite' || args.write_mode === 'append'
       ? args.write_mode
       : ctx.defaultWriteMode;
-  const { planned, hasMore, skippedEmpty } = await planReplacements(scope, {
+  const invalidCursor = () =>
+    agentMcpError(
+      'INVALID_CURSOR',
+      'cursor does not point to a paragraph in the searched chapters. Pass the next_cursor of the previous call unchanged and keep the same chapter_id; if the chapter was edited since, start over with dry_run=true.',
+    );
+  const cursor = readTrimmedString(args.cursor);
+  const startAt = cursor ? parseReplaceCursor(cursor, scope) : undefined;
+  if (startAt === null) return invalidCursor();
+
+  const plan = await planReplacements(scope, {
     find,
     replaceWith,
     caseSensitive: args.case_sensitive !== false,
     originalContains: readTrimmedString(args.original_contains),
     maxParagraphs: parseLimit(args.max_paragraphs, 200, 1000),
+    startAt,
   });
+  if (!plan.ok) return invalidCursor();
+  const { planned, nextCursor, skippedEmpty } = plan;
 
   if (!dryRun && planned.length > 0) {
     const externalModelId = buildExternalTranslationModelId(
@@ -317,7 +366,9 @@ async function executeReplaceInTranslations(
     replaced_paragraph_count: planned.length,
     replacement_count: planned.reduce((sum, item) => sum + item.count, 0),
     skipped_empty_count: skippedEmpty,
-    has_more: hasMore,
+    has_more: nextCursor !== null,
+    // 还有剩余时，下一次调用把它作为 cursor 传入，从停下的位置继续
+    next_cursor: nextCursor,
     chapters: [...perChapter.entries()].map(([chapterId, count]) => ({
       chapter_id: chapterId,
       paragraph_count: count,
@@ -487,7 +538,12 @@ export const agentMcpSearchTools: AgentMcpToolSpec[] = [
         max_paragraphs: {
           type: 'number',
           description:
-            'Maximum paragraphs to change in one call (default 200, max 1000). When has_more is true, call again to continue.',
+            'Maximum paragraphs to change in one call (default 200, max 1000). When has_more is true, call again with cursor set to the returned next_cursor.',
+        },
+        cursor: {
+          type: 'string',
+          description:
+            'Continue from where the previous call stopped: pass its next_cursor unchanged, with the same find, replace_with and chapter_id. Always use it to continue — calling again without it starts from the beginning, which replaces the same text twice when replace_with contains find (e.g. "王" → "王子").',
         },
         write_mode: {
           type: 'string',
