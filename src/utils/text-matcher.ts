@@ -1,3 +1,4 @@
+import Fuse from 'fuse.js';
 import type { Terminology, CharacterSetting } from 'src/models/novel';
 import { getCharacterNameVariants } from './novel-utils';
 
@@ -768,4 +769,223 @@ export function findUniqueCharactersInText(
   });
 
   return uniqueCharacters;
+}
+
+/** 近似匹配的结果：原文里有一处与名称非常接近但不完全相同的写法 */
+export interface NearNameMatch<T> {
+  item: T;
+  /** 被近似匹配到的名称（术语名、角色全名或别名） */
+  name: string;
+  /** 原文里的实际写法（多字、少字时是大致位置的片段） */
+  matchedText: string;
+}
+
+/** 名称至少这么长才做近似匹配：更短的名称差一个字就是另一个词，误报太多 */
+const NEAR_MATCH_MIN_LENGTH = 4;
+/**
+ * 模糊匹配的阈值。Fuse 的得分约等于「差错数 ÷ 查询长度」，0.3 与全文搜索
+ * （full-text-index-service）一致：4～6 个字容许 1 处差错，7 个字以上容许 2 处，
+ * 越长容错越多；不足 4 个字时实际上要求完全一致。
+ */
+export const FUZZY_MATCH_THRESHOLD = 0.3;
+const NEAR_MATCH_WORD_CHAR = /[\p{L}\p{N}]/u;
+const NEAR_MATCH_NAME_SEPARATORS = /[\s\u3000・･]+/g;
+
+function stripNameSeparators(name: string): string {
+  return name.replace(NEAR_MATCH_NAME_SEPARATORS, '');
+}
+
+/**
+ * 根据 Fuse 给出的命中区间，取出原文里对应名称的那一段。
+ * Fuse 只标出字符相同的区间：用第一段在名称里的位置反推这一段的起点，再取与名称等长的片段。
+ */
+function locateNearText(
+  text: string,
+  name: string,
+  indices: ReadonlyArray<readonly [number, number]>,
+): string | null {
+  const first = indices[0];
+  if (!first) return null;
+  const piece = text.slice(first[0], first[1] + 1);
+  const start = Math.max(0, first[0] - Math.max(0, name.indexOf(piece)));
+  return text.slice(start, start + name.length) || null;
+}
+
+const HIRAGANA_CHAR = /[\u3041-\u3096]/;
+
+/**
+ * 命中的片段是否像是「同一个词写错了字」。片段里夹着名称里没有的标点或空白时不算。
+ * 另外在恰好错一个字时再判断一条（多字、少字时片段是错位的，逐字对比没有意义）：
+ * - 名称里是汉字或片假名、原文里却是平假名：多半是名称的一部分后面跟了助词
+ *   （如「向こう側」之于「向こうに」），而不是错字。
+ */
+function isPlausibleVariant(candidate: string, name: string): boolean {
+  // 片段里夹着名称里没有的标点或空白：它跨过了词的边界（如「アリア、」之于「アリシア」）
+  for (const char of candidate) {
+    if (!NEAR_MATCH_WORD_CHAR.test(char) && !name.includes(char)) return false;
+  }
+  if (candidate.length !== name.length) return true;
+  const mismatches: number[] = [];
+  for (let i = 0; i < name.length; i++) {
+    if (candidate[i] !== name[i]) mismatches.push(i);
+  }
+  if (mismatches.length !== 1) return true;
+  const actual = candidate[mismatches[0]!]!;
+  const expected = name[mismatches[0]!]!;
+  return !(HIRAGANA_CHAR.test(actual) && !HIRAGANA_CHAR.test(expected));
+}
+
+/** 常见的日文敬称后缀；长的排在前面，保证「ちゃん」不会被当成别的后缀 */
+const HONORIFIC_SUFFIXES = [
+  'ちゃん',
+  'さん',
+  'くん',
+  'さま',
+  'たん',
+  '先生',
+  '先輩',
+  '様',
+  '君',
+  '殿',
+  '氏',
+] as const;
+
+/** 名字不足这个长度时，前面紧挨着汉字的不算同一个人（「俳優さん」不是「優さん」） */
+const SHORT_STEM_LENGTH = 3;
+
+function splitHonorific(name: string): { stem: string; honorific: string } | null {
+  for (const honorific of HONORIFIC_SUFFIXES) {
+    if (name.length > honorific.length && name.endsWith(honorific)) {
+      return { stem: name.slice(0, -honorific.length), honorific };
+    }
+  }
+  return null;
+}
+
+/**
+ * 别名是「名字 + 敬称」时，原文里同一个名字配另一种敬称（優ちゃん → 優さん）
+ * 也是在叫这个人。返回原文里的写法，找不到时返回 null。
+ */
+function findHonorificVariant(
+  text: string,
+  split: { stem: string; honorific: string },
+): string | null {
+  for (const honorific of HONORIFIC_SUFFIXES) {
+    if (honorific === split.honorific) continue;
+    const variant = split.stem + honorific;
+    for (let at = text.indexOf(variant); at !== -1; at = text.indexOf(variant, at + 1)) {
+      const isShortStem = Array.from(split.stem).length < SHORT_STEM_LENGTH;
+      if (isShortStem && isKanjiChar(text[at - 1])) continue;
+      return variant;
+    }
+  }
+  return null;
+}
+
+function collectKnownNames(
+  terms: readonly Terminology[],
+  characters: readonly CharacterSetting[],
+): Set<string> {
+  const names = new Set<string>();
+  const add = (name: string | undefined): void => {
+    const stripped = stripNameSeparators(name ?? '');
+    if (stripped) names.add(stripped);
+  };
+  for (const term of terms) add(term.name);
+  for (const character of characters) {
+    add(character.name);
+    // 姓、名单独出现也是已知写法
+    for (const part of character.name.split(NEAR_MATCH_NAME_SEPARATORS)) add(part);
+    for (const alias of character.aliases ?? []) add(alias.name);
+  }
+  return names;
+}
+
+function findNearMatches<T>(
+  text: string,
+  entries: ReadonlyArray<{ item: T; names: readonly string[] }>,
+  knownNames: ReadonlySet<string>,
+  /** 名称可能带敬称（角色的别名）：敬称不参与近似匹配，并识别换了敬称的称呼 */
+  options: { honorifics?: boolean } = {},
+): NearNameMatch<T>[] {
+  if (!text || entries.length === 0) return [];
+  // 把整段文本当作唯一的文档，逐个名称做近似子串搜索
+  const fuse = new Fuse([text], {
+    includeScore: true,
+    includeMatches: true,
+    ignoreLocation: true,
+    threshold: FUZZY_MATCH_THRESHOLD,
+  });
+  const matches: NearNameMatch<T>[] = [];
+  for (const { item, names } of entries) {
+    const candidates = names.map(stripNameSeparators).filter((name) => name.length > 0);
+    // 任一写法已经原样出现：精确匹配会处理，这里不重复报告
+    if (candidates.some((name) => text.includes(name))) continue;
+    for (const name of candidates) {
+      const split = options.honorifics ? splitHonorific(name) : null;
+      const honorificVariant = split && findHonorificVariant(text, split);
+      if (honorificVariant) {
+        matches.push({ item, name, matchedText: honorificVariant });
+        break;
+      }
+      // 带敬称的名称只拿敬称前面的部分去比：否则「優ちゃん」会因为敬称相同而像「央ちゃん」
+      const target = split ? split.stem : name;
+      if (Array.from(target).length < NEAR_MATCH_MIN_LENGTH) continue;
+      const hit = fuse.search(target, { limit: 1 })[0];
+      const matchedText = hit && locateNearText(text, target, hit.matches?.[0]?.indices ?? []);
+      if (!matchedText) continue;
+      // 那一段本身是另一个已知名称（是另一个词，不是错字），或不像是写错了字：不算
+      if (knownNames.has(matchedText) || !isPlausibleVariant(matchedText, target)) continue;
+      matches.push({ item, name, matchedText });
+      break;
+    }
+  }
+  return matches;
+}
+
+/**
+ * 找出原文里「写法与术语名非常接近」的术语：原文的错字、同音异写（如 聖→性）会让
+ * 精确匹配漏掉本该用上的术语。结果只是「可能相关」，由使用方自行判断。
+ * @param characters 同一本书的角色，用来排除「那一处其实是某个角色名」的情况
+ */
+export function findNearTermsInText(
+  text: string,
+  terms: readonly Terminology[],
+  characters: readonly CharacterSetting[] = [],
+): NearNameMatch<Terminology>[] {
+  // 精确匹配能认出的（含注音写法）不再作为近似匹配重复报告
+  const exactIds = new Set(findUniqueTermsInText(text, [...terms]).map((term) => term.id));
+  return findNearMatches(
+    text,
+    terms
+      .filter((term) => !exactIds.has(term.id))
+      .map((term) => ({ item: term, names: [term.name] })),
+    collectKnownNames(terms, characters),
+  );
+}
+
+/**
+ * 找出原文里「写法与角色全名或别名非常接近」的角色。姓、名单独出现的情况由精确匹配负责。
+ * @param terms 同一本书的术语，用来排除「那一处其实是某个术语」的情况
+ */
+export function findNearCharactersInText(
+  text: string,
+  characters: readonly CharacterSetting[],
+  terms: readonly Terminology[] = [],
+): NearNameMatch<CharacterSetting>[] {
+  // 精确匹配能认出的（含姓、名单独出现与带分隔符的全名）不再作为近似匹配重复报告
+  const exactIds = new Set(
+    findUniqueCharactersInText(text, [...characters]).map((character) => character.id),
+  );
+  return findNearMatches(
+    text,
+    characters
+      .filter((character) => !exactIds.has(character.id))
+      .map((character) => ({
+        item: character,
+        names: [character.name, ...(character.aliases ?? []).map((alias) => alias.name)],
+      })),
+    collectKnownNames(terms, characters),
+    { honorifics: true },
+  );
 }

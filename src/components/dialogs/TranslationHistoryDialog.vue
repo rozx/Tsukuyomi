@@ -10,6 +10,7 @@ import type { AppLocale } from 'src/models/locale';
 import { getLanguageTranslation } from 'src/services/localization/selection';
 import { languageName } from 'src/i18n/translate';
 import { resolveAppLocale } from 'src/models/locale';
+import { resolveTranslationModelLabel } from 'src/utils/translation-model-label';
 const { t, locale } = useI18n();
 
 const props = defineProps<{
@@ -48,8 +49,11 @@ const translationHistory = computed(() => {
 
 // 获取模型名称
 const getModelName = (modelId: string): string => {
-  const model = aiModelsStore.getModelById(modelId);
-  return model?.name || t('translationUi.unknownModel');
+  return resolveTranslationModelLabel(
+    modelId,
+    aiModelsStore.models,
+    t('translationUi.unknownModel'),
+  );
 };
 
 // 处理选择翻译

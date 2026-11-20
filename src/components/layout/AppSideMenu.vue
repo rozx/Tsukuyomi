@@ -104,6 +104,7 @@ const topNav = computed(() =>
         tab: 'import',
       },
       { label: i18nT('libraryUi.aiList'), icon: 'pi pi-sparkles', path: '/ai', tab: 'ai' },
+      { label: i18nT('libraryUi.agentMcp'), icon: 'pi pi-link', path: '/mcp', tab: 'mcp' },
     ] satisfies NavEntry[]
   ).filter((entry) => isNavTabEnabled(entry.tab)),
 );

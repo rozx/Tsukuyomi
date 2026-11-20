@@ -14,6 +14,12 @@ import { getChapterDisplayTitle } from 'src/utils/novel-utils';
 import { parseToolArgs, type ToolDefinition, type ToolContext } from './types';
 import type { Chapter, Novel, Volume } from 'src/models/novel';
 import { searchRelatedMemoriesHybrid } from './memory-helper';
+import {
+  moveChapters,
+  moveChaptersParameters,
+  readMoveChaptersRequest,
+  type MoveChaptersFailure,
+} from 'src/services/library-structure/move-chapters';
 
 /**
  * 统一的 JSON 错误响应构造器
@@ -893,6 +899,31 @@ function emitBookReadAction(
   onAction?.({ type: 'read', entity: 'book', data });
 }
 
+/** 移动章节失败原因对应的反馈；说明只返回给模型 */
+function moveChaptersErrorJson(failure: MoveChaptersFailure): string {
+  const id = failure.id ?? '';
+  switch (failure.code) {
+    case 'BOOK_NOT_FOUND':
+      return toolErrorJson(failure.code, 'aiEntityFeedback.bookMissing', { id });
+    case 'CHAPTER_NOT_FOUND':
+      return toolErrorJson(failure.code, 'aiEntityFeedback.chapterMissing', { id });
+    case 'CHAPTER_IDS_REQUIRED':
+      return toolErrorJson(failure.code, 'aiBookFeedback.moveChapterIdsRequired');
+    case 'DUPLICATE_CHAPTER':
+      return toolErrorJson(failure.code, 'aiBookFeedback.moveDuplicateChapter', { id });
+    case 'VOLUME_NOT_FOUND':
+      return toolErrorJson(failure.code, 'aiBookFeedback.moveVolumeMissing', { id });
+    case 'ANCHOR_NOT_FOUND':
+      return toolErrorJson(failure.code, 'aiBookFeedback.moveAnchorMissing', { id });
+    case 'ANCHOR_IS_MOVED':
+      return toolErrorJson(failure.code, 'aiBookFeedback.moveAnchorIsMoved', { id });
+    case 'TARGET_CONFLICT':
+      return toolErrorJson(failure.code, 'aiBookFeedback.moveTargetConflict');
+    default:
+      return toolErrorJson(failure.code, 'aiBookFeedback.moveTargetRequired');
+  }
+}
+
 export const bookTools: ToolDefinition[] = [
   {
     definition: toolDefinition('get_book_info', {
@@ -1355,6 +1386,64 @@ export const bookTools: ToolDefinition[] = [
           'CHAPTER_TITLE_UPDATE_FAILED',
           'aiBookFeedback.titleUpdateFailed',
         );
+      }
+    },
+  },
+  {
+    // 移动逻辑与外部 Agent 的同名工具共用 library-structure/move-chapters
+    definition: toolDefinition('move_chapters', {
+      type: 'object',
+      properties: moveChaptersParameters((name) =>
+        describeTool(`move_chapters.parameters.properties.${name}`),
+      ),
+      required: ['chapter_ids'],
+    }),
+    handler: async (args, { bookId, onAction, languages }) => {
+      if (!bookId) return toolErrorJson('BOOK_ID_REQUIRED', 'aiEntityFeedback.bookRequired');
+      try {
+        const result = await moveChapters(bookId, readMoveChaptersRequest(parseToolArgs(args)));
+        if (!result.ok) return moveChaptersErrorJson(result);
+
+        const book = useBooksStore().getBookById(bookId);
+        const displayBook = book
+          ? { ...book, targetLanguage: languages?.targetLanguage ?? 'zh-CN' }
+          : undefined;
+        const titleOf = (chapterId: string): string => {
+          const found = book ? ChapterService.findChapterById(book, chapterId) : null;
+          return found ? getChapterDisplayTitle(found.chapter, displayBook) : chapterId;
+        };
+        const first = result.moved[0];
+        if (onAction && first && !result.unchanged) {
+          onAction({
+            type: 'update',
+            entity: 'chapter',
+            data: {
+              chapter_id: first.chapterId,
+              chapter_title: titleOf(first.chapterId),
+              tool_name: 'move_chapters',
+            },
+          });
+        }
+        return JSON.stringify({
+          success: true,
+          message: translateText(
+            AGENT_LOCALE,
+            result.unchanged ? 'aiBookFeedback.chaptersUnchanged' : 'aiBookFeedback.chaptersMoved',
+            { count: result.moved.length },
+          ),
+          target_volume_id: result.targetVolumeId,
+          created_volume: result.createdVolume,
+          unchanged: result.unchanged,
+          moved: result.moved.map((entry) => ({
+            chapter_id: entry.chapterId,
+            chapter_title: titleOf(entry.chapterId),
+            from_volume_id: entry.fromVolumeId,
+            to_volume_id: entry.toVolumeId,
+            index: entry.index,
+          })),
+        });
+      } catch (error) {
+        return caughtToolErrorJson(error, 'CHAPTER_MOVE_FAILED', 'aiBookFeedback.moveFailed');
       }
     },
   },

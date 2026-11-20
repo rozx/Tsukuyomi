@@ -121,6 +121,10 @@ function createIndexPageContext() {
     void router.push('/ai');
   };
 
+  const navigateToMcp = () => {
+    void router.push('/mcp');
+  };
+
   const loadAllBookCharCounts = async () => {
     const books = recentBooks.value;
     const loadPromises = books.map((book) => loadBookCharCount(book));
@@ -173,5 +177,6 @@ function createIndexPageContext() {
     navigateToBookDetails,
     navigateToBooks,
     navigateToAI,
+    navigateToMcp,
   };
 }

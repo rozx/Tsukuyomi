@@ -62,6 +62,44 @@ export interface ProxySiteMappingEntry {
   proxies: string[];
 }
 
+export const AGENT_MCP_PERMISSION_MODES = ['read_only', 'translate_and_edit', 'full'] as const;
+export type AgentMcpPermissionMode = (typeof AGENT_MCP_PERMISSION_MODES)[number];
+
+export const AGENT_MCP_WRITE_MODES = ['append', 'overwrite'] as const;
+export type AgentMcpWriteMode = (typeof AGENT_MCP_WRITE_MODES)[number];
+
+export const DEFAULT_AGENT_MCP_PORT = 48321;
+
+/**
+ * 外部 Agent / MCP 与 WebMCP 的设备本地配置（绝不参与 Gist 同步或备份导出）
+ */
+export interface AgentMcpSettings {
+  /** 是否开启 Electron 本地 Streamable HTTP MCP 服务端（默认关闭） */
+  desktopServerEnabled: boolean;
+  /** 本地 MCP 服务端监听端口（仅 127.0.0.1，范围 1024..65535，默认 48321） */
+  desktopPort: number;
+  /** 本地 MCP 服务端 Bearer Token（32 字节 hex，本机生成与轮换） */
+  desktopAuthToken: string;
+  /** 是否开启浏览器端 WebMCP 注册（默认关闭；Electron 端忽略） */
+  webMcpEnabled: boolean;
+  /** 外部工具权限分级（默认 translate_and_edit） */
+  permissionMode: AgentMcpPermissionMode;
+  /** 批量写回译文默认模式（默认 append 新增版本并选中） */
+  defaultWriteMode: AgentMcpWriteMode;
+  /** 外部写类工具成功执行后是否弹出轻量 Toast 提示（默认开启） */
+  notifyOnWrite: boolean;
+}
+
+export const DEFAULT_AGENT_MCP_SETTINGS: AgentMcpSettings = {
+  desktopServerEnabled: false,
+  desktopPort: DEFAULT_AGENT_MCP_PORT,
+  desktopAuthToken: '',
+  webMcpEnabled: false,
+  permissionMode: 'translate_and_edit',
+  defaultWriteMode: 'append',
+  notifyOnWrite: true,
+};
+
 /**
  * 应用设置接口
  */
@@ -177,6 +215,10 @@ export interface AppSettings {
    * 只是记忆注入打分管线里的语义信号子开关,在总开关为 true 时才有意义。
    */
   enableLocalEmbedding?: boolean;
+  /**
+   * 外部 Agent / MCP 与 WebMCP 设备本地配置（不参与 Gist 同步与备份导出）
+   */
+  agentMcp?: AgentMcpSettings;
 }
 
 export interface Settings {

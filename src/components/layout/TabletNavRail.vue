@@ -19,6 +19,7 @@ const primaryItems = computed(() =>
       { id: 'library', icon: 'pi-book', label: i18nT('libraryUi.library') },
       { id: 'import', icon: 'pi-file-import', label: i18nT('libraryUi.aiImport') },
       { id: 'ai', icon: 'pi-microchip-ai', label: i18nT('libraryUi.aiModels') },
+      { id: 'mcp', icon: 'pi-link', label: i18nT('libraryUi.agentMcp') },
     ] satisfies Item[]
   ).filter((item) => isNavTabEnabled(item.id)),
 );

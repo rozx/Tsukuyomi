@@ -22,9 +22,9 @@ function resources() {
 }
 describe('真实三语帮助集合', () => {
   for (const locale of ['zh-CN', 'zh-TW', 'en-US'] as AppLocale[]) {
-    it(`${locale}全部16篇同源全文与章节身份，AI读取不截断`, async () => {
+    it(`${locale}全部17篇同源全文与章节身份，AI读取不截断`, async () => {
       resources();
-      expect(guides).toHaveLength(16);
+      expect(guides).toHaveLength(17);
       const index = await HelpService.getIndex(locale);
       expect(index.map((d) => d.id)).toEqual(originalIndex.map((d) => d.id));
       for (const doc of guides) {

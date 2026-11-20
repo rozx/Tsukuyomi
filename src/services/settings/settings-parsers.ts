@@ -191,7 +191,7 @@ const MIN_SCRAPER_CONCURRENCY = 1;
 const MAX_SCRAPER_CONCURRENCY = 10;
 const DEFAULT_SCRAPER_CONCURRENCY = 3;
 
-function pickScraperConcurrency(value: unknown): number {
+export function pickScraperConcurrency(value: unknown): number {
   if (
     typeof value === 'number' &&
     value >= MIN_SCRAPER_CONCURRENCY &&

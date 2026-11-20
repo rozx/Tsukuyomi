@@ -99,13 +99,23 @@ function saveStateToStorage(state: BookDetailsUiState): void {
   }
 }
 
+export interface PendingParagraphTarget {
+  bookId: string;
+  chapterId: string;
+  paragraphId: string;
+}
+
 export const useBookDetailsStore = defineStore('book-details', {
-  state: (): BookDetailsUiState & { isLoaded: boolean } => ({
+  state: (): BookDetailsUiState & {
+    isLoaded: boolean;
+    pendingParagraphTarget: PendingParagraphTarget | null;
+  } => ({
     expandedVolumes: {},
     selectedChapter: {},
     showTranslationProgress: {},
     translationProgress: { ...DEFAULT_TRANSLATION_PROGRESS_STATE },
     isLoaded: false,
+    pendingParagraphTarget: null,
   }),
 
   getters: {
@@ -167,6 +177,20 @@ export const useBookDetailsStore = defineStore('book-details', {
     setSelectedChapter(bookId: string, chapterId: string | null): void {
       this.selectedChapter[bookId] = chapterId;
       this.saveAllState();
+    },
+
+    /**
+     * 请求书籍详情页打开指定章节后定位并滚动到目标段落（仅会话内存态，不持久化）
+     */
+    requestParagraphNavigation(target: PendingParagraphTarget): void {
+      this.pendingParagraphTarget = { ...target };
+    },
+
+    /**
+     * 消费或清空待定位的段落导航请求
+     */
+    clearPendingParagraphNavigation(): void {
+      this.pendingParagraphTarget = null;
     },
 
     /**
@@ -261,10 +285,16 @@ export const useBookDetailsStore = defineStore('book-details', {
       let changed = false;
 
       for (const taskId of Object.keys(tp.autoScrollEnabled)) {
-        if (!activeTaskIds.has(taskId)) { delete tp.autoScrollEnabled[taskId]; changed = true; }
+        if (!activeTaskIds.has(taskId)) {
+          delete tp.autoScrollEnabled[taskId];
+          changed = true;
+        }
       }
       for (const taskId of Object.keys(tp.unseenActivity)) {
-        if (!activeTaskIds.has(taskId)) { delete tp.unseenActivity[taskId]; changed = true; }
+        if (!activeTaskIds.has(taskId)) {
+          delete tp.unseenActivity[taskId];
+          changed = true;
+        }
       }
       if (tp.selectedTaskId && !activeTaskIds.has(tp.selectedTaskId)) {
         tp.selectedTaskId = null;

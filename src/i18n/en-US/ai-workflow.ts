@@ -13,7 +13,7 @@ export default {
     },
     review: {
       '1': 'Check fidelity and consistency of names, pronouns, tone, character voices, and applicable honorifics.',
-      '2': 'Correct affected paragraphs directly with add_translation_batch.',
+      '2': 'Correct affected paragraphs directly with {submit}.',
       '3': 'Update terminology, characters, and memories for new, missing, or inaccurate information.',
     },
     title: 'Translate chapter title: {title}',

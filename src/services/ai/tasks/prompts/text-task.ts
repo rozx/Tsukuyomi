@@ -6,6 +6,7 @@ import { agentText } from 'src/i18n/translate';
 import { aiLanguageName } from './language';
 import { taskPromptLabel } from './runner';
 import {
+  getCoreTaskRules,
   getSymbolFormatRules,
   getDataManagementRules,
   getHonorificRules,
@@ -50,9 +51,7 @@ export function buildTextTaskSystemPrompt(
     agentText('aiText.source', {
       targetLanguage: aiLanguageName(targetLanguage),
     }),
-    agentText(`aiText.core.${taskType}`, {
-      scope: agentText(single ? 'aiText.singleScope' : 'aiText.batchScope'),
-    }),
+    getCoreTaskRules(taskType, { single }),
     getSymbolFormatRules(targetLanguage),
     getHonorificRules(languages),
   ];

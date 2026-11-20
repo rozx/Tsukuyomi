@@ -26,6 +26,15 @@
     }
   },
   {
+    "id": "agent-mcp-guide",
+    "title": "External Agent / MCP",
+    "file": "agent-mcp-guide.md",
+    "path": "help/en-US",
+    "category": "User guides",
+    "description": "Connect Claude Code, Pi, Antigravity, and browser WebMCP agents to manage books and translate chapters",
+    "categoryId": "guides"
+  },
+  {
     "id": "library-guide",
     "title": "Home page",
     "file": "library-guide.md",

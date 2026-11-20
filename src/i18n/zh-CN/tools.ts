@@ -1,5 +1,16 @@
 export default {
   aiTools: {
+    // 部分说明由站内工具与外部 Agent（MCP）的工具共用；下面是两边各自的片段（工具名与参数写法不同）
+    audience__builtin__entityLookup:
+      'get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords',
+    audience__builtin__historyTool: 'find_paragraph_by_keywords',
+    audience__builtin__chapterReadTool: 'get_chapter_info',
+    audience__builtin__instructionScope: '只影响全书时用 scope=book，只影响某章时用 scope=chapter',
+    audience__external__entityLookup: 'list_characters 或 list_terms（带 keyword）',
+    audience__external__historyTool: 'search_paragraphs',
+    audience__external__chapterReadTool: 'get_chapter_paragraphs',
+    audience__external__instructionScope:
+      '只影响全书时不传 chapter_id，只影响某章时传入 chapter_id',
     create_term:
       '创建术语记录。仅用于作品特定、上下文相关或需要特殊处理的术语，不为通用词汇或已有固定词典译法的词创建记录。原名与目标译名相同时，仅在作品中有特殊上下文含义需要说明时创建。每个术语只保留一个目标译名。',
     create_term__parameters__properties__name: '术语名称（原文）',
@@ -35,10 +46,14 @@ export default {
       '是否只返回有翻译的术语（默认 false）',
     search_terms_by_keywords__parameters__properties__include_memory:
       '是否在响应中包含相关的记忆信息（默认 true）',
+    search_terms_by_keywords__parameters__properties__fuzzy:
+      '是否模糊匹配（默认 false，即精确包含）。为 true 时写法略有出入也算命中：关键词每 4 个字大约容许 1 处不同，适合记不清确切写法或原文可能有错字、异写时使用；不足 4 个字的关键词仍需完全一致。结果按接近程度排序。',
     get_occurrences_by_keywords:
       '根据提供的关键词获取其在书籍各章节中的出现次数。用于统计特定词汇在文本中的分布情况，帮助理解词汇的使用频率和上下文。',
     get_occurrences_by_keywords__parameters__properties__keywords:
       '关键词数组，可以包含一个或多个关键词',
+    get_occurrences_by_keywords__parameters__properties__fuzzy:
+      '是否模糊统计（默认 false，即只统计完全一致的写法）。为 true 时写法略有出入的也计入（关键词每 4 个字大约容许 1 处不同），适合统计原文里可能有错字、异写的词；此时每个命中的段落计 1 次。',
     create_character:
       "创建新角色设定。[警告] 重要：在创建新角色之前，必须使用 list_characters 或 get_character 工具检查该角色是否已存在，或者是否应该是已存在角色的别名。如果发现该角色实际上是已存在角色的别名，应该使用 update_character 工具将新名称添加为别名，而不是创建新角色。[禁止] **错误处理**：如果尝试创建的角色名称已存在（作为其他角色的主名称），将抛出错误 \"角色 {'{'}name{'}'} 已存在\"，操作将失败。",
     create_character__parameters__properties__name:
@@ -92,6 +107,8 @@ export default {
       '是否只返回有翻译的角色（默认 false）',
     search_characters_by_keywords__parameters__properties__include_memory:
       '是否在响应中包含相关的记忆信息（默认 true）',
+    search_characters_by_keywords__parameters__properties__fuzzy:
+      '是否模糊匹配（默认 false，即精确包含）。为 true 时写法略有出入也算命中：关键词每 4 个字大约容许 1 处不同，适合记不清确切写法或原文可能有错字、异写时使用；不足 4 个字的关键词仍需完全一致。结果按接近程度排序。',
     list_characters:
       '列出角色设定。可以通过 chapter_id 参数指定章节（只返回该章节中出现的角色），或设置 all_chapters=true 列出所有章节的角色。如果不提供 chapter_id 且 all_chapters 为 false，则返回所有角色。在翻译开始前，可以使用此工具获取相关角色，以便在翻译时保持一致性。',
     list_characters__parameters__properties__chapter_id:
@@ -212,7 +229,7 @@ export default {
       '获取按卷分组的书籍章节列表。当需要了解书籍的分卷结构、按卷查找章节或查看每卷包含的章节详情时使用此工具。返回结果包含卷信息和该卷下的章节列表（含ID、标题、摘要）。',
     list_chapters_by_volume__parameters__properties__volume_ids: '要获取章节的卷 ID 列表',
     query_chapter:
-      '混合检索章节：语义、标题/正文关键词、稀有词 IDF 与章号/卷号 identifier 加权。返回章节 ID、标题、得分及前200字预览，需要全文时用 get_chapter_info。本地嵌入未就绪时返回结构化错误，稍后重试。优先使用原始标题或系列词、人物身份加具体动作及独特细节、事件锚点；避免抽象读后感、仅人名无动作或不存在的系列词。转述与原始标题字面差异大时优先原文标题词或强锚点。结果为候选，默认看 Top3-5，不确定时 limit 8-10。已维护的原名与目标译名可跨语言归一，没有记录时使用原名。',
+      '混合检索章节：语义、标题/正文关键词、稀有词 IDF 与章号/卷号 identifier 加权。返回章节 ID、标题、得分及前200字预览，需要全文时用 {chapterReadTool}。本地嵌入未就绪时返回结构化错误，稍后重试。优先使用原始标题或系列词、人物身份加具体动作及独特细节、事件锚点；避免抽象读后感、仅人名无动作或不存在的系列词。转述与原始标题字面差异大时优先原文标题词或强锚点。结果为候选，默认看 Top3-5，不确定时 limit 8-10。已维护的原名与目标译名可跨语言归一，没有记录时使用原名。',
     query_chapter__parameters__properties__query:
       '任意语言的自然语言查询。优先原始标题/系列词、人物加具体动作细节或事件锚点，避免抽象读后感或仅人名无动作。已维护的名称可跨语言归一，原文标题词通常是更强锚点。',
     query_chapter__parameters__properties__limit:
@@ -254,6 +271,20 @@ export default {
       '新的原文标题（可选，如果提供则更新原文标题）',
     update_chapter_title__parameters__properties__title_translation:
       '新的翻译标题（可选，如果提供则更新翻译标题）',
+    move_chapters:
+      '移动章节：调整章节在卷内的顺序，或把章节移到另一卷（也可以新建一卷）。chapter_ids 里的章节按给出的顺序作为一个整体移动。用 before_chapter_id 或 after_chapter_id 指定放在哪一章的前面或后面，目标卷就是那一章所在的卷；没有指定时放到 target_volume_id 的卷首或卷尾（由 position 决定，默认卷尾）。要重排整卷时，按新的顺序给出该卷的全部章节，并把 position 设为 start。只改变章节的位置，不改动标题、正文与译文。移动前先向用户确认。',
+    move_chapters__parameters__properties__chapter_ids:
+      '要移动的章节 ID 数组，按希望的先后顺序排列；多个章节作为一个整体移动',
+    move_chapters__parameters__properties__target_volume_id:
+      '目标卷 ID。用 before_chapter_id 或 after_chapter_id 定位时可以省略；要移动的章节都在同一卷、且只是调整顺序时也可以省略',
+    move_chapters__parameters__properties__new_volume_title:
+      '新建一卷并把章节移进去时填写新卷的标题。不能与 target_volume_id、before_chapter_id、after_chapter_id 同时使用',
+    move_chapters__parameters__properties__before_chapter_id:
+      '把章节放在这一章的前面。这一章不能是正在移动的章节',
+    move_chapters__parameters__properties__after_chapter_id:
+      '把章节放在这一章的后面。这一章不能是正在移动的章节',
+    move_chapters__parameters__properties__position:
+      '没有用 before_chapter_id / after_chapter_id 定位时，放在目标卷的开头（start）还是末尾（end，默认）',
     update_book_info:
       '更新书籍的基本信息，包括描述、标签、作者、别名等。可以同时更新多个字段，也可以只更新单个字段。用于完善书籍元数据、修正错误信息或根据用户需求调整书籍信息。',
     update_book_info__parameters__properties__description:
@@ -268,7 +299,7 @@ export default {
     get_special_instructions__parameters__properties__chapter_id:
       '章节 ID（可选，提供时一并返回该章节的特殊指令）',
     update_special_instructions:
-      '修改书籍级或章节级的特殊指令（翻译/润色/校对），指令会注入后续对应任务的系统提示词。用户指出译法错误或提出长期偏好时，用它写入纠正规则以避免后续再犯；只影响全书时用 scope=book，只影响某章时用 scope=chapter。章节级指令会覆盖书籍级同类指令。',
+      '修改书籍级或章节级的特殊指令（翻译/润色/校对），指令会注入后续对应任务的系统提示词。用户指出译法错误或提出长期偏好时，用它写入纠正规则以避免后续再犯；{instructionScope}。章节级指令会覆盖书籍级同类指令。',
     update_special_instructions__parameters__properties__scope:
       '指令范围：book（全书）或 chapter（单个章节）',
     update_special_instructions__parameters__properties__chapter_id:
@@ -291,7 +322,7 @@ export default {
     get_memory__parameters__properties__memory_id:
       'Memory ID（从 create_memory 或 search_memories 获取）',
     search_memories:
-      '用自然语言混合关键词与语义搜索共享记忆。查询角色/术语前先用 get_character/search_characters_by_keywords 或 get_term/search_terms_by_keywords 查询数据库，无记录时再查记忆。记忆补充结构化资料，不替代数据库。处理实际日语敬语时先查已有称呼约定，再用 find_paragraph_by_keywords 查历史。',
+      '用自然语言混合关键词与语义搜索共享记忆。查询角色/术语前先用 {entityLookup} 查询数据库，无记录时再查记忆。记忆补充结构化资料，不替代数据库。处理实际日语敬语时先查已有称呼约定，再用 {historyTool} 查历史。',
     search_memories__parameters__properties__query:
       '搜索查询（自然语言描述或关键词，用于关键词匹配和语义检索）',
     create_memory:
@@ -389,8 +420,10 @@ export default {
     add_translation_batch__parameters__properties__paragraphs__items__properties__translated_text:
       '翻译/润色/校对后的文本',
     search_help_docs:
-      '根据关键词搜索应用的帮助文档。在标题和描述中进行模糊匹配。当用户询问应用的使用方法、功能介绍、操作指南等问题时，使用此工具搜索相关帮助文档。',
+      '根据关键词搜索应用的帮助文档。在标题、描述和使用文档的正文中匹配，正文命中时返回命中位置附近的片段。当用户询问应用的使用方法、功能介绍、操作指南等问题时，使用此工具搜索相关帮助文档。',
     search_help_docs__parameters__properties__query: '搜索关键词，可以是功能名称、操作描述等',
+    search_help_docs__parameters__properties__fuzzy:
+      '是否模糊匹配（默认 false，即精确包含）。为 true 时搜索词写得略有出入也能找到，结果按接近程度排序。',
     get_help_doc:
       '获取指定帮助文档的完整内容。需要传入文档 ID（doc_id，可通过 search_help_docs 或 list_help_docs 获取）。返回文档的标题、分类和 Markdown 格式的完整内容。',
     get_help_doc__parameters__properties__doc_id:

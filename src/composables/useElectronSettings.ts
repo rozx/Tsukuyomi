@@ -9,6 +9,7 @@ import { ChapterContentService } from 'src/services/chapter-content-service';
 import { MemoryService } from 'src/services/memory-service';
 import { SyncDataService } from 'src/services/sync-data-service';
 import { isElectron } from 'src/utils/platform';
+import { stripAgentMcpFromAppSettings } from 'src/utils/sync-strip';
 import type { Memory } from 'src/models/memory';
 import type { Novel } from 'src/models/novel';
 
@@ -45,14 +46,15 @@ export function useElectronSettings() {
         booksStore.books,
       );
 
-      // 获取当前设置
+      // 获取当前设置（剥离本机 MCP 敏感配置，避免随备份文件外泄）
+      const exportableAppSettings = stripAgentMcpFromAppSettings(settingsStore.settings);
       const settings = {
         aiModels: aiModelsStore.models,
         novels: novelsWithContent,
         coverHistory: coverHistoryStore.covers,
         memories,
         sync: settingsStore.syncs,
-        appSettings: settingsStore.settings,
+        appSettings: exportableAppSettings,
       };
 
       // 转换为 JSON 字符串

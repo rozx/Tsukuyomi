@@ -1,5 +1,17 @@
 export default {
   aiBookFeedback: {
+    moveChapterIdsRequired: '必須提供要移動的章節 chapter_ids',
+    moveDuplicateChapter: 'chapter_ids 裡有重複的章節: {id}',
+    moveVolumeMissing: '目標卷不存在: {id}',
+    moveAnchorMissing: '用於定位的章節不存在: {id}',
+    moveAnchorIsMoved: '不能用正在移動的章節自己來定位: {id}',
+    moveTargetConflict:
+      '定位方式互相衝突：before_chapter_id、after_chapter_id、new_volume_title 只能用一種，target_volume_id 必須與定位章節所在的卷一致',
+    moveTargetRequired:
+      '要移動的章節來自不同的卷，必須用 target_volume_id、before_chapter_id、after_chapter_id 或 new_volume_title 指明放到哪裡',
+    chaptersMoved: '已移動 {count} 個章節',
+    chaptersUnchanged: '章節已經在目標位置，沒有改動',
+    moveFailed: '移動章節失敗',
     instructionScopeInvalid: 'scope 必須是 book 或 chapter',
     instructionTaskInvalid: 'task 必須是 translation、polish 或 proofreading',
     instructionModeInvalid: 'mode 必須是 append 或 replace',

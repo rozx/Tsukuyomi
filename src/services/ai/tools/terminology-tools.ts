@@ -1,3 +1,5 @@
+import { matchByKeywords } from 'src/services/library-query/keyword-match';
+import { countKeywordOccurrences } from 'src/services/library-query/paragraph-scan';
 import { bookToolContext, fuzzyMatches } from './tool-feedback';
 import { toolDefinition } from './tool-localization';
 import { AGENT_LOCALE, translateText } from 'src/i18n/translate';
@@ -456,6 +458,10 @@ export const terminologyTools: ToolDefinition[] = [
             'search_terms_by_keywords.parameters.properties.include_memory',
           ),
         },
+        fuzzy: {
+          type: 'boolean',
+          description: describeTool('search_terms_by_keywords.parameters.properties.fuzzy'),
+        },
       },
       required: ['keywords'],
     }),
@@ -465,10 +471,12 @@ export const terminologyTools: ToolDefinition[] = [
         keywords,
         translation_only = false,
         include_memory = true,
+        fuzzy = false,
       } = args as {
         keywords: string[];
         translation_only?: boolean;
         include_memory?: boolean;
+        fuzzy?: boolean;
       };
       const validKeywords = requireValidKeywords(keywords);
 
@@ -486,27 +494,17 @@ export const terminologyTools: ToolDefinition[] = [
         });
       }
 
-      const allTerms = book.terminologies || [];
-      const keywordsLower = validKeywords.map((k) => k.toLowerCase());
-
-      const filteredTerms = allTerms.filter((term) => {
-        // 搜索术语名称
-        const nameMatch = keywordsLower.some((keyword) =>
-          term.name.toLowerCase().includes(keyword),
-        );
-        // 搜索翻译
-        const translationMatch = keywordsLower.some((keyword) =>
-          getNameTranslation(term, language)?.translation.toLowerCase().includes(keyword),
-        );
-
-        if (translation_only) {
-          // 如果设置了只返回有翻译的，则必须同时有翻译且匹配
-          return translationMatch && getNameTranslation(term, language)?.translation;
-        }
-
-        // 否则只要名称或翻译匹配任一关键词即可（OR 逻辑）
-        return nameMatch || translationMatch;
-      });
+      // 名称或译名匹配任一关键词即可（OR 逻辑）；translation_only 时只看译名。
+      // 匹配规则与外部 Agent 的工具共用 matchByKeywords。
+      const filteredTerms = matchByKeywords(
+        book.terminologies || [],
+        (term) => {
+          const translation = getNameTranslation(term, language)?.translation ?? '';
+          return translation_only ? [translation] : [term.name, translation];
+        },
+        validKeywords,
+        { fuzzy },
+      );
 
       // 搜索相关记忆
       let relatedMemories: Array<{ id: string; summary: string }> = [];
@@ -550,17 +548,25 @@ export const terminologyTools: ToolDefinition[] = [
           },
           description: describeTool('get_occurrences_by_keywords.parameters.properties.keywords'),
         },
+        fuzzy: {
+          type: 'boolean',
+          description: describeTool('get_occurrences_by_keywords.parameters.properties.fuzzy'),
+        },
       },
       required: ['keywords'],
     }),
     handler: async (args, context) => {
-      const { bookId, onAction } = bookToolContext(context);
-      const { keywords } = args as {
+      const { bookId, onAction, language } = bookToolContext(context);
+      const { keywords, fuzzy = false } = args as {
         keywords: string[];
+        fuzzy?: boolean;
       };
       if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
         throw new LocalizedError('KEYWORDS_REQUIRED', 'aiEntityFeedback.keywordsRequired', {});
       }
+      const validKeywords = keywords.filter(
+        (k) => k && typeof k === 'string' && k.trim().length > 0,
+      );
 
       // 报告读取操作
       if (onAction) {
@@ -569,21 +575,28 @@ export const terminologyTools: ToolDefinition[] = [
           entity: 'term',
           data: {
             tool_name: 'get_occurrences_by_keywords',
-            keywords: keywords.filter((k) => k && typeof k === 'string' && k.trim().length > 0),
+            keywords: validKeywords,
           },
         });
       }
 
-      const occurrencesMap = await TerminologyService.getOccurrencesByKeywords(bookId, keywords);
-
-      // 将 Map 转换为对象数组
-      const occurrences = Array.from(occurrencesMap.entries()).map(([keyword, occurrences]) => ({
-        keyword,
-        occurrences: occurrences.map((occ) => ({
-          chapterId: occ.chapterId,
-          count: occ.count,
+      // 统计与外部 Agent 的工具共用 library-query/paragraph-scan：一次扫描统计全部关键词，
+      // 只统计段落原文。精确统计区分大小写（沿用既有行为）。
+      const book = resolveBookSync(bookId);
+      const chapters = (book.volumes ?? []).flatMap((volume) => volume.chapters ?? []);
+      const tallies = await countKeywordOccurrences(chapters, language, {
+        keywords: validKeywords,
+        searchIn: 'original',
+        fuzzy,
+        caseSensitive: !fuzzy,
+      });
+      const occurrences = tallies.map((tally) => ({
+        keyword: tally.keyword,
+        occurrences: tally.chapters.map(({ chapter, count }) => ({
+          chapterId: chapter.id,
+          count,
         })),
-        total_count: occurrences.reduce((sum, occ) => sum + occ.count, 0),
+        total_count: tally.totalCount,
       }));
 
       return JSON.stringify({

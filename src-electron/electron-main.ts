@@ -15,6 +15,7 @@ import { findPageWithRetry } from './puppeteer-page-lookup';
 import { claimSingleInstance } from './single-instance';
 import { VelopackApp } from 'velopack';
 import { registerDesktopUpdates } from './desktop-update-ipc';
+import { registerElectronMcpIpc } from './mcp-ipc';
 
 // 必须先处理 Velopack 启动钩子，再获取单实例锁或初始化 Puppeteer。
 if (app.isPackaged) VelopackApp.build().setAutoApplyOnStartup(false).run();
@@ -30,6 +31,11 @@ const __dirname = dirname(__filename);
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
 let browserPromise: Promise<Browser> | null = null;
+let mcpIpcController: {
+  onWindowClosed: () => void;
+  onRendererReset: () => void;
+  dispose: () => Promise<void>;
+} | null = null;
 
 // 同一工作区只允许一个实例，第二次启动改为唤醒已有工作台
 const isPrimaryInstance = claimSingleInstance(app, {
@@ -398,8 +404,17 @@ function createWindow() {
     }, 1000);
   }
 
+  // 主框架整页重载或渲染进程崩溃后，旧页面注册的 MCP 请求监听已不存在，需等新页面重新就绪
+  mainWindow.webContents.on('did-start-navigation', (details) => {
+    if (details.isMainFrame && !details.isSameDocument) mcpIpcController?.onRendererReset();
+  });
+  mainWindow.webContents.on('render-process-gone', () => {
+    mcpIpcController?.onRendererReset();
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
+    mcpIpcController?.onWindowClosed();
   });
 }
 
@@ -726,6 +741,7 @@ function updateAboutPanel(): void {
 
 function startPrimaryInstance(): void {
   const refreshUpdates = registerDesktopUpdates(() => mainWindow);
+  mcpIpcController = registerElectronMcpIpc(() => mainWindow);
   registerNativeLocale(
     () => mainWindow,
     () => {

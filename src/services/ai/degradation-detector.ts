@@ -290,8 +290,7 @@ function isPatternRepeatExplainedByOriginal(
   const requiredCount = patternRepeatCount * ORIGINAL_PATTERN_SIMILARITY_RATIO;
 
   const trimmedOriginal = originalText.trimEnd();
-  const lengthRatio =
-    trimmedOriginal.length > 0 ? text.length / trimmedOriginal.length : Infinity;
+  const lengthRatio = trimmedOriginal.length > 0 ? text.length / trimmedOriginal.length : Infinity;
 
   // 如果原文也有类似的重复次数（至少是译文重复次数的75%），不认为是降级
   // 允许1次的容差，因为窗口截断可能导致计数略有偏差

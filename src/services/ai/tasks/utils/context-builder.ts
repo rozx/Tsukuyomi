@@ -31,7 +31,18 @@ import { captureExecutionLanguages } from './execution-languages';
 import { getPostToolCallReminder } from './todo-helper';
 import { getCurrentStatusInfo } from '../prompts/common';
 import { useBooksStore } from 'src/stores/books';
-import { findUniqueTermsInText, findUniqueCharactersInText } from 'src/utils/text-matcher';
+import {
+  findNearTermsInText,
+  findUniqueCharactersInText,
+  findUniqueTermsInText,
+  type NearNameMatch,
+} from 'src/utils/text-matcher';
+import {
+  collectChunkEntities,
+  collectPreviousChapterTail,
+  collectRecentChapterTitles,
+  listChaptersBefore,
+} from 'src/services/library-query/chunk-context';
 import { splitTextForEmbedding } from 'src/utils/embedding-text-segments';
 import { MEMORY_EMBEDDING_VERSION } from 'src/utils/memory-embedding-lookup';
 import { isLocalEmbeddingEffectivelyEnabled } from 'src/utils/local-embedding';
@@ -106,17 +117,64 @@ export function buildChapterContextSection(chapterId?: string, chapterTitle?: st
  * @param title 前一章节标题
  * @returns 格式化的前文信息,无 title 时返回空字符串
  */
-export function buildPreviousChapterSection(title?: string): string {
+export function buildPreviousChapterSection(
+  title?: string,
+  continuity?: PreviousChapterContinuity,
+): string {
   if (!title) return '';
-  return (
-    '\n\n[' +
-    agentText('aiContext.previous') +
-    ']\n' +
-    agentText('aiContext.previousTitle') +
-    ': ' +
-    title +
-    '\n'
+  const lines = [agentText('aiContext.previousTitle') + ': ' + title];
+  if (continuity && continuity.recentTitles.length > 0) {
+    lines.push(agentText('aiContext.recentTitles') + ':');
+    for (const recent of continuity.recentTitles) {
+      lines.push('  - ' + recent.original + ' → ' + recent.translation);
+    }
+  }
+  if (continuity && continuity.tail.length > 0) {
+    lines.push(agentText('aiContext.previousTail') + ':');
+    for (const paragraph of continuity.tail) {
+      lines.push(
+        '  ' + agentText('aiContext.original') + ': ' + paragraph.original,
+        '  ' + agentText('aiContext.translation') + ': ' + paragraph.translation,
+      );
+    }
+  }
+  return '\n\n[' + agentText('aiContext.previous') + ']\n' + lines.join('\n') + '\n';
+}
+
+/** 与上一章的衔接：最近几章的标题译名，以及上一章末尾的已译段落 */
+export interface PreviousChapterContinuity {
+  recentTitles: Array<{ original: string; translation: string }>;
+  tail: Array<{ original: string; translation: string }>;
+}
+
+/** 前一章节 section 里带上多少段上一章末尾的已译段落 */
+const PREVIOUS_CHAPTER_TAIL_COUNT = 3;
+
+/**
+ * 读取与上一章的衔接，供前一章节 section 使用。与外部 Agent 的翻译块共用
+ * library-query/chunk-context：语气、标点习惯、章末固定用语与标题格式由此延续到新的一章。
+ */
+export async function loadPreviousChapterContinuity(
+  book: Novel,
+  chapterId: string,
+  targetLanguage: AppLocale,
+): Promise<PreviousChapterContinuity> {
+  const previous = listChaptersBefore(book, chapterId);
+  const tail = await collectPreviousChapterTail(
+    previous[previous.length - 1],
+    PREVIOUS_CHAPTER_TAIL_COUNT,
+    targetLanguage,
   );
+  return {
+    recentTitles: collectRecentChapterTitles(previous, targetLanguage).map((title) => ({
+      original: title.original,
+      translation: title.translation,
+    })),
+    tail: (tail?.paragraphs ?? []).map((paragraph) => ({
+      original: paragraph.original,
+      translation: paragraph.translation,
+    })),
+  };
 }
 
 /**
@@ -621,6 +679,29 @@ function buildChunkCharactersSection(
   return '**' + agentText('aiContext.characters') + '**:\n' + details.join('\n');
 }
 
+/** 近似匹配到的条目：「原文写法 ≈ 名称 → 译名」 */
+function formatNearMatch(
+  match: NearNameMatch<Terminology | CharacterSetting>,
+  languages: ExecutionLanguages,
+): string {
+  const translation = getNameTranslation(match.item, languages.targetLanguage)?.translation ?? '';
+  return `${match.matchedText} ≈ ${match.item.name} → ${translation}`;
+}
+
+/**
+ * 原文写法与术语 / 角色名接近但不完全相同的条目（错字、同音异写）。
+ * 精确匹配找不到它们；单独列为「可能相关」，由模型自行确认是否同一个词。
+ */
+function buildNearMatchSection(
+  labelKey: 'aiContext.possibleTerms' | 'aiContext.possibleCharacters',
+  matches: ReadonlyArray<NearNameMatch<Terminology | CharacterSetting>>,
+  languages: ExecutionLanguages,
+): string {
+  if (matches.length === 0) return '';
+  const list = matches.map((match) => formatNearMatch(match, languages)).join('、');
+  return '**' + agentText(labelKey) + '**: ' + list;
+}
+
 /**
  * 提取当前 chunk 中出现的术语 / 角色 / 相关记忆，拼接为上下文字符串
  * 注意：每次调用都从 store 重新获取书籍数据，确保包含前一个 chunk 中创建/更新的术语和角色
@@ -637,8 +718,8 @@ async function buildCurrentChunkContext(
   const book = booksStore.getBookById(bookId);
   if (!book) return '';
 
-  const terms = findUniqueTermsInText(chunkText, book.terminologies || []);
-  const characters = findUniqueCharactersInText(chunkText, book.characterSettings || []);
+  // 与外部 Agent 的翻译块共用同一套匹配（library-query/chunk-context）
+  const { terms, characters, nearTerms, nearCharacters } = collectChunkEntities(book, chunkText);
   const chapter = chapterId
     ? book.volumes
         ?.flatMap((volume) => volume.chapters ?? [])
@@ -649,6 +730,8 @@ async function buildCurrentChunkContext(
   const contextParts = [
     buildChunkTermsSection(terms, languages),
     buildChunkCharactersSection(characters, languages),
+    buildNearMatchSection('aiContext.possibleTerms', nearTerms, languages),
+    buildNearMatchSection('aiContext.possibleCharacters', nearCharacters, languages),
   ].filter(Boolean);
 
   let currentChunkContext = '';
@@ -1055,24 +1138,29 @@ function buildTermsContextPart(
   const currentParagraph = allChapterParagraphs.find((p) => p.id === currentParagraphId);
   if (!book || !currentParagraph?.text) return '';
   const terms = findUniqueTermsInText(currentParagraph.text, book.terminologies || []);
-  if (terms.length === 0) return '';
-  const termList = terms
-    .map(
-      (term) =>
-        '- ' +
-        term.name +
-        ' → ' +
-        (getNameTranslation(term, languages.targetLanguage)?.translation ?? '') +
-        (term.description ? ': ' + term.description : ''),
-    )
-    .join('\n');
+  const nearTerms = findNearTermsInText(
+    currentParagraph.text,
+    book.terminologies || [],
+    book.characterSettings || [],
+  );
+  if (terms.length === 0 && nearTerms.length === 0) return '';
+  const lines = terms.map(
+    (term) =>
+      '- ' +
+      term.name +
+      ' → ' +
+      (getNameTranslation(term, languages.targetLanguage)?.translation ?? '') +
+      (term.description ? ': ' + term.description : ''),
+  );
+  const nearSection = buildNearMatchSection('aiContext.possibleTerms', nearTerms, languages);
+  if (nearSection) lines.push(nearSection);
   return (
     '\n\n' +
     agentText('aiContext.heading', {
       label: agentText('aiContext.relatedTerms'),
     }) +
     '\n' +
-    termList +
+    lines.join('\n') +
     '\n'
   );
 }

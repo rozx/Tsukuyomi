@@ -43,6 +43,7 @@ import {
   isSkipAskUserEnabled,
   isOriginalTextValidationEnabled,
   buildPreviousChapterSection,
+  loadPreviousChapterContinuity,
 } from './context-builder';
 import {
   DEFAULT_TASK_CHUNK_SIZE,
@@ -439,8 +440,9 @@ export async function processTextTask(
     const bookContextSection = await buildBookContextSection(bookId);
     const chapterContextSection = buildChapterContextSection(chapterId, chapterTitle);
 
-    // 获取前一章节标题（仅翻译服务;摘要字段已移除,仅注入标题保持时序感知）
-    const previousChapterSection = resolvePreviousChapterSection({
+    // 前一章节信息（仅翻译服务）：标题，以及与上一章的衔接（最近章节的标题译名、上一章末尾的已译段落）。
+    // 不注入章节摘要。
+    const previousChapterSection = await resolvePreviousChapterSection({
       languages,
       enablePreviousChapter,
       bookId,
@@ -606,15 +608,15 @@ export async function processTextTask(
 }
 
 /**
- * 获取前一章节标题注入的 section（仅启用 enablePreviousChapter 时）
+ * 获取前一章节信息注入的 section（仅启用 enablePreviousChapter 时）
  */
-function resolvePreviousChapterSection(params: {
+async function resolvePreviousChapterSection(params: {
   languages: ExecutionLanguages;
   enablePreviousChapter: boolean;
   bookId: string | undefined;
   chapterId: string | undefined;
   logLabel: string;
-}): string {
+}): Promise<string> {
   const { enablePreviousChapter, bookId, chapterId, logLabel } = params;
   if (!enablePreviousChapter || !bookId || !chapterId) {
     return '';
@@ -633,7 +635,12 @@ function resolvePreviousChapterSection(params: {
       ...book,
       targetLanguage: params.languages.targetLanguage,
     });
-    return buildPreviousChapterSection(prevTitle);
+    const continuity = await loadPreviousChapterContinuity(
+      book,
+      chapterId,
+      params.languages.targetLanguage,
+    );
+    return buildPreviousChapterSection(prevTitle, continuity);
   } catch (error) {
     console.warn(`[${logLabel}] 获取前一章节信息失败:`, error);
     return '';

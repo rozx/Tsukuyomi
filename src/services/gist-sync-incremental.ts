@@ -1,3 +1,4 @@
+import { mapConcurrent } from 'src/utils/map-concurrent';
 import type { Octokit } from '@octokit/rest';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import type { Novel, CoverHistoryItem } from 'src/models/novel';
@@ -78,32 +79,6 @@ import {
 const MAX_FILE_SIZE = 900 * 1024;
 const CHUNK_SIZE = MAX_FILE_SIZE;
 const DOWNLOAD_CONCURRENCY = 4;
-
-/** 有界并发处理，结果保留输入顺序；失败后等在途任务结束再抛错。 */
-async function mapConcurrent<T, R>(
-  items: readonly T[],
-  process: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let nextIndex = 0;
-  let stopped = false;
-  const workers = Array.from({ length: Math.min(DOWNLOAD_CONCURRENCY, items.length) }, async () => {
-    while (!stopped && nextIndex < items.length) {
-      const index = nextIndex++;
-      try {
-        results[index] = await process(items[index]!);
-      } catch (error) {
-        stopped = true;
-        throw error;
-      }
-    }
-  });
-  const settled = await Promise.allSettled(workers);
-  for (const result of settled) {
-    if (result.status === 'rejected') throw result.reason;
-  }
-  return results;
-}
 
 /**
  * 文件名常量（模块内使用；与 GistSyncService 中的 GIST_FILE_NAMES 保持一致）
@@ -458,7 +433,9 @@ async function readChunkedContent(
     }
     names.push(resolvedName);
   }
-  const pieces = await mapConcurrent(names, (name) => readFile(name, gistFiles, fetchRaw));
+  const pieces = await mapConcurrent(names, DOWNLOAD_CONCURRENCY, (name) =>
+    readFile(name, gistFiles, fetchRaw),
+  );
   return pieces.some((piece) => piece === null) ? null : pieces.join('');
 }
 
@@ -1102,7 +1079,7 @@ async function readChangedEntries(
   const total = toRead.length;
   let completed = 0;
 
-  const values = await mapConcurrent(toRead, async (key) => {
+  const values = await mapConcurrent(toRead, DOWNLOAD_CONCURRENCY, async (key) => {
     const entry = remoteManifest.entries[key];
     if (!entry) return null;
     onProgress?.({

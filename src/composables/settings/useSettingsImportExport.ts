@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia';
 import { v4 } from 'uuid';
 import { SettingsService } from 'src/services/settings-service';
 import { SETTINGS_IMPORT_STAGES, SyncDataService } from 'src/services/sync-data-service';
+import { stripAgentMcpFromAppSettings } from 'src/utils/sync-strip';
 import { loadBooksWithContentAndMemories } from 'src/composables/useElectronSettings';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
 import { useAIModelsStore } from 'src/stores/ai-models';
@@ -161,6 +162,7 @@ export function useSettingsImportExport() {
         const { novelsWithContent, memories } = await loadBooksWithContentAndMemories(
           booksStore.books,
         );
+        const exportableAppSettings = stripAgentMcpFromAppSettings(settingsStore.getAllSettings());
         result = SettingsService.exportSettings(
           {
             aiModels: [...aiModelsStore.models],
@@ -168,7 +170,7 @@ export function useSettingsImportExport() {
             novels: novelsWithContent,
             coverHistory: [...coverHistoryStore.covers],
             memories,
-            appSettings: settingsStore.getAllSettings(),
+            appSettings: exportableAppSettings,
           },
           settingsStore.uiLocale,
         );

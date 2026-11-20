@@ -61,6 +61,7 @@ const NAVIGATION_AND_LIST_TOOLS = [
   'list_chapters',
   'get_chapter_info',
   'update_book_info',
+  'move_chapters',
   'list_characters',
   'list_terms',
   'list_memories',

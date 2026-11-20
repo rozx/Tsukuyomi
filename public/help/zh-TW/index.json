@@ -28,6 +28,15 @@
   {
     "category": "使用指南",
     "categoryId": "guides",
+    "description": "連接 Claude Code、Pi、Antigravity 與瀏覽器 WebMCP，使用外部 Agent 額度操控書庫與翻譯小說",
+    "file": "agent-mcp-guide.md",
+    "id": "agent-mcp-guide",
+    "path": "help/zh-TW",
+    "title": "外部 Agent / MCP 接入"
+  },
+  {
+    "category": "使用指南",
+    "categoryId": "guides",
     "description": "主頁桌面 / 平板 / 移動三變體說明：繼續閱讀 hero、Workbench Metrics、快捷操作、最近編輯",
     "file": "library-guide.md",
     "id": "library-guide",

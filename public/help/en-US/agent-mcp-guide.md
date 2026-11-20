@@ -1,0 +1,54 @@
+# External Agent & MCP Integration Guide {#agent-mcp-guide-section-1}
+
+Use the **External Agent Workbench** (`/mcp`) to connect local agents such as Claude Code, Pi, or Antigravity directly to Tsukuyomi so you can manage books and translate chapters with your existing agent quota.
+
+## Transport Modes {#agent-mcp-guide-section-2}
+
+### Desktop App: Local Streamable HTTP MCP Server {#agent-mcp-guide-section-3}
+
+- Binds strictly to `127.0.0.1` (default port `48321`), disabled by default until you turn it on from `/mcp`.
+- Enforces `Authorization: Bearer <token>`, loopback `Host`, and `Origin` checks against cross-site requests.
+- Serves both the stateless `2026-07-28` MCP revision (`server/discover`) and the legacy `2025-03-26` handshake (`initialize`) on the same `POST /mcp` endpoint.
+- Local port, Bearer token, toggles, and permission mode stay strictly on this device and are never uploaded to GitHub Gist or exported into backup files.
+
+### Browser Build: WebMCP Local Relay {#agent-mcp-guide-section-4}
+
+- The browser build uses the **WebMCP local relay** (`@mcp-b/webmcp-local-relay`) so local agents such as Claude Code or Cursor can use the tools on this page. No experimental browser flag is needed.
+- Turning on WebMCP in the first step of the page registers the tools allowed by the active permission mode (plus the read-only `get_workflow_guide`) and connects to the relay running on your computer.
+- Add the relay to your agent client: for Claude Code run `claude mcp add webmcp-local-relay -- npx -y @mcp-b/webmcp-local-relay@latest --widget-origin <this page's address>`; for other clients merge the JSON shown on the page into the MCP configuration. Node.js 22 or later is required. The configuration shown on the page already contains this page's address, and the relay only accepts connections from it.
+- Once enabled, step 1 on the page shows whether the page is really connected to the local relay: connected, a relay is running but this page is not connected (usually the relay's `--widget-origin` does not match this page's address), or no relay found yet (the agent client has not started it).
+- Ask the agent to call `webmcp_list_sources`; seeing this page there means it is connected. If the page's tools are missing from the agent's tool list, list them with `webmcp_list_tools` and call them by name with `webmcp_call_tool`.
+- Keep the page open while you work: the tools come from this tab, and the agent temporarily loses them when it is closed or reloaded.
+- Keep only one Tsukuyomi tab open: with several open, the tool names the agent sees get a per-tab suffix.
+- The address in the configuration shown on the page is the address you opened the page with; if you access it at a different address (for example `127.0.0.1` instead of `localhost`, or another domain), copy the configuration again.
+- If the browser has an old WebMCP experimental flag turned on, the app automatically switches to its built-in implementation on this page; in the rare case it cannot, the page asks you to turn the flag off at `chrome://flags/#enable-webmcp-testing`.
+- The page must be opened over HTTPS or localhost; otherwise WebMCP cannot be turned on.
+- If a site is blocked by browser CORS when calling `import_book_from_url`, have your agent fetch the text itself and call `create_book` followed by `add_chapters`.
+
+## Permission Modes & Translation Versions {#agent-mcp-guide-section-5}
+
+- **Read only (`read_only`)**: Read library, chapters, terms, characters and memories, search the whole book and count keyword occurrences, fetch translation chunks, and read your current page and the built-in user guide.
+- **Translate and edit (`translate_and_edit`, default)**: Allows creating books and editing their details, importing, adding chapters, checking for and importing book updates, submitting and batch-replacing translations, and adding, editing and deleting terms, characters, and memories; blocks deleting books.
+- **Full control (`full`)**: Additionally unlocks `delete_book`; the page asks for confirmation before switching to it.
+- **Version retention**: Submissions default to `append` (adding and selecting a new version). Each paragraph retains up to 5 versions per target language; older versions are evicted beyond that limit, so avoid submitting repeated revisions to the same paragraph unnecessarily.
+
+## Recommended Translation Workflow {#agent-mcp-guide-section-6}
+
+1. On `/mcp` there are only two steps: turn on the server, then copy the quick start guide and paste it to your agent.
+2. The "First-time setup" section at the top of the guide has the agent prepare everything for you: it asks where to put the project and creates the folder, configures this MCP inside it, and saves the guide there as AGENTS.md (plus a CLAUDE.md that references it for Claude Code). After that, starting the agent in that folder is enough and you do not need to paste the guide again. The rest of the guide covers the data model, every tool, step-by-step workflows, rules and error handling. In the desktop app the guide contains the access token, so do not commit that folder to a public repository. To add the MCP to your client yourself, expand "Add the MCP manually" on the page.
+3. For long web novels, `import_book_from_url` fetches up to 20 chapters per batch by default; adjust with `max_chapters` and call it again while `pending_chapter_count > 0`.
+4. For ongoing serials, `check_book_updates` checks the source site for new chapters and `apply_book_updates` imports them. Only new chapters are imported by default; applying text changes to imported chapters (`include_updated`) clears the translations of revised paragraphs.
+5. Saved translations appear live in the reader, "Call activity" on the page shows every tool call in real time with a summary of its arguments and result (kept across reloads, cleared when the tab is closed), and translation history displays the external source label (such as `MCP · claude-opus-4`).
+6. The agent can tell what you are looking at: `get_app_context` returns the page you are on, the open book and chapter, the selected paragraph with its text and translation, and any text you highlighted on the page. You can simply say "polish the paragraph I selected".
+7. To rename a term everywhere, the agent counts the old rendering with `count_occurrences`, then previews and applies the change with `replace_in_translations`. With the default write mode each changed paragraph gets a new version and the old one is kept. Use `search_paragraphs` (regular expressions supported) to search the whole book; with local embedding enabled, `search_chapters` finds chapters from a description of their content.
+8. You can ask the agent usage questions such as "how do I import a novel in Tsukuyomi": it looks up this guide with `search_help_docs` and `get_help_doc` before answering.
+9. `delete_terms`, `delete_characters` and `delete_memories` remove outdated or duplicate entries. The guide tells the agent to get your consent before deleting.
+10. For the first chunk of a new chapter, the agent also receives the end of the previous chapter (source and translation) and the translated titles of the latest chapters, so tone, punctuation habits and title format carry over.
+11. When the source misspells a term or character name (for example with a homophone), those entries are listed separately as "possibly related" together with the spelling found in the source, for the agent to confirm. The built-in translation, polish and proofreading tasks get the same hint.
+12. The translation rules the agent follows (punctuation and quotes, preserving format, Japanese honorifics, how to create terms and characters, what belongs in memories) are the same ones the built-in translator uses; they are part of the quick start guide and the workflow templates. Memories hold reusable translation decisions only (forms of address, term renderings, style) and come back automatically by relevance when a translation chunk is fetched; they are not for plot notes. Put standing requirements you want included every time into the book's or chapter's special instructions.
+13. Long books do not need the whole table of contents: `get_book` can return only the latest chapters or one volume, and `list_terms` / `list_characters` support paging and compact output.
+14. Search tools (whole-book search, occurrence counts, chapter paragraphs, term and character lists, the user guide) match exactly by default and offer optional fuzzy matching, which the agent can turn on when it is unsure of the exact spelling or the source contains typos. Batch-replacing translations has no fuzzy mode, so it never touches text it should not.
+15. Local text files (txt and similar) can be imported through the agent too: it reads the files itself, creates the book with `create_book` and writes each chapter with `add_chapters`. Paragraphs follow the same rule as the built-in import: every line is one paragraph, and blank lines and leading indentation are kept as they are.
+16. `move_chapters` reorders chapters within a volume or moves them to another volume (optionally a new one); the built-in chat assistant has a tool of the same name. It only changes positions and never touches text or translations.
+17. The agent translates in the same order as the built-in translation: prepare first (confirm terms, characters, memories and the translation approach, creating new terms and characters at this point), then translate and submit, then review; polishing and proofreading have no review step. The steps in the quick start guide and in the workflow templates are the same text, so the agent does not need to read both.
+18. The quick start guide states the app version it was written for. After the app updates, the agent notices that its saved guide is for a different version and uses `get_quick_start_guide` to fetch the current one and replace the saved copy; you do not need to copy it again.

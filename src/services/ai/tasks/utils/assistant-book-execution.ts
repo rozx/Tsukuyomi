@@ -16,6 +16,7 @@ const BOOK_WRITERS = new Set([
   'delete_memory',
   'update_chapter_title',
   'update_book_info',
+  'move_chapters',
   'update_special_instructions',
   'add_translation',
   'update_translation',

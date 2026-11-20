@@ -1,16 +1,10 @@
 import { LocalizedError } from 'src/utils/localized-error';
 import type { AppLocale } from 'src/models/locale';
 import { buildNameTranslation } from './localization/selection';
-import type { CharacterSetting, Occurrence, Terminology, Novel } from 'src/models/novel';
-import { flatMap, isEmpty, isArray } from 'lodash';
+import type { CharacterSetting, Terminology, Novel } from 'src/models/novel';
 import { useBooksStore } from 'src/stores/books';
 import { SettingsService } from 'src/services/settings-service';
-import {
-  UniqueIdGenerator,
-  extractIds,
-  processItemsInBatches,
-  ensureChapterContentLoaded,
-} from 'src/utils';
+import { UniqueIdGenerator, extractIds } from 'src/utils';
 
 /**
  * 术语服务
@@ -74,64 +68,6 @@ export class TerminologyService {
         });
       }
     }
-  }
-
-  /**
-   * 统计术语在书籍所有章节中的出现次数
-   * 使用分批处理避免阻塞 UI
-   * @param book 书籍对象
-   * @param termName 术语名称
-   * @returns 出现记录数组
-   */
-  private static async countTermOccurrences(book: Novel, termName: string): Promise<Occurrence[]> {
-    const occurrencesMap = new Map<string, number>();
-    const escapedTermName = termName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(escapedTermName, 'g');
-
-    // 扁平化所有章节
-    const allChapters = flatMap(book.volumes || [], (volume) => volume.chapters || []);
-
-    // 分批处理章节，每批之间让出主线程
-    await processItemsInBatches(
-      allChapters,
-      async (chapter) => {
-        const chapterWithContent = await ensureChapterContentLoaded(chapter);
-
-        let chapterCount = 0;
-
-        // 从段落中统计
-        if (isArray(chapterWithContent.content) && !isEmpty(chapterWithContent.content)) {
-          for (const paragraph of chapterWithContent.content) {
-            const matches = paragraph.text.match(regex);
-            if (matches) {
-              chapterCount += matches.length;
-            }
-          }
-        }
-
-        // 从原始内容中统计
-        if (chapterWithContent.originalContent) {
-          const matches = chapterWithContent.originalContent.match(regex);
-          if (matches) {
-            chapterCount += matches.length;
-          }
-        }
-
-        // 如果该章节有出现，记录到 Map 中
-        if (chapterCount > 0) {
-          const existingCount = occurrencesMap.get(chapter.id) || 0;
-          occurrencesMap.set(chapter.id, existingCount + chapterCount);
-        }
-      },
-      10, // 每批处理 10 个章节
-      0, // 让出主线程的延迟时间
-    );
-
-    // 转换为 Occurrence 数组
-    return Array.from(occurrencesMap.entries()).map(([chapterId, count]) => ({
-      chapterId,
-      count,
-    }));
   }
 
   /**
@@ -300,46 +236,6 @@ export class TerminologyService {
       terminologies: updatedTerminologies,
       lastEdited: new Date(),
     });
-  }
-
-  /**
-   * 根据提供的关键词获取出现次数
-   * 统计指定关键词在书籍所有章节中的出现次数
-   * @param bookId 书籍 ID
-   * @param keywords 关键词数组
-   * @returns 关键词出现次数 Map，key 为关键词，value 为出现记录数组
-   * @throws 如果书籍不存在，抛出错误
-   */
-  static async getOccurrencesByKeywords(
-    bookId: string,
-    keywords: string[],
-  ): Promise<Map<string, Occurrence[]>> {
-    const booksStore = useBooksStore();
-    const book = booksStore.getBookById(bookId);
-
-    if (!book) {
-      throw new LocalizedError('BOOK_NOT_FOUND', 'aiEntityFeedback.bookMissing', { id: bookId });
-    }
-
-    // 如果关键词数组为空，返回空 Map
-    if (!keywords || keywords.length === 0) {
-      return new Map<string, Occurrence[]>();
-    }
-
-    const resultMap = new Map<string, Occurrence[]>();
-
-    // 为每个关键词统计出现次数
-    for (const keyword of keywords) {
-      if (!keyword || typeof keyword !== 'string' || keyword.trim().length === 0) {
-        // 跳过无效的关键词
-        continue;
-      }
-
-      const occurrences = await this.countTermOccurrences(book, keyword);
-      resultMap.set(keyword, occurrences);
-    }
-
-    return resultMap;
   }
 
   /**

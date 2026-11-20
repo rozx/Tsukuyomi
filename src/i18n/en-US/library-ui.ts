@@ -8,6 +8,7 @@ export default {
     aiImport: 'AI import',
     aiModels: 'AI models',
     aiList: 'AI models',
+    agentMcp: 'External Agent',
     settings: 'Settings',
     help: 'Help',
     assistant: 'Tsukuyomi',
