@@ -147,13 +147,14 @@ const volumeFolderIcon = (volumeId: string) =>
         :class="{ 'vt-row--vol-open': isVolumeExpanded(vol.id) }"
         @click="emit('toggle-volume', vol.id)"
       >
+        <!-- 多选时复选框占用文件夹图标的位置，标题不移位 -->
         <ChapterBatchCheck
           v-if="selecting"
           :state="volumeCheckState(vol)"
           :title="t('taskQueueUi.batch.selectVolume')"
           @click.stop="toggleVolumeSelection(vol)"
         />
-        <i class="pi vt-vol-icon" :class="volumeFolderIcon(vol.id)" aria-hidden="true" />
+        <i v-else class="pi vt-vol-icon" :class="volumeFolderIcon(vol.id)" aria-hidden="true" />
         <span class="vt-row-title">{{ getVolumeDisplayTitle(vol, book) }}</span>
         <span class="vt-row-count">{{
           t('readerUi.chapterCount', { count: vol.chapters?.length ?? 0 })
@@ -167,6 +168,7 @@ const volumeFolderIcon = (volumeId: string) =>
         >
           <i class="pi pi-ellipsis-v" aria-hidden="true" />
         </button>
+        <span v-else class="vt-row-more vt-row-more--placeholder" aria-hidden="true" />
       </button>
 
       <template v-if="isVolumeExpanded(vol.id)">

@@ -422,6 +422,132 @@ const CUSTOM_CSS = `
 
   /* 等宽字体栈（与 tailwind.config.cjs fontFamily.mono 一致）*/
   --font-mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /*
+   * ===== 按钮系统（桌面 / 平板 / 手机统一）=====
+   * 单一来源：PrimeVue <Button> 的主题 token（见下方 components.button）与手写按钮的
+   * 全局 .ui-btn 类都引用这些变量。要调整按钮外观，只改这里。
+   * - 主按钮：薄藍淡底 + 薄藍描边 + 浅色字
+   * - 次按钮（outlined / secondary）：透明底 + 细描边
+   * - 文字 / 图标按钮（text）：无底无框，悬停浅底
+   * - 危险：红色淡底 / 红色描边
+   */
+  --btn-radius: 8px;
+  --btn-primary-bg: rgba(109, 136, 168, 0.18);
+  --btn-primary-hover-bg: rgba(109, 136, 168, 0.28);
+  --btn-primary-active-bg: rgba(109, 136, 168, 0.36);
+  --btn-primary-border: rgba(163, 183, 207, 0.4);
+  --btn-primary-hover-border: rgba(163, 183, 207, 0.55);
+  --btn-primary-color: ${ACCENT_TEAL[100]};
+  --btn-primary-hover-color: ${ACCENT_TEAL[50]};
+  --btn-ghost-hover-bg: rgba(255, 255, 255, 0.04);
+  --btn-ghost-active-bg: rgba(255, 255, 255, 0.08);
+  --btn-ghost-border: rgba(255, 255, 255, 0.12);
+  --btn-ghost-hover-border: rgba(255, 255, 255, 0.2);
+  --btn-ghost-color: rgba(247, 244, 236, 0.8);
+  --btn-ghost-hover-color: #f7f4ec;
+  --btn-text-color: rgba(247, 244, 236, 0.72);
+  --btn-text-hover-bg: rgba(255, 255, 255, 0.05);
+  --btn-text-active-bg: rgba(255, 255, 255, 0.09);
+  --btn-text-hover-color: #f7f4ec;
+  --btn-danger-bg: rgba(239, 95, 95, 0.12);
+  --btn-danger-hover-bg: rgba(239, 95, 95, 0.2);
+  --btn-danger-border: rgba(239, 95, 95, 0.35);
+  --btn-danger-color: ${DANGER[400]};
+  --btn-success-bg: rgba(127, 179, 137, 0.14);
+  --btn-success-hover-bg: rgba(127, 179, 137, 0.22);
+  --btn-success-border: rgba(127, 179, 137, 0.4);
+  --btn-success-color: ${SUCCESS[300]};
+  --btn-warn-bg: rgba(242, 192, 55, 0.12);
+  --btn-warn-hover-bg: rgba(242, 192, 55, 0.2);
+  --btn-warn-border: rgba(242, 192, 55, 0.35);
+  --btn-warn-color: ${WARNING[200]};
+}
+
+/*
+ * 手写按钮的统一外观（与 PrimeVue <Button> 主题同一组变量）。
+ * 用法：<button class="ui-btn ui-btn--primary">、ui-btn--ghost、ui-btn--text、ui-btn--danger，
+ * 尺寸 ui-btn--sm，纯图标 ui-btn--icon。组件里只补布局（flex、宽度），不要再写颜色。
+ */
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.25rem;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid transparent;
+  border-radius: var(--btn-radius);
+  background: transparent;
+  color: var(--btn-text-color);
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+.ui-btn .pi {
+  font-size: 0.9em;
+}
+.ui-btn--sm {
+  min-height: 2rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.8rem;
+}
+.ui-btn--icon {
+  padding-left: 0;
+  padding-right: 0;
+  aspect-ratio: 1;
+}
+.ui-btn--primary {
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-border);
+  color: var(--btn-primary-color);
+}
+.ui-btn--primary:hover:not(:disabled) {
+  background: var(--btn-primary-hover-bg);
+  border-color: var(--btn-primary-hover-border);
+  color: var(--btn-primary-hover-color);
+}
+.ui-btn--primary:active:not(:disabled) {
+  background: var(--btn-primary-active-bg);
+}
+.ui-btn--ghost {
+  border-color: var(--btn-ghost-border);
+  color: var(--btn-ghost-color);
+}
+.ui-btn--ghost:hover:not(:disabled) {
+  background: var(--btn-ghost-hover-bg);
+  border-color: var(--btn-ghost-hover-border);
+  color: var(--btn-ghost-hover-color);
+}
+.ui-btn--text:hover:not(:disabled) {
+  background: var(--btn-text-hover-bg);
+  color: var(--btn-text-hover-color);
+}
+.ui-btn--text:active:not(:disabled) {
+  background: var(--btn-text-active-bg);
+}
+.ui-btn--danger {
+  border-color: var(--btn-danger-border);
+  color: var(--btn-danger-color);
+}
+.ui-btn--danger:hover:not(:disabled) {
+  background: var(--btn-danger-bg);
+}
+.ui-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.ui-btn:focus-visible {
+  outline: 2px solid rgba(109, 136, 168, 0.6);
+  outline-offset: 2px;
 }
 
 /* Badge 样式优化 - Moonlight Glow 主题 */
@@ -465,6 +591,16 @@ const CUSTOM_CSS = `
 .p-button {
   overflow: visible !important;
   position: relative !important;
+}
+
+/* 按钮系统：与 .ui-btn 同字号（PrimeVue 默认 1rem 偏大）。
+   用双类选择器压过 PrimeVue 自带的 .p-button / .p-button-sm 规则，不受样式注入顺序影响 */
+.p-component.p-button {
+  font-size: 0.875rem;
+}
+
+.p-component.p-button.p-button-sm {
+  font-size: 0.8rem;
 }
 
 .p-button-label {
@@ -753,9 +889,13 @@ const CUSTOM_CSS = `
 }
 `;
 
+// PrimeVue 语义主色：薄藍。开关、勾选框、单选、滑块、进度条、选中态等都取这里，
+// 与按钮系统（--btn-primary-*）同一色相。月白 PRIMARY 仍用于自定义的 --primary-* 变量。
+const PRIMEVUE_PRIMARY: ColorScale = { ...ACCENT_TEAL, 950: '#1D3858' };
+
 const TsukuyomiPreset = definePreset(Aura, {
   semantic: {
-    primary: PRIMARY,
+    primary: PRIMEVUE_PRIMARY,
     secondary: ACCENT,
     focusRing: {
       width: '2px',
@@ -768,10 +908,10 @@ const TsukuyomiPreset = definePreset(Aura, {
       dark: {
         surface: SURFACE_DARK,
         primary: {
-          color: PRIMARY[200],
-          contrastColor: '#263238',
-          hoverColor: PRIMARY[300],
-          activeColor: PRIMARY[400],
+          color: ACCENT_TEAL[400],
+          contrastColor: '#1C1F26', /* Secondary（影墨）*/
+          hoverColor: ACCENT_TEAL[300],
+          activeColor: ACCENT_TEAL[500],
         },
         highlight: {
           background: 'rgba(109, 136, 168, 0.15)', /* Highlight（薄藍）*/
@@ -855,6 +995,195 @@ const TsukuyomiPreset = definePreset(Aura, {
     },
   },
   components: {
+    button: {
+      root: {
+        borderRadius: 'var(--btn-radius)',
+        gap: '0.45rem',
+        paddingX: '0.9rem',
+        paddingY: '0.45rem',
+        iconOnlyWidth: '2.25rem',
+        sm: { fontSize: '0.8rem', paddingX: '0.65rem', paddingY: '0.3rem', iconOnlyWidth: '2rem' },
+        label: { fontWeight: '500' },
+      },
+      colorScheme: {
+        dark: {
+          root: {
+            primary: {
+              background: 'var(--btn-primary-bg)',
+              hoverBackground: 'var(--btn-primary-hover-bg)',
+              activeBackground: 'var(--btn-primary-active-bg)',
+              borderColor: 'var(--btn-primary-border)',
+              hoverBorderColor: 'var(--btn-primary-hover-border)',
+              activeBorderColor: 'var(--btn-primary-hover-border)',
+              color: 'var(--btn-primary-color)',
+              hoverColor: 'var(--btn-primary-hover-color)',
+              activeColor: 'var(--btn-primary-hover-color)',
+              focusRing: { color: ACCENT_TEAL[400], shadow: 'none' },
+            },
+            secondary: {
+              background: 'var(--btn-ghost-hover-bg)',
+              hoverBackground: 'var(--btn-ghost-active-bg)',
+              activeBackground: 'var(--btn-ghost-active-bg)',
+              borderColor: 'var(--btn-ghost-border)',
+              hoverBorderColor: 'var(--btn-ghost-hover-border)',
+              activeBorderColor: 'var(--btn-ghost-hover-border)',
+              color: 'var(--btn-ghost-color)',
+              hoverColor: 'var(--btn-ghost-hover-color)',
+              activeColor: 'var(--btn-ghost-hover-color)',
+              focusRing: { color: ACCENT_TEAL[400], shadow: 'none' },
+            },
+            info: {
+              background: 'var(--btn-primary-bg)',
+              hoverBackground: 'var(--btn-primary-hover-bg)',
+              activeBackground: 'var(--btn-primary-active-bg)',
+              borderColor: 'var(--btn-primary-border)',
+              hoverBorderColor: 'var(--btn-primary-hover-border)',
+              activeBorderColor: 'var(--btn-primary-hover-border)',
+              color: 'var(--btn-primary-color)',
+              hoverColor: 'var(--btn-primary-hover-color)',
+              activeColor: 'var(--btn-primary-hover-color)',
+              focusRing: { color: ACCENT_TEAL[400], shadow: 'none' },
+            },
+            success: {
+              background: 'var(--btn-success-bg)',
+              hoverBackground: 'var(--btn-success-hover-bg)',
+              activeBackground: 'var(--btn-success-hover-bg)',
+              borderColor: 'var(--btn-success-border)',
+              hoverBorderColor: 'var(--btn-success-border)',
+              activeBorderColor: 'var(--btn-success-border)',
+              color: 'var(--btn-success-color)',
+              hoverColor: 'var(--btn-success-color)',
+              activeColor: 'var(--btn-success-color)',
+              focusRing: { color: SUCCESS[300], shadow: 'none' },
+            },
+            warn: {
+              background: 'var(--btn-warn-bg)',
+              hoverBackground: 'var(--btn-warn-hover-bg)',
+              activeBackground: 'var(--btn-warn-hover-bg)',
+              borderColor: 'var(--btn-warn-border)',
+              hoverBorderColor: 'var(--btn-warn-border)',
+              activeBorderColor: 'var(--btn-warn-border)',
+              color: 'var(--btn-warn-color)',
+              hoverColor: 'var(--btn-warn-color)',
+              activeColor: 'var(--btn-warn-color)',
+              focusRing: { color: WARNING[200], shadow: 'none' },
+            },
+            danger: {
+              background: 'var(--btn-danger-bg)',
+              hoverBackground: 'var(--btn-danger-hover-bg)',
+              activeBackground: 'var(--btn-danger-hover-bg)',
+              borderColor: 'var(--btn-danger-border)',
+              hoverBorderColor: 'var(--btn-danger-border)',
+              activeBorderColor: 'var(--btn-danger-border)',
+              color: 'var(--btn-danger-color)',
+              hoverColor: 'var(--btn-danger-color)',
+              activeColor: 'var(--btn-danger-color)',
+              focusRing: { color: DANGER[400], shadow: 'none' },
+            },
+          },
+          outlined: {
+            primary: {
+              hoverBackground: 'var(--btn-ghost-hover-bg)',
+              activeBackground: 'var(--btn-ghost-active-bg)',
+              borderColor: 'var(--btn-ghost-border)',
+              color: 'var(--btn-ghost-color)',
+            },
+            secondary: {
+              hoverBackground: 'var(--btn-ghost-hover-bg)',
+              activeBackground: 'var(--btn-ghost-active-bg)',
+              borderColor: 'var(--btn-ghost-border)',
+              color: 'var(--btn-ghost-color)',
+            },
+            plain: {
+              hoverBackground: 'var(--btn-ghost-hover-bg)',
+              activeBackground: 'var(--btn-ghost-active-bg)',
+              borderColor: 'var(--btn-ghost-border)',
+              color: 'var(--btn-ghost-color)',
+            },
+            success: {
+              hoverBackground: 'var(--btn-success-bg)',
+              activeBackground: 'var(--btn-success-hover-bg)',
+              borderColor: 'var(--btn-success-border)',
+              color: 'var(--btn-success-color)',
+            },
+            warn: {
+              hoverBackground: 'var(--btn-warn-bg)',
+              activeBackground: 'var(--btn-warn-hover-bg)',
+              borderColor: 'var(--btn-warn-border)',
+              color: 'var(--btn-warn-color)',
+            },
+            danger: {
+              hoverBackground: 'var(--btn-danger-bg)',
+              activeBackground: 'var(--btn-danger-hover-bg)',
+              borderColor: 'var(--btn-danger-border)',
+              color: 'var(--btn-danger-color)',
+            },
+          },
+          text: {
+            primary: {
+              hoverBackground: 'var(--btn-text-hover-bg)',
+              activeBackground: 'var(--btn-text-active-bg)',
+              color: 'var(--btn-text-color)',
+            },
+            secondary: {
+              hoverBackground: 'var(--btn-text-hover-bg)',
+              activeBackground: 'var(--btn-text-active-bg)',
+              color: 'var(--btn-text-color)',
+            },
+            plain: {
+              hoverBackground: 'var(--btn-text-hover-bg)',
+              activeBackground: 'var(--btn-text-active-bg)',
+              color: 'var(--btn-text-color)',
+            },
+            success: {
+              hoverBackground: 'var(--btn-success-bg)',
+              activeBackground: 'var(--btn-success-hover-bg)',
+              color: 'var(--btn-success-color)',
+            },
+            warn: {
+              hoverBackground: 'var(--btn-warn-bg)',
+              activeBackground: 'var(--btn-warn-hover-bg)',
+              color: 'var(--btn-warn-color)',
+            },
+            danger: {
+              hoverBackground: 'var(--btn-danger-bg)',
+              activeBackground: 'var(--btn-danger-hover-bg)',
+              color: 'var(--btn-danger-color)',
+            },
+          },
+          link: {
+            color: ACCENT_TEAL[300],
+            hoverColor: ACCENT_TEAL[200],
+            activeColor: ACCENT_TEAL[200],
+          },
+        },
+      },
+    },
+    // 分段选择（SelectButton / ToggleButton）：浅色轨道 + 选中段用主按钮的薄藍淡底
+    togglebutton: {
+      root: { borderRadius: 'var(--btn-radius)', padding: '0.2rem' },
+      content: { borderRadius: '6px', checkedShadow: 'none' },
+      colorScheme: {
+        dark: {
+          root: {
+            background: 'rgba(255, 255, 255, 0.04)',
+            checkedBackground: 'rgba(255, 255, 255, 0.04)',
+            hoverBackground: 'rgba(255, 255, 255, 0.04)',
+            borderColor: 'rgba(255, 255, 255, 0.1)',
+            checkedBorderColor: 'rgba(255, 255, 255, 0.1)',
+            color: 'var(--btn-text-color)',
+            hoverColor: 'var(--btn-text-hover-color)',
+            checkedColor: 'var(--btn-primary-color)',
+          },
+          content: { checkedBackground: 'var(--btn-primary-bg)' },
+          icon: {
+            color: 'var(--btn-text-color)',
+            hoverColor: 'var(--btn-text-hover-color)',
+            checkedColor: 'var(--btn-primary-color)',
+          },
+        },
+      },
+    },
     badge: {
       root: {
         borderRadius: '{border.radius.full}',

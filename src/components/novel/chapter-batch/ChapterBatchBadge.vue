@@ -1,82 +1,78 @@
 <script setup lang="ts">
 /**
- * 多选模式下章节行尾的状态徽章：在队列中显示「排队中 / 进行中」，
- * 否则显示按书籍目标语言计算的完成度（计算中显示加载）。
+ * 多选模式下章节行尾的状态：已在队列中时显示「排队中 / 进行中」，
+ * 否则显示普通目录同样的完成度。行里已有完成度标签的目录（平板、手机）通过默认插槽传入原标签，
+ * 保证两种模式外观一致；桌面目录没有标签，使用这里的百分比（计算中显示加载）。
  */
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { injectChapterBatch } from 'src/composables/book-details/useChapterBatch';
 
-const props = defineProps<{ chapterId: string }>();
+const props = withDefaults(
+  defineProps<{
+    chapterId: string;
+    /** 是否处于多选模式；否则只渲染插槽（普通模式的原标签） */
+    active?: boolean;
+  }>(),
+  { active: true },
+);
 
 const { t } = useI18n();
 const batch = injectChapterBatch();
 
-const queueState = computed(() => batch?.chapterQueueState(props.chapterId) ?? null);
-const percent = computed(() => batch?.stats.percent(props.chapterId) ?? null);
-
-const label = computed(() => {
+const queueState = computed(() =>
+  props.active ? (batch?.chapterQueueState(props.chapterId) ?? null) : null,
+);
+const queueLabel = computed(() => {
   if (queueState.value === 'running') return t('taskQueueUi.batch.badgeRunning');
-  if (queueState.value === 'queued') return t('taskQueueUi.batch.badgeQueued');
-  if (percent.value === null) return '';
-  return percent.value === 0 ? t('taskQueueUi.batch.badgeUntranslated') : `${percent.value}%`;
+  return queueState.value === 'queued' ? t('taskQueueUi.batch.badgeQueued') : '';
 });
-const tone = computed(() => {
-  if (queueState.value) return `cb-badge--${queueState.value}`;
-  if (percent.value === 100) return 'cb-badge--done';
-  return percent.value === 0 ? 'cb-badge--empty' : 'cb-badge--partial';
-});
+const percent = computed(() => batch?.stats.percent(props.chapterId) ?? null);
 </script>
 
 <template>
-  <span v-if="label" class="cb-badge" :class="tone">{{ label }}</span>
-  <i
-    v-else
-    class="pi pi-spinner pi-spin cb-badge-loading"
-    role="status"
-    :aria-label="t('readerUi.chapterLoading')"
-  />
+  <span v-if="queueLabel" class="cb-badge" :class="`cb-badge--${queueState}`">{{
+    queueLabel
+  }}</span>
+  <slot v-else>
+    <span v-if="percent !== null" class="cb-percent">{{ percent }}%</span>
+    <i
+      v-else
+      class="pi pi-spinner pi-spin cb-percent"
+      role="status"
+      :aria-label="t('readerUi.chapterLoading')"
+    />
+  </slot>
 </template>
 
 <style scoped>
 .cb-badge {
   flex-shrink: 0;
-  padding: 1px 6px;
+  padding: 0 6px;
   border-radius: 999px;
   font-size: 10.5px;
   line-height: 16px;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   border: 1px solid transparent;
 }
 
 .cb-badge--running {
-  color: var(--primary-300);
-  background: var(--primary-opacity-15);
-  border-color: var(--primary-opacity-30);
+  color: var(--tsukuyomi-300);
+  background: var(--tsukuyomi-opacity-15);
+  border-color: var(--tsukuyomi-opacity-30);
 }
 
 .cb-badge--queued {
-  color: var(--moon-opacity-80);
+  color: var(--moon-50-opacity-72);
   background: var(--white-opacity-5);
   border-color: var(--white-opacity-10);
 }
 
-.cb-badge--done {
-  color: var(--green-500);
-}
-
-.cb-badge--partial {
-  color: var(--orange-400);
-}
-
-.cb-badge--empty {
-  color: var(--moon-opacity-50);
-}
-
-.cb-badge-loading {
+/* 与平板 / 手机目录的完成度标签（.vt-row-count）同一样式 */
+.cb-percent {
   flex-shrink: 0;
-  font-size: 10px;
-  color: var(--moon-opacity-40);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--moon-50-opacity-55);
 }
 </style>

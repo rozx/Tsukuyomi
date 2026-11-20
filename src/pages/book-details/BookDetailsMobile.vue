@@ -91,11 +91,12 @@ const ctx = injectBookDetailsPage();
 .mbd-icon-btn {
   width: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: var(--btn-radius);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--moon-50-opacity-85);
+  /* 按钮系统：文字 / 图标按钮 */
+  color: var(--btn-text-color);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -104,7 +105,8 @@ const ctx = injectBookDetailsPage();
 }
 
 .mbd-icon-btn:hover {
-  background: var(--white-opacity-5);
+  background: var(--btn-text-hover-bg);
+  color: var(--btn-text-hover-color);
 }
 
 .mbd-icon-btn i {
@@ -245,9 +247,9 @@ const ctx = injectBookDetailsPage();
   justify-content: center;
   gap: 6px;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: var(--btn-radius);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
   border: 1px solid transparent;
@@ -261,31 +263,34 @@ const ctx = injectBookDetailsPage();
 
 .mbd-btn-primary {
   flex: 1;
-  /* token: tsukuyomi-500 → tsukuyomi-300 */
-  background: linear-gradient(90deg, var(--tsukuyomi-500), var(--tsukuyomi-300));
-  /* token: night-500 */
-  color: var(--night-500);
-  box-shadow: 0 2px 6px var(--tsukuyomi-opacity-30);
+  /* 按钮系统：主按钮（薄藍淡底） */
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-border);
+  color: var(--btn-primary-color);
 }
 
-.mbd-btn-primary:hover {
-  filter: brightness(1.05);
+.mbd-btn-primary:hover:not(:disabled) {
+  background: var(--btn-primary-hover-bg);
+  border-color: var(--btn-primary-hover-border);
+  color: var(--btn-primary-hover-color);
 }
 
 .mbd-btn-primary:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: default;
-  box-shadow: none;
 }
 
+/* 按钮系统：次按钮（透明底 + 细描边） */
 .mbd-btn-outline {
-  background: var(--white-opacity-4);
-  color: var(--moon-50-opacity-85);
-  border-color: var(--white-opacity-10);
+  background: transparent;
+  color: var(--btn-ghost-color);
+  border-color: var(--btn-ghost-border);
 }
 
 .mbd-btn-outline:hover {
-  background: var(--white-opacity-8);
+  background: var(--btn-ghost-hover-bg);
+  border-color: var(--btn-ghost-hover-border);
+  color: var(--btn-ghost-hover-color);
 }
 
 .mbd-btn-icon {
@@ -357,10 +362,9 @@ const ctx = injectBookDetailsPage();
 }
 
 .mbd-seg-btn-active {
-  background: var(--tsukuyomi-opacity-20);
-  /* token: primary (moon white) */
-  color: var(--primary-200);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  /* 与 PrimeVue 分段选择的选中段一致 */
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-color);
 }
 
 .mbd-tab-content {
@@ -382,12 +386,12 @@ const ctx = injectBookDetailsPage();
   padding: 4px 8px;
   background: transparent;
   border: none;
-  /* token: tsukuyomi-300 */
-  color: var(--tsukuyomi-300);
+  /* 按钮系统：文字按钮（与桌面目录行的图标按钮一致） */
+  color: var(--btn-text-color);
   cursor: pointer;
   font-family: inherit;
   font-size: 12px;
-  border-radius: 6px;
+  border-radius: var(--btn-radius);
   transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -395,8 +399,26 @@ const ctx = injectBookDetailsPage();
   font-size: 11px;
 }
 
+.mbd-link-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* 多选模式的「已选 N 章」：与按钮同字号，靠左占满剩余空间 */
+.mbd-chapter-actions-label {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: 12px;
+  /* token: moon-50 @ 72% */
+  color: var(--moon-50-opacity-72);
+}
+
 .mbd-link-btn:hover {
-  background: var(--white-opacity-5);
+  background: var(--btn-text-hover-bg);
+  color: var(--btn-text-hover-color);
 }
 
 .mbd-panel {
@@ -453,8 +475,11 @@ const ctx = injectBookDetailsPage();
   position: sticky;
   bottom: 0;
   z-index: 2;
-  margin: 8px -2px 0;
+  margin: 8px 0 0;
+  border: 1px solid var(--white-opacity-6);
   border-radius: 10px;
+  /* 吸底时盖住下面滚动的目录 */
+  background: var(--shell-opacity-96);
 }
 
 /* 行尾"更多"按钮的手机端按下反馈（:active + 更深的 token，与平板 :hover 不同）。 */
@@ -552,11 +577,11 @@ const ctx = injectBookDetailsPage();
   align-items: center;
   gap: 4px;
   padding: 5px 10px;
-  background: var(--tsukuyomi-opacity-25);
-  border: 1px solid var(--tsukuyomi-opacity-40);
-  /* token: primary-300 */
-  color: var(--primary-300);
-  border-radius: 8px;
+  /* 按钮系统：主按钮 */
+  background: var(--btn-primary-bg);
+  border: 1px solid var(--btn-primary-border);
+  color: var(--btn-primary-color);
+  border-radius: var(--btn-radius);
   font-family: inherit;
   font-size: 11.5px;
   cursor: pointer;
@@ -566,8 +591,9 @@ const ctx = injectBookDetailsPage();
 }
 
 .mbr-strip-btn:hover:not(:disabled) {
-  /* token: tsukuyomi-500 @ 38% */
-  background: var(--tsukuyomi-opacity-38);
+  background: var(--btn-primary-hover-bg);
+  border-color: var(--btn-primary-hover-border);
+  color: var(--btn-primary-hover-color);
 }
 
 .mbr-strip-btn:disabled {
@@ -585,36 +611,19 @@ const ctx = injectBookDetailsPage();
 }
 
 .mbr-strip-icon-btn {
+  /* 外观来自全局 .ui-btn--ghost；这里只放角标定位所需 */
   position: relative;
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--white-opacity-4);
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 8px;
-  color: var(--moon-50-opacity-75);
-  cursor: pointer;
   flex-shrink: 0;
-  transition: background 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.mbr-strip-icon-btn:hover {
-  background: var(--white-opacity-8);
-  color: var(--moon-50-opacity-100);
 }
 
 .mbr-strip-icon-btn i {
   font-size: 12px;
 }
 
-.mbr-strip-icon-btn--active {
-  background: var(--tsukuyomi-opacity-20);
-  /* token: tsukuyomi-500 @ 35% */
-  border-color: var(--tsukuyomi-opacity-35);
-  /* token: tsukuyomi-300 */
-  color: var(--tsukuyomi-300);
+.mbr-strip-icon-btn.mbr-strip-icon-btn--active {
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-border);
+  color: var(--btn-primary-color);
 }
 
 .mbr-strip-icon-badge {
@@ -801,19 +810,21 @@ const ctx = injectBookDetailsPage();
   justify-content: center;
   gap: 6px;
   padding: 10px;
-  /* token: white @ 3% */
-  background: var(--white-opacity-3);
-  border: 1px solid var(--white-opacity-10);
-  border-radius: 8px;
-  color: var(--moon-50-opacity-85);
+  /* 按钮系统：次按钮 */
+  background: transparent;
+  border: 1px solid var(--btn-ghost-border);
+  border-radius: var(--btn-radius);
+  color: var(--btn-ghost-color);
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 0.8125rem;
   cursor: pointer;
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .mbr-nav-btn:hover:not(:disabled) {
-  background: var(--white-opacity-6);
+  background: var(--btn-ghost-hover-bg);
+  border-color: var(--btn-ghost-hover-border);
+  color: var(--btn-ghost-hover-color);
 }
 
 .mbr-nav-btn:disabled {
@@ -875,7 +886,7 @@ const ctx = injectBookDetailsPage();
 
 .ab-btn:hover:not(:disabled),
 .ab-btn:active:not(:disabled) {
-  background: var(--white-opacity-5);
+  background: var(--btn-text-hover-bg);
 }
 
 .ab-btn:disabled {

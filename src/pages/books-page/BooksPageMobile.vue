@@ -341,10 +341,10 @@ const pickImportFromJson = () => {
 .ml-icon-btn {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
-  background: var(--white-opacity-4);
-  border: 1px solid var(--white-opacity-10);
-  color: var(--moon-50-opacity-75);
+  border-radius: var(--btn-radius);
+  background: transparent;
+  border: 1px solid var(--btn-ghost-border);
+  color: var(--btn-ghost-color);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -354,8 +354,9 @@ const pickImportFromJson = () => {
 }
 
 .ml-icon-btn:hover {
-  background: var(--white-opacity-8);
-  color: var(--moon-50-opacity-100);
+  background: var(--btn-ghost-hover-bg);
+  color: var(--btn-ghost-hover-color);
+  border-color: var(--btn-ghost-hover-border);
 }
 
 .ml-icon-btn i {
@@ -372,8 +373,9 @@ const pickImportFromJson = () => {
   width: auto;
   padding: 0 10px;
   gap: 6px;
-  border-color: var(--primary-opacity-50);
-  color: var(--primary-200);
+  border-color: var(--btn-primary-border);
+  color: var(--btn-primary-color);
+  background: var(--btn-primary-bg);
 }
 
 .ml-check-all-count {

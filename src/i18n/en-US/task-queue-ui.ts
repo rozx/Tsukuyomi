@@ -10,7 +10,6 @@ export default {
       actionTranslate: 'Translate {count} chapter | Translate {count} chapters',
       actionPolish: 'Polish',
       actionProofread: 'Proofread',
-      badgeUntranslated: 'Untranslated',
       badgeQueued: 'Queued',
       badgeRunning: 'Running',
       dialogTitle: '{kind} {count} chapter | {kind} {count} chapters',

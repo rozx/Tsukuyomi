@@ -106,7 +106,7 @@ const pickChapterFromSheet = (ch: Chapter) => {
           }}
         </span>
         <button
-          class="mbr-strip-icon-btn"
+          class="ui-btn ui-btn--ghost ui-btn--sm ui-btn--icon mbr-strip-icon-btn"
           :class="{ 'mbr-strip-icon-btn--active': ctx.mobileBatchBusy.value }"
           :aria-label="t('readerUi.progress')"
           @click="ctx.openMobileTranslationProgress"

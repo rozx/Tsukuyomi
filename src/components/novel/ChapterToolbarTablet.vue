@@ -190,7 +190,7 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 
         <button
           type="button"
-          class="ctt-icon-btn"
+          class="ui-btn ui-btn--ghost ui-btn--sm ui-btn--icon"
           :title="t('readerUi.chapterSettings')"
           @click="(event: Event) => emit('toggleSpecialInstructions', event)"
         >
@@ -199,7 +199,7 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 
         <button
           type="button"
-          class="ctt-icon-btn"
+          class="ui-btn ui-btn--ghost ui-btn--sm ui-btn--icon"
           :title="t('readerUi.moreActions')"
           @click="onOverflowToggle"
         >
@@ -295,15 +295,17 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 .ctt-primary {
   display: inline-flex;
   align-items: stretch;
-  background: var(--tsukuyomi-opacity-25);
-  border: 1px solid var(--tsukuyomi-opacity-40);
-  border-radius: 8px;
+  /* 按钮系统：主按钮（主操作 + 下拉箭头） */
+  background: var(--btn-primary-bg);
+  border: 1px solid var(--btn-primary-border);
+  border-radius: var(--btn-radius);
   overflow: hidden;
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .ctt-primary:hover {
-  background: var(--tsukuyomi-opacity-38); /* token: tsukuyomi-500 @ 38% */
+  background: var(--btn-primary-hover-bg);
+  border-color: var(--btn-primary-hover-border);
 }
 
 .ctt-primary-main,
@@ -314,9 +316,9 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
   padding: 6px 12px;
   background: transparent;
   border: none;
-  color: var(--primary-300); /* token: primary-300 */
+  color: var(--btn-primary-color);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
@@ -331,47 +333,22 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 
 .ctt-primary-main i {
   font-size: 11px;
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
 }
 
 .ctt-primary-caret {
   padding: 6px 8px;
-  border-left: 1px solid var(--tsukuyomi-opacity-32); /* token: tsukuyomi-500 @ 32% */
-  color: rgba(216, 221, 232, 0.75); /* token: primary-300 @ 75% */
+  border-left: 1px solid var(--btn-primary-border);
 }
 
+.ctt-primary-main:hover:not(:disabled),
 .ctt-primary-caret:hover:not(:disabled) {
-  color: var(--primary-200); /* token: primary-200 */
+  color: var(--btn-primary-hover-color);
 }
 
 .ctt-primary-caret i {
   font-size: 10px;
 }
 
-.ctt-icon-btn {
-  width: 32px;
-  height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 8px;
-  color: var(--moon-50-opacity-72); /* token: moon-50 @ 72% */
-  cursor: pointer;
-  transition:
-    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
 
-.ctt-icon-btn:hover {
-  background: var(--white-opacity-6);
-  color: var(--primary-200); /* token: primary-200 */
-  border-color: var(--white-opacity-14); /* token: white @ 14% */
-}
 
-.ctt-icon-btn i {
-  font-size: 13px;
-}
 </style>

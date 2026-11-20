@@ -74,10 +74,14 @@ defineEmits<{
       <span class="chapter-title">{{ getChapterDisplayTitle(chapter, book || undefined) }}</span>
     </div>
     <ChapterBatchBadge v-if="selecting" :chapter-id="chapter.id" />
+    <!-- 多选时操作按钮不可用，但保留占位，行高与普通模式一致 -->
     <div
-      v-else
       class="chapter-actions"
-      :class="{ 'chapter-actions-visible': touchMode && isSelected }"
+      :class="{
+        'chapter-actions-visible': touchMode && isSelected && !selecting,
+        'chapter-actions--inert': selecting,
+      }"
+      :aria-hidden="selecting || undefined"
       @click.stop
     >
       <Button
@@ -220,6 +224,14 @@ defineEmits<{
   opacity: 1;
   max-width: 4rem;
   margin-left: 0.25rem;
+}
+
+.chapter-item .chapter-actions.chapter-actions--inert {
+  opacity: 0;
+  max-width: 0;
+  margin-left: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .chapter-actions-visible {

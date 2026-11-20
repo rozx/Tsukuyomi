@@ -170,11 +170,12 @@ onUnmounted(() => center.registerOpener(null));
   align-items: center;
   gap: 6px;
   padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--white-opacity-10);
-  background: var(--white-opacity-4);
-  color: var(--moon-opacity-90);
-  font-size: 13px;
+  /* 按钮系统：次按钮 */
+  border-radius: var(--btn-radius);
+  border: 1px solid var(--btn-ghost-border);
+  background: transparent;
+  color: var(--btn-ghost-color);
+  font-size: 0.875rem;
 }
 
 .tc-mobile-hint {

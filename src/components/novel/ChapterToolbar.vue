@@ -119,7 +119,7 @@ const translationBtnDisabled = computed(
     !props.selectedChapterParagraphs.length,
 );
 const editModeBtnClass = (value: EditMode) =>
-  value === props.editMode ? '!bg-primary/20 !text-primary' : 'text-moon/70 hover:text-moon';
+  value === props.editMode ? '!bg-tsukuyomi-500/20 !text-tsukuyomi-300' : 'text-moon/70 hover:text-moon';
 </script>
 
 <template>
@@ -223,7 +223,7 @@ const editModeBtnClass = (value: EditMode) =>
             text
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
-            :class="{ '!bg-primary/20 !text-primary': isSearchVisible }"
+            :class="{ '!bg-tsukuyomi-500/20 !text-tsukuyomi-300': isSearchVisible }"
             :title="searchBtnTitle"
             @click="emit('toggleSearch')"
           />

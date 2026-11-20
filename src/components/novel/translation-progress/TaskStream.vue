@@ -131,11 +131,11 @@ onUnmounted(() => {
 .auto-scroll-btn {
   font-size: 0.6875rem;
   font-weight: 500;
-  color: rgba(253, 253, 255, 0.35);
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--btn-text-color);
+  background: transparent;
   border: 1px solid transparent;
   padding: 3px 8px;
-  border-radius: 5px;
+  border-radius: var(--btn-radius);
   cursor: pointer;
   font-family: inherit;
   transition: all 0.15s;
@@ -145,13 +145,13 @@ onUnmounted(() => {
 }
 
 .auto-scroll-btn.enabled {
-  color: #6c8cff;
-  background: rgba(108, 140, 255, 0.1);
-  border-color: rgba(108, 140, 255, 0.2);
+  color: var(--btn-primary-color);
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-border);
 }
 
 .auto-scroll-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--btn-text-hover-bg);
 }
 
 /* ── 合并后的日志面板：唯一的滚动容器 ── */

@@ -107,7 +107,7 @@ A dot appears on a collapsed row when its task has new activity. Once a finished
 Choose "Select" in the chapter list to enter selection mode. On desktop and tablet it is next to the contents heading; on mobile it is at the top of the Chapters tab.
 
 - A checkbox appears before each chapter and volume. Clicking a chapter row toggles it and does not open the chapter. A volume checkbox selects or clears the whole volume, and shows "−" when the volume is partly selected.
-- Each chapter row ends with its completion for the book's target language: "Untranslated", a percentage, or 100%. Chapters already in the queue show "Queued" or "Running".
+- Rows keep the same layout as normal mode, with the checkbox in place of the status icon. Each row still ends with its completion percentage for the book's target language; chapters already in the queue show "Queued" or "Running" instead.
 - "Select untranslated" selects every chapter in the book that is below 100%.
 - Drag ordering and inline edit/delete are hidden while selecting. Click ✕ or press Esc to exit.
 

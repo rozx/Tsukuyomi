@@ -250,13 +250,14 @@ const onDrop = (event: DragEvent) => {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--moon-opacity-60);
+  /* 按钮系统：文字 / 图标按钮 */
+  color: var(--btn-text-color);
   cursor: pointer;
 }
 
 .tc-icon-btn:hover {
-  background: var(--white-opacity-8);
-  color: var(--moon-opacity-100);
+  background: var(--btn-text-hover-bg);
+  color: var(--btn-text-hover-color);
 }
 
 .tc-icon-btn i {

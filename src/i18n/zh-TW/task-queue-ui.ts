@@ -10,7 +10,6 @@ export default {
       actionTranslate: '翻譯 {count} 章',
       actionPolish: '潤色',
       actionProofread: '校對',
-      badgeUntranslated: '未翻譯',
       badgeQueued: '排隊中',
       badgeRunning: '進行中',
       dialogTitle: '批次{kind} {count} 章',

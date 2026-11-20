@@ -4,6 +4,7 @@ import {
   onUnmounted,
   provide,
   reactive,
+  ref,
   watch,
   type InjectionKey,
   type Ref,
@@ -90,10 +91,17 @@ export function createChapterBatch(
     void stats.ensure(selection.orderedIds.value);
   };
 
-  /** 选未翻译：先算出全书完成度，再勾选未完成的章节 */
+  /** 选未翻译：先算出全书完成度，再勾选未完成的章节；计算期间 untranslatedLoading 为 true */
+  const untranslatedLoading = ref(false);
   const selectUntranslated = async () => {
-    await stats.ensure(selection.chapterOrder.value);
-    selection.selectWhere((id) => !stats.isComplete(id));
+    if (untranslatedLoading.value) return;
+    untranslatedLoading.value = true;
+    try {
+      await stats.ensure(selection.chapterOrder.value);
+      selection.selectWhere((id) => !stats.isComplete(id));
+    } finally {
+      untranslatedLoading.value = false;
+    }
   };
 
   /** 章节在队列中的状态（任意任务类型）；没有待处理项返回 null */
@@ -183,6 +191,7 @@ export function createChapterBatch(
     dialog,
     openDialog,
     selectUntranslated,
+    untranslatedLoading,
     chapterQueueState,
     preview,
     confirm,

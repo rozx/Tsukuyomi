@@ -67,6 +67,14 @@ const onChapterClick = (ch: Chapter) => {
   if (selecting.value) batch.selection.toggle(ch.id);
   else emit('navigate', ch);
 };
+// 多选时 ⋮ 保留占位但不可见、不可点
+const moreClass = computed(() => [
+  'mbd-tree-row-more',
+  { 'mbd-tree-row-more--placeholder': selecting.value },
+]);
+const moreAttrs = computed(() =>
+  selecting.value ? { tabindex: -1, 'aria-hidden': 'true' as const } : {},
+);
 const onVolumeCheck = (e: Event, vol: Volume) => {
   e.stopPropagation();
   batch.selection.toggleVolume(vol);
@@ -90,15 +98,17 @@ const chapterCount = (vol: Volume) => vol.chapters?.length ?? 0;
         :title="t('taskQueueUi.batch.selectVolume')"
         @click="onVolumeCheck($event, vol)"
       />
-      <i class="pi mbd-tree-vol-icon" :class="folderIcon(vol.id)" aria-hidden="true" />
+      <i v-else class="pi mbd-tree-vol-icon" :class="folderIcon(vol.id)" aria-hidden="true" />
       <span class="mbd-tree-row-title">{{ ctx.getVolumeDisplayTitle(vol, ctx.book.value) }}</span>
       <span class="mbd-tree-row-count">{{
         t('readerUi.chapterCount', { count: chapterCount(vol) })
       }}</span>
+      <!-- 多选时 ⋮ 变成不可用的占位，行高与右侧标签位置不变 -->
       <button
-        v-if="showRowActions && !selecting"
+        v-if="showRowActions"
         type="button"
-        class="mbd-tree-row-more"
+        :class="moreClass"
+        v-bind="moreAttrs"
         :aria-label="t('readerUi.volumeActions')"
         @click="onVolumeMore($event, vol)"
       >
@@ -124,18 +134,17 @@ const chapterCount = (vol: Volume) => vol.chapters?.length ?? 0;
         <span class="mbd-tree-row-title">
           {{ ctx.getChapterDisplayTitle(ch, ctx.book.value || undefined) }}
         </span>
-        <ChapterBatchBadge v-if="selecting" :chapter-id="ch.id" />
-        <span
-          v-else
-          class="mbd-tree-row-count"
-          :style="{ color: ctx.chapterStatusTextColor(ch.id) }"
-        >
-          {{ ctx.chapterStatusLabel(ch.id) }}
-        </span>
+        <!-- 两种模式显示同一个完成度标签；多选时已在队列中的章节换成队列状态 -->
+        <ChapterBatchBadge :chapter-id="ch.id" :active="selecting">
+          <span class="mbd-tree-row-count" :style="{ color: ctx.chapterStatusTextColor(ch.id) }">
+            {{ ctx.chapterStatusLabel(ch.id) }}
+          </span>
+        </ChapterBatchBadge>
         <button
-          v-if="showRowActions && !selecting"
+          v-if="showRowActions"
           type="button"
-          class="mbd-tree-row-more"
+          :class="moreClass"
+          v-bind="moreAttrs"
           :aria-label="t('readerUi.chapterActions')"
           @click="onChapterMore($event, ch, vol.id, chIdx)"
         >

@@ -47,10 +47,12 @@ defineEmits<{
       aria-hidden="true"
     />
     <span class="vt-row-title">{{ getChapterDisplayTitle(chapter, book || undefined) }}</span>
-    <ChapterBatchBadge v-if="selecting" :chapter-id="chapter.id" />
-    <span v-else class="vt-row-count" :style="{ color: statusTextColor(chapter.id) }">
-      {{ statusLabel(chapter.id) }}
-    </span>
+    <!-- 两种模式显示同一个完成度标签；多选时已在队列中的章节换成队列状态 -->
+    <ChapterBatchBadge :chapter-id="chapter.id" :active="!!selecting">
+      <span class="vt-row-count" :style="{ color: statusTextColor(chapter.id) }">
+        {{ statusLabel(chapter.id) }}
+      </span>
+    </ChapterBatchBadge>
     <button
       v-if="!selecting"
       type="button"
@@ -62,6 +64,7 @@ defineEmits<{
     >
       <i class="pi pi-ellipsis-v" aria-hidden="true" />
     </button>
+    <span v-else class="vt-row-more vt-row-more--placeholder" aria-hidden="true" />
   </div>
 </template>
 

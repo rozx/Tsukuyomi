@@ -173,7 +173,7 @@ const hasVolumes = computed(() => props.volumes.length > 0);
               :title="t('taskQueueUi.batch.selectVolume')"
               @click.stop="toggleVolumeSelection(volume)"
             />
-            <i class="pi pi-book volume-icon"></i>
+            <i v-else class="pi pi-book volume-icon"></i>
             <span class="volume-title">{{ getVolumeDisplayTitle(volume, book) }}</span>
             <span v-if="hasChapters(volume)" class="volume-chapter-count">
               ({{ t('readerUi.chapterCount', { count: chapterCount(volume) }) }})

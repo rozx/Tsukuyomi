@@ -246,13 +246,14 @@ const pausedText = computed(() => {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--moon-opacity-60);
+  /* 按钮系统：文字 / 图标按钮 */
+  color: var(--btn-text-color);
   cursor: pointer;
 }
 
 .tc-head-btn:hover:not(:disabled) {
-  background: var(--white-opacity-8);
-  color: var(--moon-opacity-100);
+  background: var(--btn-text-hover-bg);
+  color: var(--btn-text-hover-color);
 }
 
 .tc-head-btn:disabled {
@@ -261,7 +262,8 @@ const pausedText = computed(() => {
 }
 
 .tc-head-btn--active {
-  color: #a3b7cf;
+  color: var(--btn-primary-color);
+  background: var(--btn-primary-bg);
 }
 
 .tc-head-btn i {

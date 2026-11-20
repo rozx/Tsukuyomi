@@ -282,10 +282,10 @@ const actionMenuRef = t.actionMenuRef;
 .tl-icon-btn {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
-  background: var(--white-opacity-4);
-  border: 1px solid var(--white-opacity-10);
-  color: var(--moon-50-opacity-75);
+  border-radius: var(--btn-radius);
+  background: transparent;
+  border: 1px solid var(--btn-ghost-border);
+  color: var(--btn-ghost-color);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -294,8 +294,9 @@ const actionMenuRef = t.actionMenuRef;
 }
 
 .tl-icon-btn:hover {
-  background: var(--white-opacity-8);
-  color: var(--moon-50-opacity-100);
+  background: var(--btn-ghost-hover-bg);
+  color: var(--btn-ghost-hover-color);
+  border-color: var(--btn-ghost-hover-border);
 }
 
 .tl-icon-btn i {
@@ -312,8 +313,9 @@ const actionMenuRef = t.actionMenuRef;
   width: auto;
   padding: 0 8px;
   gap: 5px;
-  border-color: var(--primary-opacity-50);
-  color: var(--primary-200);
+  border-color: var(--btn-primary-border);
+  color: var(--btn-primary-color);
+  background: var(--btn-primary-bg);
 }
 
 .tl-check-all-count {
@@ -818,7 +820,7 @@ const actionMenuRef = t.actionMenuRef;
   padding: 0;
   border: none;
   background: transparent;
-  color: var(--moon-50-opacity-55);
+  color: var(--btn-text-color);
   border-radius: 4px;
   cursor: pointer;
   flex-shrink: 0;
@@ -831,8 +833,8 @@ const actionMenuRef = t.actionMenuRef;
 }
 
 .tl-tree-more-btn:hover {
-  background: var(--white-opacity-8);
-  color: var(--moon-50-opacity-100);
+  background: var(--btn-text-hover-bg);
+  color: var(--btn-text-hover-color);
 }
 
 .tl-chapters-edit-btn {
@@ -844,7 +846,7 @@ const actionMenuRef = t.actionMenuRef;
   border: 1px solid transparent;
   background: transparent;
   /* token: tsukuyomi-300 @ 85% */
-  color: var(--tsukuyomi-300-opacity-85);
+  color: var(--btn-text-color);
   border-radius: 6px;
   font-family: inherit;
   font-size: 10px;
@@ -856,21 +858,21 @@ const actionMenuRef = t.actionMenuRef;
 }
 
 .tl-chapters-edit-btn:hover {
-  background: var(--white-opacity-4);
+  background: var(--btn-text-hover-bg);
   /* token: tsukuyomi-300 */
-  color: var(--tsukuyomi-300);
+  color: var(--btn-text-hover-color);
 }
 
 .tl-chapters-edit-btn--on {
-  background: var(--tsukuyomi-opacity-18);
-  border-color: var(--tsukuyomi-opacity-30);
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-border);
   /* token: tsukuyomi-300 */
-  color: var(--tsukuyomi-300);
+  color: var(--btn-primary-color);
 }
 
 .tl-chapters-edit-btn--on:hover {
   /* token: tsukuyomi-500 @ 24% */
-  background: var(--tsukuyomi-opacity-24);
+  background: var(--btn-primary-hover-bg);
 }
 
 .tl-chapters-edit-btn i {

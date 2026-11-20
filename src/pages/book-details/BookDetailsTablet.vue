@@ -231,18 +231,13 @@ const { isChatActive, toggleRail } = useTabletRightRail();
   margin: 0.35rem 0.35rem 0;
 }
 
-/* "目录" 头部 + 新卷/新章节 —— 收紧行高和按钮 padding */
+/* "目录" 头部 —— 收紧行高 */
 .book-details-tablet :deep(.sidebar-title-wrapper) {
   padding: 0.35rem 0.75rem 0.25rem;
 }
 
 .book-details-tablet :deep(.sidebar-title) {
   font-size: 0.8rem;
-}
-
-.book-details-tablet :deep(.sidebar-actions .p-button) {
-  padding: 0.25rem 0.45rem;
-  font-size: 0.72rem;
 }
 
 /* 双栏阅读：原文 / 译文 side-by-side */
