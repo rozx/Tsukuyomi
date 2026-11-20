@@ -13,6 +13,7 @@ export default {
       unregistered: 'Unregistered',
       nativeDocument: 'Native (document.modelContext)',
       nativeNavigator: 'Compatible (navigator.modelContext)',
+      unsupported: 'Browser not supported',
       unavailable: 'WebMCP not detected',
     },
     steps: {
@@ -25,8 +26,32 @@ export default {
       webEnableHint:
         'Exposes the tools to an in-browser agent in a browser or bridge extension that supports WebMCP.',
       enableWebMcp: 'Enable WebMCP tool registration',
-      webUnavailableHint:
-        'No WebMCP interface was detected in this browser. Switch to a browser that supports WebMCP or install a bridge extension, then reload. If you use a local coding agent, the desktop app is the better fit.',
+      webUnsupportedLead:
+        'This browser does not provide the WebMCP interface, so this switch cannot be turned on. Enable it for your browser:',
+      webGuideTitle: 'Choose a browser',
+      copyFlagUrl: 'Copy address',
+      webGuideChrome1:
+        'Paste the address above into the address bar and open it (or open chrome://flags and search for WebMCP).',
+      webGuideChrome2:
+        'Set "WebMCP for testing" to Enabled, then click Relaunch at the bottom of the page.',
+      webGuideReload: 'Come back to this page, reload it, and turn on the switch above.',
+      webGuideChromeNote:
+        'This is an experimental feature. If the entry is missing, your version does not offer it yet; update Chrome or use a Canary or Dev build.',
+      webGuideEdge1:
+        'Paste the address above into the address bar, open it, and type WebMCP in the search box.',
+      webGuideEdge2: 'Set the WebMCP entry you find to Enabled, then restart the browser.',
+      webGuideEdgeNote:
+        'Support in Edge is still experimental. If no such entry appears, your version does not offer it yet; use Chrome instead.',
+      webGuideFirefox:
+        'Firefox has no native WebMCP support and no switch to turn on. Open this page in Chrome or Edge instead.',
+      webGuideSafari:
+        'Safari has no native WebMCP support and no switch to turn on (the same applies to every browser on iPhone and iPad). Open this page in Chrome or Edge on a computer instead.',
+      webGuideExtension:
+        'Alternatively, install a bridge extension that injects the WebMCP interface into pages (for example MCP-B), then reload this page.',
+      webGuideInsecure:
+        'This page was not opened over HTTPS or localhost. Browsers only provide the WebMCP interface on secure pages, so switch to an HTTPS address first.',
+      webUnsupportedDesktop:
+        'Use the desktop app if you want a local agent such as Claude Code; it connects through the local MCP server and does not depend on WebMCP.',
       clientTitle: 'Connect your agent client',
       clientHint: 'The current address and token are already filled in.',
       clientLocked: 'Turn on the server above before using this configuration.',

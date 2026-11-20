@@ -15,6 +15,7 @@
 
 - 在瀏覽器版開啟 `/mcp` 頁面時，應用會自動偵測 `document.modelContext` 或 `navigator.modelContext`。
 - 在頁面第一步開啟 WebMCP 後，目前權限允許的工具（以及唯讀工作流指南 `get_workflow_guide`）會自動註冊到瀏覽器模型上下文。
+- 瀏覽器沒有提供 WebMCP 介面時開關無法使用，頁面會依瀏覽器給出開啟辦法：Chrome 在 `chrome://flags/#enable-webmcp-testing` 把「WebMCP for testing」設為 Enabled 後重新啟動；Edge 在 `edge://flags` 搜尋 WebMCP；Firefox 與 Safari 目前沒有原生支援，請改用 Chrome 或 Edge。該介面只在 HTTPS 或 localhost 頁面上提供。
 - 瀏覽器環境因跨網域限制無法抓取部分站點時，可讓 Agent 自行取得正文後呼叫 `create_book` 與 `add_chapters` 直接匯入。
 
 ## 權限分級與多版本寫回 {#agent-mcp-guide-section-5}

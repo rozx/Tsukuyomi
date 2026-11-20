@@ -15,6 +15,7 @@ Use the **External Agent Workbench** (`/mcp`) to connect Claude Code, Pi, Antigr
 
 - Opening `/mcp` in a browser detects `document.modelContext` (or legacy `navigator.modelContext`).
 - Turning on WebMCP in the first step of the page exposes all tools allowed by the active permission mode plus the read-only `get_workflow_guide` tool.
+- When the browser does not provide the WebMCP interface the switch is disabled, and the page shows how to enable it per browser: in Chrome set "WebMCP for testing" to Enabled at `chrome://flags/#enable-webmcp-testing` and relaunch; in Edge search for WebMCP at `edge://flags`; Firefox and Safari have no native support yet, so use Chrome or Edge. The interface is only available on HTTPS or localhost pages.
 - If a site is blocked by browser CORS when calling `import_book_from_url`, have your agent fetch the text itself and call `create_book` followed by `add_chapters`.
 
 ## Permission Modes & Translation Versions {#agent-mcp-guide-section-5}

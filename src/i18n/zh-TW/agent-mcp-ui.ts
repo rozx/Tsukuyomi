@@ -12,6 +12,7 @@ export default {
       unregistered: '未註冊',
       nativeDocument: '原生支援（document.modelContext）',
       nativeNavigator: '相容支援（navigator.modelContext）',
+      unsupported: '瀏覽器不支援',
       unavailable: '未偵測到 WebMCP',
     },
     steps: {
@@ -23,8 +24,30 @@ export default {
       webEnableTitle: '開啟 WebMCP',
       webEnableHint: '在支援 WebMCP 的瀏覽器或橋接擴充功能中，把工具開放給瀏覽器裡的 Agent。',
       enableWebMcp: '啟用 WebMCP 工具註冊',
-      webUnavailableHint:
-        '目前的瀏覽器沒有偵測到 WebMCP 介面。請改用支援 WebMCP 的瀏覽器或安裝橋接擴充功能後重新整理；如果用的是本機 Coding Agent，建議改用桌面版。',
+      webUnsupportedLead:
+        '目前的瀏覽器沒有提供 WebMCP 介面，所以這個開關無法開啟。依你的瀏覽器開啟它：',
+      webGuideTitle: '選擇瀏覽器',
+      copyFlagUrl: '複製位址',
+      webGuideChrome1: '把上面的位址貼到網址列並開啟（也可以開啟 chrome://flags 後搜尋 WebMCP）。',
+      webGuideChrome2:
+        '把「WebMCP for testing」設為 Enabled，然後點擊頁面底部的 Relaunch 重新啟動瀏覽器。',
+      webGuideReload: '回到本頁並重新整理，再開啟上面的開關。',
+      webGuideChromeNote:
+        '這是實驗性功能。搜尋不到這一項時，表示目前的版本還沒有提供，請升級 Chrome 或改用 Canary / Dev 版本。',
+      webGuideEdge1: '把上面的位址貼到網址列並開啟，在搜尋框裡輸入 WebMCP。',
+      webGuideEdge2: '把搜尋到的 WebMCP 相關項目設為 Enabled，然後重新啟動瀏覽器。',
+      webGuideEdgeNote:
+        'Edge 的支援仍是實驗性的。搜尋不到相關項目時，表示目前的版本還沒有提供，可以改用 Chrome。',
+      webGuideFirefox:
+        'Firefox 目前沒有原生的 WebMCP 支援，也沒有可以開啟的開關。請改用 Chrome 或 Edge 開啟本頁。',
+      webGuideSafari:
+        'Safari 目前沒有原生的 WebMCP 支援，也沒有可以開啟的開關（iPhone 和 iPad 上的所有瀏覽器同樣如此）。請在電腦上改用 Chrome 或 Edge 開啟本頁。',
+      webGuideExtension:
+        '另一種辦法是安裝會向頁面注入 WebMCP 介面的橋接擴充功能（例如 MCP-B），安裝後重新整理本頁。',
+      webGuideInsecure:
+        '本頁不是透過 HTTPS 或 localhost 開啟的。瀏覽器只在安全頁面上提供 WebMCP 介面，請先改用 HTTPS 位址存取。',
+      webUnsupportedDesktop:
+        '想用 Claude Code 等本機 Agent 的話，改用桌面版，它透過本機 MCP 服務連線，不依賴 WebMCP。',
       clientTitle: '接入你的 Agent 用戶端',
       clientHint: '設定裡已填入目前的位址與權杖。',
       clientLocked: '先開啟上面的服務，設定才能使用。',

@@ -38,7 +38,8 @@
               />
               <ToggleSwitch
                 v-else
-                :model-value="ctx.settings.value.webMcpEnabled"
+                :model-value="ctx.webMcpToggleOn.value"
+                :disabled="!ctx.webMcpSupported.value"
                 :aria-label="t('agentMcp.steps.enableWebMcp')"
                 @update:model-value="ctx.toggleWebMcp"
               />
@@ -66,19 +67,60 @@
             </div>
           </template>
           <template v-else>
-            <div class="amcp-inline">
+            <!-- 支持时说明接口来源；不支持时只给一个结论和出路 -->
+            <div v-if="ctx.webMcpSupported.value" class="amcp-inline">
               <Tag
                 :value="ctx.webAvailabilityLabel.value"
                 :severity="ctx.webAvailabilitySeverity.value"
               />
             </div>
-            <div
-              v-if="ctx.webMcpStatus.value.availability === 'unavailable'"
-              class="amcp-alert amcp-alert--info"
-            >
-              <i class="pi pi-info-circle" aria-hidden="true" />
-              <span>{{ t('agentMcp.steps.webUnavailableHint') }}</span>
-            </div>
+            <template v-else>
+              <div v-if="ctx.pageInsecure.value" class="amcp-alert amcp-alert--error">
+                <i class="pi pi-exclamation-triangle" aria-hidden="true" />
+                <span>{{ t('agentMcp.steps.webGuideInsecure') }}</span>
+              </div>
+              <div class="web-guide">
+                <p class="web-guide-lead">{{ t('agentMcp.steps.webUnsupportedLead') }}</p>
+                <div
+                  class="amcp-chips"
+                  role="tablist"
+                  :aria-label="t('agentMcp.steps.webGuideTitle')"
+                >
+                  <button
+                    v-for="browser in GUIDE_BROWSERS"
+                    :key="browser.value"
+                    type="button"
+                    role="tab"
+                    class="amcp-chip"
+                    :class="{ 'amcp-chip--active': ctx.webMcpGuideBrowser.value === browser.value }"
+                    :aria-selected="ctx.webMcpGuideBrowser.value === browser.value"
+                    @click="ctx.webMcpGuideBrowser.value = browser.value"
+                  >
+                    {{ browser.label }}
+                  </button>
+                </div>
+                <div v-if="ctx.webMcpGuide.value.flagUrl" class="amcp-inline">
+                  <code class="amcp-code">{{ ctx.webMcpGuide.value.flagUrl }}</code>
+                  <Button
+                    icon="pi pi-copy"
+                    text
+                    size="small"
+                    :aria-label="t('agentMcp.steps.copyFlagUrl')"
+                    :title="t('agentMcp.steps.copyFlagUrl')"
+                    @click="ctx.copyWebMcpFlagUrl"
+                  />
+                </div>
+                <ol v-if="ctx.webMcpGuide.value.steps.length > 1" class="web-guide-steps">
+                  <li v-for="step in ctx.webMcpGuide.value.steps" :key="step">{{ step }}</li>
+                </ol>
+                <p v-else class="web-guide-text">{{ ctx.webMcpGuide.value.steps[0] }}</p>
+                <p v-if="ctx.webMcpGuide.value.note" class="amcp-hint">
+                  {{ ctx.webMcpGuide.value.note }}
+                </p>
+                <p class="amcp-hint">{{ t('agentMcp.steps.webGuideExtension') }}</p>
+                <p class="amcp-hint">{{ t('agentMcp.steps.webUnsupportedDesktop') }}</p>
+              </div>
+            </template>
           </template>
         </div>
       </li>
@@ -171,10 +213,19 @@ import AgentMcpPanel from 'src/components/agent-mcp/AgentMcpPanel.vue';
 import {
   injectAgentMcpPage,
   type AgentMcpConnectTab,
+  type WebMcpGuideBrowser,
 } from 'src/composables/agent-mcp-page/useAgentMcpPage';
 
 const { t, locale } = useI18n();
 const ctx = injectAgentMcpPage();
+
+/** 浏览器名称是专有名词，不随界面语言翻译 */
+const GUIDE_BROWSERS: ReadonlyArray<{ value: WebMcpGuideBrowser; label: string }> = [
+  { value: 'chrome', label: 'Chrome' },
+  { value: 'edge', label: 'Edge' },
+  { value: 'firefox', label: 'Firefox' },
+  { value: 'safari', label: 'Safari' },
+];
 
 const TAB_LABEL_KEYS: Record<AgentMcpConnectTab, string> = {
   'claude-code': 'agentMcp.steps.tabClaudeCode',
@@ -250,6 +301,36 @@ const linkStatusText = computed(() => {
   line-height: 28px;
   letter-spacing: normal;
   color: var(--moon-50-opacity-100);
+}
+
+.web-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--tsukuyomi-opacity-25);
+  background: var(--tsukuyomi-opacity-8);
+}
+
+.web-guide-lead,
+.web-guide-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--moon-50-opacity-92);
+}
+
+.web-guide-steps {
+  margin: 0;
+  padding-left: 20px;
+  list-style: decimal;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--moon-50-opacity-92);
 }
 
 .snippet--locked {

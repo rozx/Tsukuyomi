@@ -32,6 +32,8 @@
 - [x] 5.4 按使用顺序重新设计 `/mcp` 工作台：用 `AgentMcpPanel` / `AgentMcpSetupSteps` / `AgentMcpActivityLog` / `AgentMcpPermissionPanel` / `AgentMcpConnectionSettings` / `AgentMcpToolCatalog` 取代原三张卡片；服务未运行时配置不可复制；新增 `src/services/agent-mcp/agent-quick-start.ts` 生成可直接粘贴给 Agent 的快速上手指南（通用说明，不按任务或书籍定制）；权限选项带后果说明与工具数量，切换到 `full` 与重新生成令牌需二次确认；通过 `src/__tests__/agent-mcp-quick-start.test.ts` 与 `src/__tests__/use-agent-mcp-page.test.ts` 验证。
 - [x] 5.5 新增 `check_book_updates` 与 `apply_book_updates`（`src/services/agent-mcp/tools/book-updates.ts`，复用 `BookSyncService`），加入长操作清单并补齐三语工具说明与帮助文档；通过 `src/__tests__/agent-mcp-book-update-tools.test.ts` 验证检查结果、默认只导入新章节、显式应用正文改动、限定范围、来源缺失/失效与权限拦截。
 
+- [x] 5.6 浏览器不支持 WebMCP 时禁用开关、合并为单一状态，并按浏览器（Chrome / Edge / Firefox / Safari）给出开启指南与非安全页面提示；新增 `src/utils/browser-kind.ts`，通过 `src/__tests__/browser-kind.test.ts` 与 `src/__tests__/use-agent-mcp-page.test.ts` 验证。
+
 ## 6. 集成验证与代码质量门禁
 
 - [x] 6.1 运行完整代码质量检查与全量测试：`bun run lint && bun run type-check && bun run test:coverage && bun run quality-check`，确认零 ESLint/TypeScript/Fallow/i18n 错误且全部单元测试通过。

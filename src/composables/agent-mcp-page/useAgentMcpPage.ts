@@ -35,6 +35,7 @@ import type {
 } from 'src/services/agent-mcp/types';
 import { useAgentMcpStore } from 'src/stores/agent-mcp';
 import { useSettingsStore } from 'src/stores/settings';
+import { detectBrowserKind } from 'src/utils/browser-kind';
 import { isElectron } from 'src/utils/platform';
 
 export type AgentMcpConnectTab = 'claude-code' | 'pi' | 'antigravity';
@@ -46,6 +47,43 @@ export interface LocalizedAgentMcpToolDescriptor extends AgentMcpToolDescriptor 
 export interface LocalizedAgentMcpPromptDescriptor extends AgentMcpPromptDescriptor {
   displayDescription: string;
 }
+
+/** 提供 WebMCP 开启指南的浏览器 */
+export type WebMcpGuideBrowser = 'chrome' | 'edge' | 'firefox' | 'safari';
+
+export interface WebMcpGuide {
+  steps: string[];
+  /** 补充说明（如实验性功能的版本限制）；没有时为空字符串 */
+  note: string;
+  /** 需要在地址栏打开的实验功能页；该浏览器没有可开的开关时为 null */
+  flagUrl: string | null;
+}
+
+const WEBMCP_GUIDE_META: Record<
+  WebMcpGuideBrowser,
+  { stepKeys: MessageKey[]; noteKey: MessageKey | null; flagUrl: string | null }
+> = {
+  chrome: {
+    stepKeys: [
+      'agentMcp.steps.webGuideChrome1',
+      'agentMcp.steps.webGuideChrome2',
+      'agentMcp.steps.webGuideReload',
+    ],
+    noteKey: 'agentMcp.steps.webGuideChromeNote',
+    flagUrl: 'chrome://flags/#enable-webmcp-testing',
+  },
+  edge: {
+    stepKeys: [
+      'agentMcp.steps.webGuideEdge1',
+      'agentMcp.steps.webGuideEdge2',
+      'agentMcp.steps.webGuideReload',
+    ],
+    noteKey: 'agentMcp.steps.webGuideEdgeNote',
+    flagUrl: 'edge://flags',
+  },
+  firefox: { stepKeys: ['agentMcp.steps.webGuideFirefox'], noteKey: null, flagUrl: null },
+  safari: { stepKeys: ['agentMcp.steps.webGuideSafari'], noteKey: null, flagUrl: null },
+};
 
 export interface AgentMcpToolGroup {
   category: AgentMcpToolCategory;
@@ -125,6 +163,15 @@ export interface AgentMcpPageContext {
   webMcpStatus: ComputedRef<WebMcpRuntimeStatus>;
   runtimeStatusLabel: ComputedRef<string>;
   runtimeStatusSeverity: ComputedRef<'success' | 'info' | 'danger' | 'secondary'>;
+  /** 当前浏览器是否提供 WebMCP 接口；不提供时开关不会生效 */
+  webMcpSupported: ComputedRef<boolean>;
+  /** WebMCP 开关的显示值：浏览器不支持时始终显示为关 */
+  webMcpToggleOn: ComputedRef<boolean>;
+  /** 开启指南当前展示的浏览器，默认是检测到的当前浏览器 */
+  webMcpGuideBrowser: Ref<WebMcpGuideBrowser>;
+  webMcpGuide: ComputedRef<WebMcpGuide>;
+  /** 页面不是 HTTPS / localhost：此时浏览器不会提供 WebMCP 接口 */
+  pageInsecure: ComputedRef<boolean>;
   webAvailabilityLabel: ComputedRef<string>;
   webAvailabilitySeverity: ComputedRef<'success' | 'info' | 'secondary'>;
   /** 当前通道已可用：桌面端服务运行中，或浏览器端工具已注册 */
@@ -161,6 +208,7 @@ export interface AgentMcpPageContext {
   copyEndpoint: () => Promise<void>;
   copyActiveSnippet: () => Promise<void>;
   copyQuickStartGuide: () => Promise<void>;
+  copyWebMcpFlagUrl: () => Promise<void>;
   toggleToolCategory: (category: string) => void;
   toggleWebMcp: (enabled: boolean) => Promise<void>;
   /** 选择权限模式；「完全控制」需再调用 confirmFullPermission 才生效 */
@@ -241,11 +289,34 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
       WEB_AVAILABILITY_META[webMcpStatus.value.availability] ?? WEB_AVAILABILITY_META.unavailable,
   );
 
+  const webMcpSupported = computed(() => webMcpStatus.value.availability !== 'unavailable');
+  const webMcpToggleOn = computed(() => webMcpSupported.value && settings.value.webMcpEnabled);
+
+  const detectedBrowser =
+    typeof navigator === 'undefined' ? 'other' : detectBrowserKind(navigator.userAgent);
+  // 识别不出的浏览器先展示 Chrome 的说明作为参考
+  const webMcpGuideBrowser = ref<WebMcpGuideBrowser>(
+    detectedBrowser === 'other' ? 'chrome' : detectedBrowser,
+  );
+  const webMcpGuide = computed<WebMcpGuide>(() => {
+    const locale = settingsStore.uiLocale;
+    const meta = WEBMCP_GUIDE_META[webMcpGuideBrowser.value];
+    return {
+      steps: meta.stepKeys.map((key) => translateText(locale, key)),
+      note: meta.noteKey ? translateText(locale, meta.noteKey) : '',
+      flagUrl: meta.flagUrl,
+    };
+  });
+  const pageInsecure = computed(
+    () => typeof window !== 'undefined' && window.isSecureContext === false,
+  );
+
   const runtimeStatusLabel = computed(() => {
     const locale = settingsStore.uiLocale;
     if (isElectronEnv.value) {
       return translateText(locale, desktopStatusMeta.value.labelKey);
     }
+    if (!webMcpSupported.value) return translateText(locale, 'agentMcp.status.unsupported');
     return webMcpStatus.value.registered
       ? translateText(locale, 'agentMcp.status.registered')
       : translateText(locale, 'agentMcp.status.unregistered');
@@ -476,11 +547,18 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     await copyText(activeSnippet.value);
   };
 
+  const copyWebMcpFlagUrl = async (): Promise<void> => {
+    const url = webMcpGuide.value.flagUrl;
+    if (url) await copyText(url);
+  };
+
   const copyQuickStartGuide = async (): Promise<void> => {
     await copyText(quickStartGuide.value);
   };
 
   const toggleWebMcp = async (enabled: boolean): Promise<void> => {
+    // 浏览器不提供接口时打开开关没有任何效果，直接忽略；关闭始终允许
+    if (enabled && !webMcpSupported.value) return;
     await settingsStore.updateAgentMcpSettings({ webMcpEnabled: enabled });
   };
 
@@ -530,6 +608,11 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     webMcpStatus,
     runtimeStatusLabel,
     runtimeStatusSeverity,
+    webMcpSupported,
+    webMcpToggleOn,
+    webMcpGuideBrowser,
+    webMcpGuide,
+    pageInsecure,
     webAvailabilityLabel,
     webAvailabilitySeverity,
     connectionReady,
@@ -560,6 +643,7 @@ export function createAgentMcpPageContext(): AgentMcpPageContext {
     copyEndpoint,
     copyActiveSnippet,
     copyQuickStartGuide,
+    copyWebMcpFlagUrl,
     toggleToolCategory,
     toggleWebMcp,
     requestPermissionMode,

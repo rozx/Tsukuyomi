@@ -169,6 +169,13 @@ describe('useAgentMcpPage composable', () => {
       webMcpEnv: () => ({ document: { modelContext: { registerTool: vi.fn() } }, navigator: {} }),
     });
     const syncSpy = vi.spyOn(getActiveWebMcpAdapter()!, 'sync');
+    // 浏览器提供了 WebMCP 接口，开关才可以打开
+    useAgentMcpStore().setWebMcpStatus({
+      availability: 'native-document',
+      registered: false,
+      registeredToolNames: [],
+      error: null,
+    });
     await ctx.toggleWebMcp(true);
     expect(useSettingsStore().agentMcp.webMcpEnabled).toBe(true);
     expect(syncSpy).not.toHaveBeenCalled();
@@ -238,6 +245,94 @@ describe('useAgentMcpPage composable', () => {
     expect(ctx.quickStartGuide.value).toMatch(/Quick start/i);
 
     unmount();
+  });
+
+  it('浏览器不提供 WebMCP 接口时开关不可用且不会被打开；检测到接口后恢复可用', async () => {
+    platformState.isElectron = false;
+    const settings = useSettingsStore();
+    await settings.setUiLocale('zh-CN');
+    await settings.updateAgentMcpSettings({ webMcpEnabled: false });
+    const store = useAgentMcpStore();
+    store.setWebMcpStatus({
+      availability: 'unavailable',
+      registered: false,
+      registeredToolNames: [],
+      error: null,
+    });
+
+    const { unmount, getCtx } = mountHarness();
+    const ctx = getCtx();
+
+    expect(ctx.webMcpSupported.value).toBe(false);
+    expect(ctx.webMcpToggleOn.value).toBe(false);
+    // 状态只给一个结论，不再同时显示「未注册」与「未检测到」
+    expect(ctx.runtimeStatusLabel.value).toBe('浏览器不支持');
+
+    // 不支持时打开开关不生效
+    await ctx.toggleWebMcp(true);
+    expect(settings.agentMcp.webMcpEnabled).toBe(false);
+
+    // 之前已保存为开启的设置在不支持的浏览器里也显示为关，但仍允许关闭
+    await settings.updateAgentMcpSettings({ webMcpEnabled: true });
+    expect(ctx.webMcpToggleOn.value).toBe(false);
+    await ctx.toggleWebMcp(false);
+    expect(settings.agentMcp.webMcpEnabled).toBe(false);
+
+    // 检测到接口后开关可用
+    store.setWebMcpStatus({
+      availability: 'native-document',
+      registered: false,
+      registeredToolNames: [],
+      error: null,
+    });
+    expect(ctx.webMcpSupported.value).toBe(true);
+    await ctx.toggleWebMcp(true);
+    expect(settings.agentMcp.webMcpEnabled).toBe(true);
+    expect(ctx.webMcpToggleOn.value).toBe(true);
+    expect(ctx.runtimeStatusLabel.value).toBe('未注册');
+
+    unmount();
+  });
+
+  it('不支持 WebMCP 时按浏览器给出开启指南：默认匹配当前浏览器，可切换，并提示非安全页面', async () => {
+    platformState.isElectron = false;
+    const settings = useSettingsStore();
+    await settings.setUiLocale('zh-CN');
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36 Edg/150.0.0.0',
+    );
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    Object.defineProperty(window, 'isSecureContext', { value: false, configurable: true });
+
+    const { unmount, getCtx } = mountHarness();
+    const ctx = getCtx();
+
+    // 默认选中检测到的浏览器
+    expect(ctx.webMcpGuideBrowser.value).toBe('edge');
+    expect(ctx.webMcpGuide.value.flagUrl).toBe('edge://flags');
+    expect(ctx.webMcpGuide.value.steps.length).toBeGreaterThanOrEqual(3);
+    expect(ctx.webMcpGuide.value.steps.join('\n')).toContain('WebMCP');
+
+    // 切到 Chrome：给出确切的实验开关地址，并可复制
+    ctx.webMcpGuideBrowser.value = 'chrome';
+    expect(ctx.webMcpGuide.value.flagUrl).toBe('chrome://flags/#enable-webmcp-testing');
+    expect(ctx.webMcpGuide.value.steps.join('\n')).toContain('WebMCP for testing');
+    await ctx.copyWebMcpFlagUrl();
+    expect(writeText).toHaveBeenCalledWith('chrome://flags/#enable-webmcp-testing');
+
+    // Firefox / Safari 没有可开的开关：不给地址，只说明出路
+    for (const browser of ['firefox', 'safari'] as const) {
+      ctx.webMcpGuideBrowser.value = browser;
+      expect(ctx.webMcpGuide.value.flagUrl).toBeNull();
+      expect(ctx.webMcpGuide.value.steps).toHaveLength(1);
+    }
+
+    // 页面不是 HTTPS / localhost 时单独提示
+    expect(ctx.pageInsecure.value).toBe(true);
+
+    unmount();
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
   });
 
   it('重新生成令牌需要二次确认，取消后令牌不变', async () => {
