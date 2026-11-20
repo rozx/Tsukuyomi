@@ -117,6 +117,63 @@ describe('外部工具写入与抓取的网址限制', () => {
     expect(data.pending_chapter_count).toBe(0);
   });
 
+  it('导入新书时部分章节已保存、后面的写入失败：保留这本书并带回 book_id，不删掉已保存的正文', async () => {
+    const scrapedChapter = (id: string, n: number) => ({
+      id,
+      title: {
+        original: `第${n}話`,
+        translation: { id: `t-${id}`, translation: '', aiModelId: '' },
+      },
+      webUrl: `${CATALOG}${n}/`,
+      createdAt: new Date(),
+      lastEdited: new Date(),
+    });
+    vi.spyOn(NovelScraperFactory, 'getScraper').mockReturnValue({
+      isValidUrl: () => true,
+      catalogUrl: () => CATALOG,
+      fetchNovel: () =>
+        Promise.resolve({
+          success: true,
+          novel: {
+            id: 'partial-book',
+            title: '写到一半失败的书',
+            webUrl: [CATALOG],
+            volumes: [
+              {
+                id: 'v',
+                title: {
+                  original: '正文',
+                  translation: { id: 'vt', translation: '', aiModelId: '' },
+                },
+                chapters: [scrapedChapter('pc1', 1), scrapedChapter('pc2', 2)],
+              },
+            ],
+            createdAt: new Date(),
+            lastEdited: new Date(),
+          },
+        }),
+      fetchChapterContent: (url: string) => Promise.resolve(`正文 ${url}`),
+    } as unknown as NovelScraper);
+    // 第一章写入成功，第二章写入失败（例如存储空间用尽）
+    const realSave = ChapterContentService.saveChapterContent.bind(ChapterContentService);
+    let saves = 0;
+    vi.spyOn(ChapterContentService, 'saveChapterContent').mockImplementation((...args) => {
+      saves += 1;
+      return saves === 1 ? realSave(...args) : Promise.reject(new Error('QuotaExceededError'));
+    });
+
+    const res = await call('import_book_from_url', { url: CATALOG });
+    expect(res.isError).toBe(true);
+    expect(res.errorCode).toBe('URL_IMPORT_FAILED');
+    // 错误里带回 book_id，Agent 可以接着补剩下的章节
+    expect(res.text).toContain('partial-book');
+    expect(useBooksStore().getBookById('partial-book')).toBeDefined();
+    const kept = await Promise.all(
+      ['pc1', 'pc2'].map((id) => ChapterContentService.loadChapterContent(id)),
+    );
+    expect(kept.filter((content) => content && content.length > 0)).toHaveLength(1);
+  });
+
   it('get_book 统计进度时分批读取正文，不逐章单独读取', async () => {
     const created = await call('create_book', {
       title: '统计',

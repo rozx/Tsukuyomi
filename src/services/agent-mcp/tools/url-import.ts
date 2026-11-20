@@ -170,9 +170,14 @@ function collectBookChapterIds(book: Novel): Set<string> {
   return ids;
 }
 
+/**
+ * @param onChapterSaved 每写入一章就调用一次：后面的写入失败时，调用方据此知道已经有正文落盘，
+ *   不能把这本书当作空壳回滚删除
+ */
 async function persistFetchedChapterContents(
   bookId: string,
   fetchedByChapterId: ReadonlyMap<string, Paragraph[]>,
+  onChapterSaved: () => void,
 ): Promise<{ savedCount: number; bookDeleted: boolean }> {
   const booksStore = useBooksStore();
   const initialLiveBook = booksStore.getBookById(bookId);
@@ -195,6 +200,7 @@ async function persistFetchedChapterContents(
 
     await ChapterContentService.saveChapterContent(chapterId, paragraphs, { bookId });
     savedCount += 1;
+    onChapterSaved();
   }
 
   if (savedCount > 0 && booksStore.getBookById(bookId)) {
@@ -431,8 +437,10 @@ export const importBookFromUrlTool: AgentMcpToolSpec = {
       const { savedCount, bookDeleted } = await persistFetchedChapterContents(
         prepared.bookId,
         batch.fetchedByChapterId,
+        () => {
+          savedAnyChapter = true;
+        },
       );
-      savedAnyChapter = savedCount > 0;
 
       if (bookDeleted) {
         return agentMcpError(
