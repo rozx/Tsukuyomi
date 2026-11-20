@@ -811,13 +811,73 @@ function locateNearText(
   return text.slice(start, start + name.length) || null;
 }
 
-/** 与名称等长的片段里，如果不同的那个位置是标点或空白，就不是「写错了字」 */
-function differsOnlyInWordChars(candidate: string, name: string): boolean {
+const HIRAGANA_CHAR = /[\u3041-\u3096]/;
+
+/**
+ * 命中的片段是否像是「同一个词写错了字」。只在恰好错一个字时判断（多字、少字时片段是错位的，
+ * 逐字对比没有意义）。以下两种差异不算：
+ * - 不同的那个位置在原文里是标点或空白；
+ * - 名称里是汉字或片假名、原文里却是平假名：多半是名称的一部分后面跟了助词
+ *   （如「向こう側」之于「向こうに」），而不是错字。
+ */
+function isPlausibleVariant(candidate: string, name: string): boolean {
   if (candidate.length !== name.length) return true;
+  const mismatches: number[] = [];
   for (let i = 0; i < name.length; i++) {
-    if (candidate[i] !== name[i] && !NEAR_MATCH_WORD_CHAR.test(candidate[i]!)) return false;
+    if (candidate[i] !== name[i]) mismatches.push(i);
   }
-  return true;
+  if (mismatches.length !== 1) return true;
+  const actual = candidate[mismatches[0]!]!;
+  const expected = name[mismatches[0]!]!;
+  if (!NEAR_MATCH_WORD_CHAR.test(actual)) return false;
+  return !(HIRAGANA_CHAR.test(actual) && !HIRAGANA_CHAR.test(expected));
+}
+
+/** 常见的日文敬称后缀；长的排在前面，保证「ちゃん」不会被当成别的后缀 */
+const HONORIFIC_SUFFIXES = [
+  'ちゃん',
+  'さん',
+  'くん',
+  'さま',
+  'たん',
+  '先生',
+  '先輩',
+  '様',
+  '君',
+  '殿',
+  '氏',
+] as const;
+
+/** 名字不足这个长度时，前面紧挨着汉字的不算同一个人（「俳優さん」不是「優さん」） */
+const SHORT_STEM_LENGTH = 3;
+
+function splitHonorific(name: string): { stem: string; honorific: string } | null {
+  for (const honorific of HONORIFIC_SUFFIXES) {
+    if (name.length > honorific.length && name.endsWith(honorific)) {
+      return { stem: name.slice(0, -honorific.length), honorific };
+    }
+  }
+  return null;
+}
+
+/**
+ * 别名是「名字 + 敬称」时，原文里同一个名字配另一种敬称（優ちゃん → 優さん）
+ * 也是在叫这个人。返回原文里的写法，找不到时返回 null。
+ */
+function findHonorificVariant(
+  text: string,
+  split: { stem: string; honorific: string },
+): string | null {
+  for (const honorific of HONORIFIC_SUFFIXES) {
+    if (honorific === split.honorific) continue;
+    const variant = split.stem + honorific;
+    for (let at = text.indexOf(variant); at !== -1; at = text.indexOf(variant, at + 1)) {
+      const isShortStem = Array.from(split.stem).length < SHORT_STEM_LENGTH;
+      if (isShortStem && isKanjiChar(text[at - 1])) continue;
+      return variant;
+    }
+  }
+  return null;
 }
 
 function collectKnownNames(
@@ -843,6 +903,8 @@ function findNearMatches<T>(
   text: string,
   entries: ReadonlyArray<{ item: T; names: readonly string[] }>,
   knownNames: ReadonlySet<string>,
+  /** 名称可能带敬称（角色的别名）：敬称不参与近似匹配，并识别换了敬称的称呼 */
+  options: { honorifics?: boolean } = {},
 ): NearNameMatch<T>[] {
   if (!text || entries.length === 0) return [];
   // 把整段文本当作唯一的文档，逐个名称做近似子串搜索
@@ -858,12 +920,20 @@ function findNearMatches<T>(
     // 任一写法已经原样出现：精确匹配会处理，这里不重复报告
     if (candidates.some((name) => text.includes(name))) continue;
     for (const name of candidates) {
-      if (Array.from(name).length < NEAR_MATCH_MIN_LENGTH) continue;
-      const hit = fuse.search(name, { limit: 1 })[0];
-      const matchedText = hit && locateNearText(text, name, hit.matches?.[0]?.indices ?? []);
+      const split = options.honorifics ? splitHonorific(name) : null;
+      const honorificVariant = split && findHonorificVariant(text, split);
+      if (honorificVariant) {
+        matches.push({ item, name, matchedText: honorificVariant });
+        break;
+      }
+      // 带敬称的名称只拿敬称前面的部分去比：否则「優ちゃん」会因为敬称相同而像「央ちゃん」
+      const target = split ? split.stem : name;
+      if (Array.from(target).length < NEAR_MATCH_MIN_LENGTH) continue;
+      const hit = fuse.search(target, { limit: 1 })[0];
+      const matchedText = hit && locateNearText(text, target, hit.matches?.[0]?.indices ?? []);
       if (!matchedText) continue;
-      // 那一段本身是另一个已知名称（是另一个词，不是错字），或差在标点、空白上：不算
-      if (knownNames.has(matchedText) || !differsOnlyInWordChars(matchedText, name)) continue;
+      // 那一段本身是另一个已知名称（是另一个词，不是错字），或不像是写错了字：不算
+      if (knownNames.has(matchedText) || !isPlausibleVariant(matchedText, target)) continue;
       matches.push({ item, name, matchedText });
       break;
     }
@@ -904,5 +974,6 @@ export function findNearCharactersInText(
       names: [character.name, ...(character.aliases ?? []).map((alias) => alias.name)],
     })),
     collectKnownNames(terms, characters),
+    { honorifics: true },
   );
 }

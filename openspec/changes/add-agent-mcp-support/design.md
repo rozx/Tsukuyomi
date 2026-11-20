@@ -146,6 +146,12 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
 
 - **可选的模糊搜索**：`search_paragraphs`、`count_occurrences`、`get_chapter_paragraphs`、`list_terms`、`list_characters`、`search_help_docs` 都增加 `fuzzy` 参数，默认 `false`（精确匹配，行为不变），由 Agent 按需开启。实现共用 `tools/helpers.ts` 的 `fuzzyMatchIndexes`（Fuse.js，阈值与近似匹配、全文搜索同为 0.3）。几点取舍：`search_paragraphs` 的 `fuzzy` 与 `regex` 互斥；模糊词频每个命中段落计一次（无法可靠数出同一段里的多处近似写法）；术语、角色与使用文档的模糊结果按接近程度排序；`replace_in_translations` 不提供模糊模式，避免改到不该改的文字。
 
+- **第二轮实测后的打磨**：
+  - 近似匹配的误报与漏报：带敬称的别名（`優ちゃん`）原先整体参与近似匹配，会因为敬称相同而命中别人（`理央ちゃん`），而同一个人换了敬称（`優さん`）反而认不出。现在敬称后缀（さん / ちゃん / くん / 様 / 殿 / 先生 等）不参与近似匹配，只拿敬称前面的名字去比；同时把「同一个名字 + 另一种敬称」直接识别为该角色，名字不足 3 个字时要求前面不紧挨汉字（`俳優さん` 不是 `優さん`）。另外，恰好错一个字、且名称里是汉字或片假名而原文里是平假名的，多半是名称的一部分后面跟了助词（`向こう側` 之于 `向こうに`），不再算作近似写法。
+  - `apply_book_updates` / `import_book_from_url` 早已返回章节 ID，但工具说明里没写，Agent 无从得知；已写进说明。
+  - `get_book` 增加 `include_description: false`，可省略较长的简介。
+  - 前文衔接（`context_before` 与 `previous_chapter_tail`）跳过只有符号的段落（章末分隔线等），不让它们占用名额。章末的作者感言无法可靠识别，仍由 Agent 调大 `context_before` 解决。
+
 ### 5. 外部译文 `aiModelId` 约定与兼容渲染
 - **决策**：
   - `Translation.aiModelId` 保持现有 `string` 类型不变，不修改 IndexedDB / Gist 同步数据格式。

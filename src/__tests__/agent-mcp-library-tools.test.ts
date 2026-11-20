@@ -897,6 +897,19 @@ describe('AgentMcp context & library tools', () => {
     expect(outline.volumes.every((v) => v.chapters === undefined)).toBe(true);
     expect(outline.volumes.map((v) => v.chapter_count)).toEqual([2, 3]);
 
+    // 简介可以省略（有些简介很长）；默认仍然返回
+    await kernel.callTool(
+      'update_book',
+      { book_id: bookId, description: '一段很长的简介' },
+      { channel: 'desktop-mcp' },
+    );
+    expect(
+      (await call({ recent_chapters: 1 })) as unknown as { description: string },
+    ).toHaveProperty('description', '一段很长的简介');
+    expect(await call({ recent_chapters: 1, include_description: false })).not.toHaveProperty(
+      'description',
+    );
+
     const missing = await kernel.callTool(
       'get_book',
       { book_id: bookId, volume_id: 'nope' },

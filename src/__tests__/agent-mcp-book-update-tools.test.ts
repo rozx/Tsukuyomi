@@ -232,6 +232,14 @@ describe('AgentMcp book update tools', () => {
     });
   });
 
+  it('工具说明里写明导入后会返回章节 ID，Agent 不需要先试一次才知道', () => {
+    const apply = agentMcpBookUpdateTools.find((tool) => tool.name === 'apply_book_updates');
+    expect(apply?.description).toContain('applied_chapters');
+    expect(apply?.description).toContain('chapter_id');
+    const importTool = agentMcpLibraryTools.find((tool) => tool.name === 'import_book_from_url');
+    expect(importTool?.description).toContain('fetched_chapters');
+  });
+
   it('apply_book_updates 返回导入的章节 ID、所在卷与标题，不需要再读整本书的目录', async () => {
     const { session } = fakeSession(changeset({ new: [NEW_1, NEW_2] }));
     // 模拟真实导入：应用更新后书里多出带来源网址的章节

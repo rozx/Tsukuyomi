@@ -328,7 +328,7 @@ async function prepareBookForUrlImport(
 export const importBookFromUrlTool: AgentMcpToolSpec = {
   name: 'import_book_from_url',
   description:
-    'Fetch and import (or incrementally update) a novel and its chapter contents from a supported site URL (syosetu.org, kakuyomu.jp, ncode.syosetu.com, novel18.syosetu.com). If unsupported or blocked by browser CORS, returns guidance to use create_book + add_chapters.',
+    'Fetch and import (or incrementally update) a novel and its chapter contents from a supported site URL (syosetu.org, kakuyomu.jp, ncode.syosetu.com, novel18.syosetu.com). The result lists the chapters whose content was fetched in this call in fetched_chapters (chapter_id, volume_id, title_original, url). If unsupported or blocked by browser CORS, returns guidance to use create_book + add_chapters.',
   category: 'library',
   permission: 'translate_and_edit',
   readOnlyHint: false,

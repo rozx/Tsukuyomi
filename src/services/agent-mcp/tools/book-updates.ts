@@ -139,7 +139,7 @@ export const agentMcpBookUpdateTools: AgentMcpToolSpec[] = [
   {
     name: 'apply_book_updates',
     description:
-      'Import updates from the source site into a book. By default only chapters that are new on the site are imported. Set include_updated to true to also apply text changes to already imported chapters — revised paragraphs lose their existing translations, so confirm with the user first. Use urls to limit the import to specific chapters reported by check_book_updates.',
+      'Import updates from the source site into a book. By default only chapters that are new on the site are imported. Set include_updated to true to also apply text changes to already imported chapters — revised paragraphs lose their existing translations, so confirm with the user first. Use urls to limit the import to specific chapters reported by check_book_updates. The result lists the imported chapters in applied_chapters (chapter_id, volume_id, title_original, url), so there is no need to call get_book afterwards to find them.',
     category: 'library',
     permission: 'translate_and_edit',
     readOnlyHint: false,

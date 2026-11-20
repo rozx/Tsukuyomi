@@ -27,7 +27,7 @@ import {
   findUniqueCharactersInText,
   findUniqueTermsInText,
 } from 'src/utils/text-matcher';
-import { isEmptyParagraph } from 'src/utils/text-utils';
+import { isEmptyOrSymbolOnly, isEmptyParagraph } from 'src/utils/text-utils';
 import { buildExternalTranslationModelId } from 'src/utils/translation-model-label';
 import { agentMcpError, type AgentMcpExecutionContext, type AgentMcpToolSpec } from '../types';
 import {
@@ -129,7 +129,8 @@ function collectContextBefore(
     [];
   for (let i = firstOriginalIdx - 1; i >= 0 && contextBefore.length < count; i--) {
     const p = allParagraphs[i]!;
-    if (isEmptyParagraph(p.text)) continue;
+    // 空段落和只有符号的段落（分隔线等）不算正文，不占衔接的名额
+    if (isEmptyOrSymbolOnly(p.text)) continue;
     const tr = getLanguageTranslation(p, targetLanguage);
     if (!tr || !tr.translation.trim()) continue;
     contextBefore.unshift({

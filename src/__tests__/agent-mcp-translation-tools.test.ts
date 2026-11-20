@@ -346,6 +346,8 @@ describe('AgentMcp translation tools', () => {
                 translated('pa000002', '二行目。', '第二行。'),
                 { id: 'pa000003', text: '', selectedTranslationId: '', translations: [] },
                 translated('pa000004', '「また明日」', '「明天见」'),
+                // 章末的分隔线不算正文，不占衔接的名额
+                translated('pa00004b', '---', '---'),
                 // 末尾没译的段落不算衔接
                 { id: 'pa000005', text: '未訳の行。', selectedTranslationId: '', translations: [] },
               ],

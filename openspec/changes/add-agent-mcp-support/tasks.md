@@ -58,6 +58,8 @@
 
 - [x] 5.18 可选的模糊搜索：`search_paragraphs`、`count_occurrences`、`get_chapter_paragraphs`、`list_terms`、`list_characters`、`search_help_docs` 增加 `fuzzy` 参数（默认精确），共用 `fuzzyMatchIndexes`；指南与帮助文档说明何时使用。通过各工具的测试文件验证。
 
+- [x] 5.19 第二轮实测后的打磨：近似匹配不再让敬称参与比较、识别换了敬称的称呼、排除名称后跟助词的情况；`apply_book_updates` / `import_book_from_url` 的说明写明返回章节 ID；`get_book` 可省略简介；前文衔接跳过只有符号的段落。通过 `text-matcher-near.test.ts`、`agent-mcp-translation-tools.test.ts`、`agent-mcp-library-tools.test.ts`、`agent-mcp-book-update-tools.test.ts` 验证。
+
 ## 6. 集成验证与代码质量门禁
 
 - [x] 6.1 运行完整代码质量检查与全量测试：`bun run lint && bun run type-check && bun run test:coverage && bun run quality-check`，确认零 ESLint/TypeScript/Fallow/i18n 错误且全部单元测试通过。

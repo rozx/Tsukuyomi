@@ -204,6 +204,11 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
           description:
             'Whether to compute paragraph/translated counts for each listed chapter (default true).',
         },
+        include_description: {
+          type: 'boolean',
+          description:
+            'Set false to leave out the book synopsis, which can be long (default true).',
+        },
       },
     },
     execute: async (args, ctx) => {
@@ -252,7 +257,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
         id: book.id,
         title: book.title,
         author: book.author ?? '',
-        description: book.description ?? '',
+        ...(args.include_description !== false ? { description: book.description ?? '' } : {}),
         tags: book.tags ?? [],
         alternate_titles: book.alternateTitles ?? [],
         target_language: targetLanguage,

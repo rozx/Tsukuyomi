@@ -76,6 +76,45 @@ describe('近似匹配：原文写法与名称非常接近但不完全相同', (
     expect(findNearTermsInText('銀の騎士の本部へ向かう。', terms)).toEqual([]);
   });
 
+  it('别名带敬称时，换了一种敬称的称呼也能认出来', () => {
+    // 角色全名没有空格，精确匹配拆不出「優」；别名里只有「優ちゃん」
+    const chars = [character('yu', '月岡優', ['優ちゃん'])];
+    const found = findNearCharactersInText('「優さん、おはようございます」', chars);
+    expect(found.map((m) => [m.item.id, m.name, m.matchedText])).toEqual([
+      ['yu', '優ちゃん', '優さん'],
+    ]);
+    // 名字很短时，前面紧挨着汉字的不算（「俳優さん」是另一个词）
+    expect(findNearCharactersInText('俳優さんが来た。', chars)).toEqual([]);
+    // 原文里就是别名本身：由精确匹配负责
+    expect(findNearCharactersInText('優ちゃんが来た。', chars)).toEqual([]);
+  });
+
+  it('带敬称的别名只拿称呼前面的名字去做近似匹配，不会因为敬称相同而认错人', () => {
+    const chars = [character('yu', '月岡優', ['優ちゃん'])];
+    expect(findNearCharactersInText('理央ちゃんが笑った。', chars)).toEqual([]);
+    // 名字本身够长时，名字写错字、敬称不同仍能认出
+    const long = [character('alex', 'アレクサンドラ', ['アレクサンドラ様'])];
+    expect(
+      findNearCharactersInText('アレクサンドロさんが来た。', long).map((m) => m.matchedText),
+    ).toEqual(['アレクサンドロ']);
+  });
+
+  it('差的那个字在原文里是平假名（多半是助词）时不算', () => {
+    const terms = [
+      term('side', '向こう側'),
+      term('church', 'エスペランサ教'),
+      term('dark', '闇カルラ'),
+    ];
+    expect(findNearTermsInText('向こうに行く。', terms)).toEqual([]);
+    expect(findNearTermsInText('エスペランサが来た。', terms)).toEqual([]);
+    expect(findNearTermsInText('そしてカルラは笑った。', terms)).toEqual([]);
+    // 名称里那个位置本来就是平假名时，仍然可以是写错
+    const kana = [term('k', 'おにぎり定食')];
+    expect(findNearTermsInText('おにがり定食を頼んだ。', kana).map((m) => m.matchedText)).toEqual([
+      'おにがり定食',
+    ]);
+  });
+
   it('同一个条目只报告一次；空文本或没有条目时返回空', () => {
     const terms = [term('saint', 'エロ聖女')];
     expect(findNearTermsInText('エロ性女、エロ生女、エロ声女。', terms)).toHaveLength(1);
