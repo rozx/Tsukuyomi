@@ -443,7 +443,18 @@ export function createElectronMcpServer(
     }
   };
 
-  const stop = async (): Promise<DesktopMcpServerStatus> => {
+  /**
+   * 启动与停止按调用顺序一个接一个执行。`server` 要到开始监听后才赋值，
+   * 交错执行时「停止」会在启动完成前看到空值而直接报告已停止，随后启动仍然绑定端口。
+   */
+  let lifecycle: Promise<unknown> = Promise.resolve();
+  const inOrder = <T>(operation: () => Promise<T>): Promise<T> => {
+    const run = lifecycle.then(operation, operation);
+    lifecycle = run.catch(() => undefined);
+    return run;
+  };
+
+  const stopNow = async (): Promise<DesktopMcpServerStatus> => {
     const current = server;
     server = null;
     if (!current) {
@@ -455,9 +466,9 @@ export function createElectronMcpServer(
     return setStatus({ state: 'stopped', port: null, error: null });
   };
 
-  const start = async (config: DesktopMcpStartConfig): Promise<DesktopMcpServerStatus> => {
+  const startNow = async (config: DesktopMcpStartConfig): Promise<DesktopMcpServerStatus> => {
     if (server) {
-      await stop();
+      await stopNow();
     }
     activeToken = config.authToken.trim();
     setStatus({ state: 'starting', port: config.port, error: null });
@@ -490,6 +501,10 @@ export function createElectronMcpServer(
       nextServer.listen(config.port, '127.0.0.1');
     });
   };
+
+  const start = (config: DesktopMcpStartConfig): Promise<DesktopMcpServerStatus> =>
+    inOrder(() => startNow(config));
+  const stop = (): Promise<DesktopMcpServerStatus> => inOrder(stopNow);
 
   const updateAuthToken = (token: string): void => {
     activeToken = token.trim();

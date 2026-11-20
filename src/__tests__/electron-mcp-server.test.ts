@@ -280,6 +280,42 @@ describe('Electron Streamable HTTP MCP Server (dual-era)', () => {
     expect(delRes.status).toBe(405);
   });
 
+  it('启动还没完成就收到停止：最终是停止的，端口没有被占用；启动、停止按调用顺序执行', async () => {
+    const statuses: string[] = [];
+    const server = createElectronMcpServer({
+      version: '0.19.2',
+      dispatch: () => Promise.resolve({}),
+      onStatusChange: (status) => {
+        statuses.push(status.state);
+      },
+    });
+    servers.push(server);
+
+    // 不等待启动完成就停止，与界面上快速开关的调用方式一致
+    const starting = server.start({ port: 0, authToken: 'token-a' });
+    const stopped = await server.stop();
+    const started = await starting;
+
+    expect(started.state).toBe('running');
+    expect(stopped.state).toBe('stopped');
+    expect(server.getStatus()).toEqual({ state: 'stopped', port: null, error: null });
+    expect(statuses.at(-1)).toBe('stopped');
+    // 启动时绑定的端口已经释放
+    const refused = await fetch(`http://127.0.0.1:${started.port}/mcp`, { method: 'POST' }).then(
+      () => false,
+      () => true,
+    );
+    expect(refused).toBe(true);
+
+    // 停止、再启动交错调用后，以最后一次为准
+    const again = server.start({ port: 0, authToken: 'token-b' });
+    void server.stop();
+    const final = await server.start({ port: 0, authToken: 'token-c' });
+    await again;
+    expect(final.state).toBe('running');
+    expect(server.getStatus().state).toBe('running');
+  });
+
   it('校验 Bearer Token（401）、非本机 Host / 跨站 Origin（403）、Token 轮换立即失效、两代并发与端口冲突报错', async () => {
     const { server, postJson, token, port } = await startTestServer('token-v1');
 
