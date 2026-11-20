@@ -6,6 +6,7 @@ import { useContextStore } from 'src/stores/context';
 import { useSettingsStore } from 'src/stores/settings';
 import { NovelScraperFactory, type NovelScraper } from 'src/services/scraper';
 import { ChapterContentService } from 'src/services/chapter-content-service';
+import { DESKTOP_MCP_LONG_OPERATION_TOOLS } from 'src/models/desktop-mcp';
 import { createAgentMcpKernel } from 'src/services/agent-mcp/kernel';
 import { agentMcpContextTools } from 'src/services/agent-mcp/tools/context';
 import { agentMcpLibraryTools } from 'src/services/agent-mcp/tools/library';
@@ -958,6 +959,127 @@ describe('AgentMcp context & library tools', () => {
     );
     expect(missing.isError).toBe(true);
     expect(missing.errorCode).toBe('VOLUME_NOT_FOUND');
+  });
+
+  it('get_book 的卷概览带上各卷的翻译进度与首个未译完章节；章节网址默认不返回', async () => {
+    const now = new Date();
+    const para = (id: string, text: string, translation?: string) =>
+      translation === undefined
+        ? { id, text, selectedTranslationId: '', translations: [] }
+        : {
+            id,
+            text,
+            selectedTranslationId: `tr-${id}`,
+            translations: [
+              { id: `tr-${id}`, translation, aiModelId: 'm', language: 'zh-CN' as const },
+            ],
+          };
+    const chapter = (
+      id: string,
+      title: string,
+      content: ReturnType<typeof para>[],
+      webUrl?: string,
+    ) => ({
+      id,
+      title: { original: title, translation: { id: `t-${id}`, translation: '', aiModelId: '' } },
+      ...(webUrl ? { webUrl } : {}),
+      content,
+      contentLoaded: true,
+      createdAt: now,
+      lastEdited: now,
+    });
+    const bookId = 'book-progress';
+    await useBooksStore().addBook({
+      id: bookId,
+      title: '进度',
+      targetLanguage: 'zh-CN',
+      volumes: [
+        {
+          id: 'vol-a',
+          title: '第一卷',
+          chapters: [
+            chapter(
+              'a1',
+              '1话',
+              [para('pa1', 'あ', '啊'), para('pa2', 'い', '咿')],
+              'https://example.com/1',
+            ),
+            chapter('a2', '2话', [para('pa3', 'う', '呜'), para('pa4', 'え')]),
+            // 没有正文的章节不计入任何一类
+            chapter('a3', '3话', [para('pa5', '')]),
+          ],
+        },
+        {
+          id: 'vol-b',
+          title: '第二卷',
+          chapters: [
+            chapter('b1', '4话', [para('pb1', 'お')]),
+            chapter('b2', '5话', [para('pb2', 'か', '咖')]),
+          ],
+        },
+        {
+          id: 'vol-c',
+          title: '第三卷',
+          chapters: [chapter('c1', '6话', [para('pc1', 'き', '奇')])],
+        },
+      ],
+      createdAt: now,
+      lastEdited: now,
+    });
+    // 与真实使用一致：章节正文按需从存储读取
+    await useBooksStore().refreshBookFromStorage(bookId);
+    const kernel = createAgentMcpKernel({ tools: agentMcpLibraryTools });
+    type VolumeResult = {
+      id: string;
+      translated_chapter_count?: number;
+      in_progress_chapter_count?: number;
+      untranslated_chapter_count?: number;
+      first_untranslated_chapter?: { chapter_id: string; title_original: string } | null;
+      chapters?: Array<{ id: string; web_url?: string }>;
+    };
+    const call = async (args: Record<string, unknown>) => {
+      const res = await kernel.callTool(
+        'get_book',
+        { book_id: bookId, ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return (res.data as { volumes: VolumeResult[] }).volumes;
+    };
+
+    // 卷概览一次调用就能看出整本书翻到哪里
+    const outline = await call({ include_chapters: false });
+    expect(
+      outline.map((v) => [
+        v.id,
+        v.translated_chapter_count,
+        v.in_progress_chapter_count,
+        v.untranslated_chapter_count,
+        v.first_untranslated_chapter,
+      ]),
+    ).toEqual([
+      ['vol-a', 1, 1, 0, { chapter_id: 'a2', title_original: '2话' }],
+      ['vol-b', 1, 0, 1, { chapter_id: 'b1', title_original: '4话' }],
+      ['vol-c', 1, 0, 0, null],
+    ]);
+
+    // 只列最近几章时，各卷的进度仍按整卷统计
+    const recent = await call({ recent_chapters: 1 });
+    expect(recent[0]).toMatchObject({ translated_chapter_count: 1, in_progress_chapter_count: 1 });
+
+    // 不要统计时连卷的进度也不给（读正文的开销）
+    const noStats = await call({ include_chapters: false, include_chapter_stats: false });
+    expect(noStats[0]).not.toHaveProperty('translated_chapter_count');
+    expect(noStats[0]).not.toHaveProperty('first_untranslated_chapter');
+
+    // 章节网址默认省略，需要时用 include_urls
+    const full = await call({});
+    expect(full[0]!.chapters![0]).not.toHaveProperty('web_url');
+    const withUrls = await call({ include_urls: true });
+    expect(withUrls[0]!.chapters![0]!.web_url).toBe('https://example.com/1');
+
+    // 统计进度要读全书正文：桌面端按长耗时工具放宽超时
+    expect(DESKTOP_MCP_LONG_OPERATION_TOOLS).toContain('get_book');
   });
 
   it('update_book 修改作者、简介、标签与别名，只改传入的字段；什么都没传时报错', async () => {

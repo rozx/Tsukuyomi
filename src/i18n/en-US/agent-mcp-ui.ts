@@ -130,7 +130,7 @@ export default {
       wfTranslate3:
         'Translate paragraph by paragraph: one translated paragraph per source paragraph, with no merging, splitting or omission. Use the given renderings for terms and character names.',
       wfTranslate4:
-        'Call submit_translations; each item in paragraphs has paragraph_id and translated_text. If the book has source-prefix validation enabled, also include original_text_prefix (the first 3 to 20 characters of the source paragraph). With the first chunk of a chapter you can also submit the translated chapter title as chapter_title_translation; put the name of the model you are using in model_label.',
+        'Call submit_translations; each item in paragraphs has paragraph_id and translated_text. If the book has source-prefix validation enabled, also include original_text_prefix (the first 3 to 20 characters of the source paragraph). With the first chunk of a chapter you can also submit the translated chapter title as chapter_title_translation; put the name of the model you are using in model_label. Submit about 30 to 50 paragraphs per call; split longer chapters into batches and send the next batch only after the previous one returns. Do not submit batches for the same chapter in parallel.',
       wfTranslate5:
         'Check failed_items in the result and fix and resubmit only those paragraphs. While remaining_untranslated_count is greater than 0, go back to step 1; when it reaches 0 the chapter is done.',
       wfTranslatePlan:
@@ -147,7 +147,7 @@ export default {
       wfPolish3:
         'By default a new version is added and selected. Set write_mode to "overwrite" only when the user explicitly asks to rewrite the current version in place.',
       wfPolish4:
-        'Use the returned next_cursor as the cursor of the next call until the chapter ends.',
+        'Use the returned next_cursor as the cursor of the next call. When has_more is false, this chunk already reaches the end of the chapter: process it and stop. For later chunks of the same chapter you can pass compact: true to leave out the repeated titles and term/character descriptions.',
       wfPolishPlan:
         'Before changing anything, prepare the same way the built-in polishing and proofreading do in their planning phase (they have no review phase):',
       wfImportTitle: 'Import a new book',

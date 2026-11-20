@@ -12,6 +12,7 @@ import {
   selectedTranslationText,
   type ParagraphSearchTarget,
 } from 'src/services/library-query/paragraph-scan';
+import { listChaptersBefore } from 'src/services/library-query/chunk-context';
 import { EmbeddingService } from 'src/services/embedding-service';
 import type {
   ChapterTranslationEditGroup,
@@ -73,6 +74,50 @@ function resolveScanScope(
   return { ok: true, scope: { book, targetLanguage, chapters } };
 }
 
+/**
+ * search_paragraphs 额外的范围限定：只搜某一卷（volume_id）、只搜某章之前的章节（before_chapter_id），
+ * 两者可以同时用。翻译时查前文已有的译法用后者，不会被后面还没翻译的章节占满名额，也不会剧透。
+ */
+function narrowSearchScope(
+  scope: ScanScope,
+  args: Record<string, unknown>,
+): { ok: true; chapters: Chapter[] } | { ok: false; error: AgentMcpToolError } {
+  const volumeId = readTrimmedString(args.volume_id);
+  const beforeChapterId = readTrimmedString(args.before_chapter_id);
+  if (!volumeId && !beforeChapterId) return { ok: true, chapters: scope.chapters };
+  if (readTrimmedString(args.chapter_id)) {
+    return {
+      ok: false,
+      error: agentMcpError(
+        'INVALID_ARGS',
+        'chapter_id cannot be combined with volume_id or before_chapter_id.',
+      ),
+    };
+  }
+  let chapters = scope.chapters;
+  if (beforeChapterId) {
+    if (!findChapterInBook(scope.book, beforeChapterId)) {
+      return {
+        ok: false,
+        error: agentMcpError('CHAPTER_NOT_FOUND', `Chapter not found: ${beforeChapterId}`),
+      };
+    }
+    chapters = listChaptersBefore(scope.book, beforeChapterId);
+  }
+  if (volumeId) {
+    const volume = (scope.book.volumes ?? []).find((vol) => vol.id === volumeId);
+    if (!volume) {
+      return {
+        ok: false,
+        error: agentMcpError('VOLUME_NOT_FOUND', `Volume not found: ${volumeId}`),
+      };
+    }
+    const inVolume = new Set((volume.chapters ?? []).map((ch) => ch.id));
+    chapters = chapters.filter((ch) => inVolume.has(ch.id));
+  }
+  return { ok: true, chapters };
+}
+
 function parseSearchTarget(value: unknown, fallback: ParagraphSearchTarget): ParagraphSearchTarget {
   return value === 'original' || value === 'translation' || value === 'both' ? value : fallback;
 }
@@ -95,7 +140,10 @@ async function executeSearchParagraphs(
 
   const resolved = resolveScanScope(args, ctx);
   if (!resolved.ok) return resolved.error;
-  const { book, targetLanguage, chapters } = resolved.scope;
+  const { book, targetLanguage } = resolved.scope;
+  const narrowed = narrowSearchScope(resolved.scope, args);
+  if (!narrowed.ok) return narrowed.error;
+  const { chapters } = narrowed;
 
   const searchIn = parseSearchTarget(args.search_in, 'both');
   const offset = parseNonNegativeInt(args.offset, 0);
@@ -108,6 +156,7 @@ async function executeSearchParagraphs(
       fuzzy,
       caseSensitive: args.case_sensitive === true,
       searchIn,
+      translatedOnly: args.only_translated === true,
       limit: parseLimit(args.limit, 20, 100),
       offset,
     });
@@ -454,6 +503,21 @@ export const agentMcpSearchTools: AgentMcpToolSpec[] = [
         chapter_id: {
           type: 'string',
           description: 'Limit the search to one chapter (omit to search the whole book).',
+        },
+        before_chapter_id: {
+          type: 'string',
+          description:
+            'Only search chapters that come before this chapter in reading order. Use it while translating to look up how earlier chapters rendered a word, without later (untranslated) chapters using up the limit or spoiling the plot. Cannot be combined with chapter_id.',
+        },
+        volume_id: {
+          type: 'string',
+          description:
+            'Only search chapters of this volume (can be combined with before_chapter_id, not with chapter_id).',
+        },
+        only_translated: {
+          type: 'boolean',
+          description:
+            'Only return paragraphs that already have a translation (default false). Applied before limit/offset.',
         },
         limit: { type: 'number', description: 'Maximum matches to return (default 20, max 100).' },
         offset: {

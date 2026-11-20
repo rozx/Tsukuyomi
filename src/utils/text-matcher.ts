@@ -803,12 +803,13 @@ function locateNearText(
   text: string,
   name: string,
   indices: ReadonlyArray<readonly [number, number]>,
-): string | null {
+): { text: string; start: number } | null {
   const first = indices[0];
   if (!first) return null;
   const piece = text.slice(first[0], first[1] + 1);
   const start = Math.max(0, first[0] - Math.max(0, name.indexOf(piece)));
-  return text.slice(start, start + name.length) || null;
+  const located = text.slice(start, start + name.length);
+  return located ? { text: located, start } : null;
 }
 
 const HIRAGANA_CHAR = /[\u3041-\u3096]/;
@@ -818,8 +819,15 @@ const HIRAGANA_CHAR = /[\u3041-\u3096]/;
  * 另外在恰好错一个字时再判断一条（多字、少字时片段是错位的，逐字对比没有意义）：
  * - 名称里是汉字或片假名、原文里却是平假名：多半是名称的一部分后面跟了助词
  *   （如「向こう側」之于「向こうに」），而不是错字。
+ * - 差的是首字或尾字，原文里那个字是汉字、并且与片段外侧紧挨的汉字相连：片段切开了另一个词，
+ *   只是与名称共用前缀或后缀（如「分身の術」之于「分身の記憶」的「分身の記」），而不是错字。
  */
-function isPlausibleVariant(candidate: string, name: string): boolean {
+function isPlausibleVariant(
+  located: { text: string; start: number },
+  name: string,
+  source: string,
+): boolean {
+  const candidate = located.text;
   // 片段里夹着名称里没有的标点或空白：它跨过了词的边界（如「アリア、」之于「アリシア」）
   for (const char of candidate) {
     if (!NEAR_MATCH_WORD_CHAR.test(char) && !name.includes(char)) return false;
@@ -830,9 +838,17 @@ function isPlausibleVariant(candidate: string, name: string): boolean {
     if (candidate[i] !== name[i]) mismatches.push(i);
   }
   if (mismatches.length !== 1) return true;
-  const actual = candidate[mismatches[0]!]!;
-  const expected = name[mismatches[0]!]!;
-  return !(HIRAGANA_CHAR.test(actual) && !HIRAGANA_CHAR.test(expected));
+  const at = mismatches[0]!;
+  const actual = candidate[at]!;
+  const expected = name[at]!;
+  if (HIRAGANA_CHAR.test(actual) && !HIRAGANA_CHAR.test(expected)) return false;
+  const outside =
+    at === 0
+      ? source[located.start - 1]
+      : at === name.length - 1
+        ? source[located.start + candidate.length]
+        : undefined;
+  return !(isKanjiChar(actual) && isKanjiChar(outside));
 }
 
 /** 常见的日文敬称后缀；长的排在前面，保证「ちゃん」不会被当成别的后缀 */
@@ -932,11 +948,11 @@ function findNearMatches<T>(
       const target = split ? split.stem : name;
       if (Array.from(target).length < NEAR_MATCH_MIN_LENGTH) continue;
       const hit = fuse.search(target, { limit: 1 })[0];
-      const matchedText = hit && locateNearText(text, target, hit.matches?.[0]?.indices ?? []);
-      if (!matchedText) continue;
+      const located = hit && locateNearText(text, target, hit.matches?.[0]?.indices ?? []);
+      if (!located) continue;
       // 那一段本身是另一个已知名称（是另一个词，不是错字），或不像是写错了字：不算
-      if (knownNames.has(matchedText) || !isPlausibleVariant(matchedText, target)) continue;
-      matches.push({ item, name, matchedText });
+      if (knownNames.has(located.text) || !isPlausibleVariant(located, target, text)) continue;
+      matches.push({ item, name, matchedText: located.text });
       break;
     }
   }

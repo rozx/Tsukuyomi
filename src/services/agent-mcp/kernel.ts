@@ -22,6 +22,9 @@ import {
 } from './types';
 import { getAgentMcpPrompt, listAgentMcpPrompts } from './prompts';
 
+/** 排队时最多等前一个调用多久；远小于桌面端 60 秒与中继 65 秒的调用超时 */
+const DEFAULT_WRITE_QUEUE_MAX_WAIT_MS = 15_000;
+
 export function isToolAllowedByPermission(
   required: AgentMcpPermissionMode,
   current: AgentMcpPermissionMode,
@@ -87,6 +90,8 @@ export interface CreateAgentMcpKernelOptions {
   onWriteNotify?: (info: AgentMcpWriteNotification) => void;
   navigate?: (path: string) => Promise<void> | void;
   getCurrentPath?: () => string | null;
+  /** 按书排队的写入最多等前一个调用多久（毫秒），测试用 */
+  writeQueueMaxWaitMs?: number;
 }
 
 export interface AgentMcpKernel {
@@ -110,6 +115,33 @@ export function createAgentMcpKernel(options: CreateAgentMcpKernelOptions): Agen
   }
 
   const getCurrentConfig = () => useSettingsStore().agentMcp;
+
+  /**
+   * 标记了 serializeWritesPerBook 的工具对同一本书按调用顺序一个接一个执行（整个 execute，
+   * 包括写入前读取的快照）：Agent 并发提交同一章的多批译文时，每次写入后的书库刷新与返回的
+   * 剩余计数都按顺序反映前面的写入。前一个调用迟迟不结束时最多等 writeQueueMaxWaitMs，
+   * 之后照常执行（存储层本身能处理并发写入），避免一个卡住的调用堵住这本书之后的所有写入。
+   */
+  const writeQueueMaxWaitMs = options.writeQueueMaxWaitMs ?? DEFAULT_WRITE_QUEUE_MAX_WAIT_MS;
+  const writeQueues = new Map<string, Promise<unknown>>();
+  const waitAtMost = (previous: Promise<unknown>): Promise<void> =>
+    new Promise((resolve) => {
+      const timer = setTimeout(resolve, writeQueueMaxWaitMs);
+      void previous.then(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  const runInBookOrder = <T>(key: string, task: () => Promise<T>): Promise<T> => {
+    const previous = writeQueues.get(key);
+    const run = previous ? waitAtMost(previous).then(task) : task();
+    const tail = run.catch(() => undefined);
+    writeQueues.set(key, tail);
+    void tail.then(() => {
+      if (writeQueues.get(key) === tail) writeQueues.delete(key);
+    });
+    return run;
+  };
 
   const listTools = (channel: ExternalAgentChannel): AgentMcpToolDescriptor[] => {
     const mode = getCurrentConfig().permissionMode;
@@ -232,7 +264,12 @@ export function createAgentMcpKernel(options: CreateAgentMcpKernelOptions): Agen
     };
 
     try {
-      const output = await spec.execute(args, execContext);
+      const execute = () => Promise.resolve(spec.execute(args, execContext));
+      const bookKey = resolveBookId(args.book_id as string | undefined);
+      const output =
+        spec.serializeWritesPerBook && bookKey.ok
+          ? await runInBookOrder(bookKey.bookId, execute)
+          : await execute();
       if (isAgentMcpToolError(output)) {
         return fail('error', output.code, output.message, output.details);
       }

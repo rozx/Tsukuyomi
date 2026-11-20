@@ -206,6 +206,86 @@ describe('AgentMcpKernel', () => {
     expect(failed.resultSummary).toBeUndefined();
   });
 
+  describe('章节写入按书排队', () => {
+    const started: string[] = [];
+    const releases = new Map<string, () => void>();
+    const execute = (args: Record<string, unknown>) => {
+      const label = String(args.label);
+      started.push(label);
+      return new Promise((resolve, reject) => {
+        releases.set(label, () => (args.fail ? reject(new Error('boom')) : resolve({ label })));
+      });
+    };
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const createQueueKernel = (writeQueueMaxWaitMs?: number) =>
+      createAgentMcpKernel({
+        ...(writeQueueMaxWaitMs !== undefined ? { writeQueueMaxWaitMs } : {}),
+        tools: [
+          makeTool({
+            name: 'queued_write',
+            permission: 'translate_and_edit',
+            readOnlyHint: false,
+            serializeWritesPerBook: true,
+            execute,
+          }),
+          makeTool({
+            name: 'plain_write',
+            permission: 'translate_and_edit',
+            readOnlyHint: false,
+            execute,
+          }),
+          makeTool({ name: 'r_tool', execute }),
+        ],
+      });
+
+    beforeEach(async () => {
+      started.length = 0;
+      releases.clear();
+      await useSettingsStore().updateAgentMcpSettings({ permissionMode: 'translate_and_edit' });
+    });
+
+    it('标记了的写入工具对同一本书按调用顺序一个接一个执行；不同书、其他工具不排队', async () => {
+      const kernel = createQueueKernel();
+      const call = (tool: string, args: Record<string, unknown>) =>
+        kernel.callTool(tool, args, { channel: 'desktop-mcp' });
+
+      const first = call('queued_write', { book_id: 'A', label: 'a1', fail: true });
+      const second = call('queued_write', { book_id: 'A', label: 'a2' });
+      const otherBook = call('queued_write', { book_id: 'B', label: 'b1' });
+      const plain = call('plain_write', { book_id: 'A', label: 'p1' });
+      const read = call('r_tool', { book_id: 'A', label: 'r1' });
+      await flush();
+      expect([...started].sort()).toEqual(['a1', 'b1', 'p1', 'r1']);
+
+      // 前一个失败也不会卡住后面的写入
+      releases.get('a1')!();
+      expect((await first).isError).toBe(true);
+      await flush();
+      expect(started).toContain('a2');
+
+      for (const label of ['a2', 'b1', 'p1', 'r1']) releases.get(label)!();
+      const results = await Promise.all([second, otherBook, plain, read]);
+      expect(results.map((r) => r.isError)).toEqual([false, false, false, false]);
+    });
+
+    it('前一个调用迟迟不结束时，后面的调用最多等待一段时间就照常执行，不会被一直卡住', async () => {
+      const kernel = createQueueKernel(20);
+      const call = (label: string) =>
+        kernel.callTool('queued_write', { book_id: 'A', label }, { channel: 'desktop-mcp' });
+
+      void call('stuck');
+      const next = call('next');
+      await flush();
+      expect(started).toEqual(['stuck']);
+
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(started).toEqual(['stuck', 'next']);
+      releases.get('next')!();
+      expect((await next).isError).toBe(false);
+      releases.get('stuck')!();
+    });
+  });
+
   it('工作流模板带上与站内相同的规则，并且不再让 Agent 把剧情记进记忆', () => {
     const kernel = createAgentMcpKernel({ tools: [] });
     const text = (name: string) =>

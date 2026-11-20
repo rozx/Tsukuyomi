@@ -21,6 +21,8 @@ export const DESKTOP_MCP_LONG_OPERATION_TOOLS = [
   'apply_book_updates',
   // 不指定章节时要读全书正文
   'search_paragraphs',
+  // 各卷翻译进度要读全书正文
+  'get_book',
   'count_occurrences',
   'replace_in_translations',
 ] as const;

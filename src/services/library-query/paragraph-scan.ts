@@ -53,6 +53,8 @@ export interface ParagraphSearchQuery {
   fuzzy?: boolean;
   caseSensitive?: boolean;
   searchIn: ParagraphSearchTarget;
+  /** 只要已有译文（当前选用的译文非空）的段落；在计数分页之前过滤 */
+  translatedOnly?: boolean;
   limit: number;
   /** 跳过前面多少条命中 */
   offset: number;
@@ -207,16 +209,13 @@ export async function searchParagraphs(
     const matched = matchChapterParagraphs(paragraphs, language, query, exact);
     for (let index = 0; index < paragraphs.length; index++) {
       if (!matched.has(index)) continue;
+      const paragraph = paragraphs[index]!;
+      const translation = selectedTranslationText(paragraph, language);
+      if (query.translatedOnly && !translation.trim()) continue;
       matchedSoFar += 1;
       if (matchedSoFar <= query.offset) continue;
       if (hits.length >= query.limit) return { hits, hasMore: true };
-      const paragraph = paragraphs[index]!;
-      hits.push({
-        chapter,
-        index,
-        paragraph,
-        translation: selectedTranslationText(paragraph, language),
-      });
+      hits.push({ chapter, index, paragraph, translation });
     }
   }
   return { hits, hasMore: false };

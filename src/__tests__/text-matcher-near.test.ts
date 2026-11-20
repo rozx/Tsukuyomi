@@ -116,6 +116,25 @@ describe('近似匹配：原文写法与名称非常接近但不完全相同', (
     ]);
   });
 
+  it('差的是首尾那个字、并且它和外侧紧挨的汉字连成另一个词时不算（结构相同的前缀或后缀）', () => {
+    // 「分身の術」与「分身の記憶」只是共用「分身の」：「記」属于后面的「記憶」
+    expect(findNearTermsInText('消えた分身の記憶から', [term('ninja', '分身の術')])).toEqual([]);
+    // 首字同理：「紅」属于前面的「真紅」
+    expect(findNearTermsInText('真紅の騎士が現れた。', [term('red', '赤の騎士')])).toEqual([]);
+    // 差的那个字外侧不是汉字时仍然算（可能是写错）
+    expect(
+      findNearTermsInText('分身の技を使った。', [term('ninja', '分身の術')]).map(
+        (m) => m.matchedText,
+      ),
+    ).toEqual(['分身の技']);
+    // 片假名名称写错最后一个字、后面紧跟敬称汉字时仍然算
+    expect(
+      findNearCharactersInText('アリシャ様が来た。', [character('alicia', 'アリシア')]).map(
+        (m) => m.matchedText,
+      ),
+    ).toEqual(['アリシャ']);
+  });
+
   it('已经被精确匹配认出的条目不再列为近似匹配', () => {
     // 全名带分隔符：精确匹配能认出「アリシア・ラ・アエラス」，近似匹配不应再拿它去碰别的片段
     const chars = [character('alicia', 'アリシア・ラ・アエラス')];

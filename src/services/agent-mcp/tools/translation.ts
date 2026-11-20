@@ -1,6 +1,6 @@
 import { fuzzyMatchIndexes } from 'src/services/library-query/keyword-match';
 import type { AppLocale } from 'src/models/locale';
-import type { Chapter, Paragraph } from 'src/models/novel';
+import type { Chapter, CharacterSetting, Paragraph, Terminology } from 'src/models/novel';
 import type { AgentMcpWriteMode } from 'src/models/settings';
 import {
   buildChunks,
@@ -147,6 +147,20 @@ function formatChapterTitle(title: ChapterTitleRef) {
     title_original: title.original,
     title_translation: title.translation,
   };
+}
+
+/** compact 模式下术语只给名称与译法：同一章的后续块里这些说明都是重复的 */
+function formatChunkTerm(term: Terminology, language: AppLocale, compact: boolean) {
+  const full = formatTermSummary(term, language);
+  return compact ? { id: full.id, name: full.name, translation: full.translation } : full;
+}
+
+/** compact 模式下角色只给名称、译法与别名译法，省略性别、描述与说话风格 */
+function formatChunkCharacter(char: CharacterSetting, language: AppLocale, compact: boolean) {
+  const full = formatCharacterSummary(char, language);
+  return compact
+    ? { id: full.id, name: full.name, translation: full.translation, aliases: full.aliases }
+    : full;
 }
 
 function resolveBatchItemId(
@@ -326,6 +340,7 @@ async function executeGetTranslationChunk(
     args.task_type === 'polish' || args.task_type === 'proofreading'
       ? args.task_type
       : 'translation';
+  const compact = args.compact === true;
 
   const allParagraphs = await loadChapterParagraphs(chapter);
   const progress = countChapterProgress(allParagraphs, targetLanguage);
@@ -364,15 +379,20 @@ async function executeGetTranslationChunk(
     chapter_total_count: progress.total,
     chapter_translated_count: progress.translated,
     remaining_untranslated_count: progress.remainingUntranslated,
-    recent_chapter_titles: collectRecentChapterTitles(previousChapters, targetLanguage).map(
-      formatChapterTitle,
-    ),
+    ...(compact
+      ? {}
+      : {
+          recent_chapter_titles: collectRecentChapterTitles(previousChapters, targetLanguage).map(
+            formatChapterTitle,
+          ),
+        }),
   };
 
   if (candidates.length === 0) {
     return {
       ...basePayload,
       completed: true,
+      has_more: false,
       paragraphs: [],
       context_before: [],
       previous_chapter_tail: null,
@@ -426,10 +446,16 @@ async function executeGetTranslationChunk(
           targetLanguage,
         )
       : null;
+  const nextInOrder = findNextCursor(allParagraphs, lastOriginalIdx, mode, targetLanguage);
 
   return {
     ...basePayload,
     completed: false,
+    // 这一块之后是否还有下一块：all 模式看章末，untranslated 模式看本块之外是否还有未译段落
+    has_more:
+      mode === 'all'
+        ? nextInOrder !== null
+        : progress.remainingUntranslated > chunkParagraphs.length,
     paragraphs: chunkParagraphs.map((p) => ({
       index: indexById.get(p.id) ?? 0,
       id: p.id,
@@ -442,17 +468,17 @@ async function executeGetTranslationChunk(
     previous_chapter_tail: previousTail
       ? { ...formatChapterTitle(previousTail.title), paragraphs: previousTail.paragraphs }
       : null,
-    matched_terms: matchedTerms.map((term) => formatTermSummary(term, targetLanguage)),
+    matched_terms: matchedTerms.map((term) => formatChunkTerm(term, targetLanguage, compact)),
     matched_characters: matchedCharacters.map((char) =>
-      formatCharacterSummary(char, targetLanguage),
+      formatChunkCharacter(char, targetLanguage, compact),
     ),
     // 原文写法与名称接近但不完全相同（错字、异写）：不是确定命中，由 Agent 自行确认
     possible_terms: nearTerms.map((match) => ({
-      ...formatTermSummary(match.item, targetLanguage),
+      ...formatChunkTerm(match.item, targetLanguage, compact),
       text_in_source: match.matchedText,
     })),
     possible_characters: nearCharacters.map((match) => ({
-      ...formatCharacterSummary(match.item, targetLanguage),
+      ...formatChunkCharacter(match.item, targetLanguage, compact),
       text_in_source: match.matchedText,
     })),
     memories: selectedMemories.memories.map((m) => ({
@@ -461,10 +487,7 @@ async function executeGetTranslationChunk(
       content: m.content,
     })),
     // untranslated 模式返回当前最早未翻索引，确保即使调用方直接透传该游标也不会跳过本块中提交失败的段落
-    next_cursor:
-      mode === 'untranslated'
-        ? progress.firstUntranslatedIndex
-        : findNextCursor(allParagraphs, lastOriginalIdx, mode, targetLanguage),
+    next_cursor: mode === 'untranslated' ? progress.firstUntranslatedIndex : nextInOrder,
   };
 }
 
@@ -559,7 +582,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
   {
     name: 'get_translation_chunk',
     description:
-      'Fetch the next chunk of paragraphs to translate or review, bundled with preceding translated context (context_before; for the first chunk of a chapter, previous_chapter_tail carries the end of the previous chapter instead), recent_chapter_titles for title formatting, matched terms and characters (plus possible_terms / possible_characters: near matches where the source spelling differs slightly, e.g. a typo; text_in_source shows the spelling, confirm before applying), top relevant memories, special instructions, target language, and continuation cursor.',
+      'Fetch the next chunk of paragraphs to translate or review, bundled with preceding translated context (context_before; for the first chunk of a chapter, previous_chapter_tail carries the end of the previous chapter instead), recent_chapter_titles for title formatting, matched terms and characters (plus possible_terms / possible_characters: near matches where the source spelling differs slightly, e.g. a typo; text_in_source shows the spelling, confirm before applying), top relevant memories, special instructions, target language, and continuation cursor. has_more tells whether another chunk follows this one; completed is true only when the call returned no paragraphs (nothing left in this mode), so always process the returned paragraphs first.',
     category: 'translation',
     permission: 'read_only',
     readOnlyHint: true,
@@ -598,6 +621,11 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
           enum: ['translation', 'polish', 'proofreading'],
           description: 'Which special instruction set to resolve (default translation).',
         },
+        compact: {
+          type: 'boolean',
+          description:
+            'Smaller response for follow-up chunks of a chapter you already started (default false): omits recent_chapter_titles and reduces terms/characters to name, translation (and character aliases), dropping descriptions and speaking styles. Paragraphs, context, memories and special instructions are unchanged.',
+        },
       },
       required: ['chapter_id'],
     },
@@ -606,11 +634,12 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
   {
     name: 'submit_translations',
     description:
-      'Validate and persist a batch of paragraph translations (and optional chapter title translation) to the local library, refreshing the live UI immediately.',
+      'Validate and persist a batch of paragraph translations (and optional chapter title translation) to the local library, refreshing the live UI immediately. Submit about 30-50 paragraphs per call; for longer chapters split into batches and send them one after another, waiting for each result. Submissions to the same book are applied one at a time, so parallel calls gain nothing.',
     category: 'translation',
     permission: 'translate_and_edit',
     readOnlyHint: false,
     requiresBookStore: true,
+    serializeWritesPerBook: true,
     inputSchema: {
       type: 'object',
       properties: {
@@ -791,6 +820,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
     permission: 'translate_and_edit',
     readOnlyHint: false,
     requiresBookStore: true,
+    serializeWritesPerBook: true,
     inputSchema: {
       type: 'object',
       properties: {

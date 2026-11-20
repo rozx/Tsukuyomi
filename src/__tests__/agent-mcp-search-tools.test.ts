@@ -314,6 +314,117 @@ describe('AgentMcp 全书搜索与批量替换工具', () => {
       expect(res.isError).toBe(true);
       expect(res.errorCode).toBe('INVALID_ARGS');
     });
+
+    it('only_translated 只返回已有译文的段落，并且先过滤再分页', async () => {
+      const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
+      const search = async (extra: Record<string, unknown>) => {
+        const res = await kernel.callTool(
+          'search_paragraphs',
+          { book_id: BOOK_ID, search_in: 'original', ...extra },
+          { channel: 'desktop-mcp' },
+        );
+        expect(res.isError, res.text).toBe(false);
+        return res.data as { matches: SearchMatch[]; has_more: boolean; next_offset: number };
+      };
+
+      expect((await search({ query: '風' })).matches.map((m) => m.id)).toEqual(['p1000003']);
+      expect((await search({ query: '風', only_translated: true })).matches).toEqual([]);
+
+      // 未译的 p1000003 不占名额：第二页从 ch-2 开始
+      const first = await search({ query: '。', only_translated: true, limit: 2 });
+      expect(first.matches.map((m) => m.id)).toEqual(['p1000001', 'p1000002']);
+      expect(first.has_more).toBe(true);
+      const second = await search({
+        query: '。',
+        only_translated: true,
+        limit: 2,
+        offset: first.next_offset,
+      });
+      expect(second.matches.map((m) => m.id)).toEqual(['p2000001', 'p2000002']);
+      expect(second.has_more).toBe(true);
+    });
+
+    it('before_chapter_id 只搜该章之前的章节（查前文已有译法、避免剧透）', async () => {
+      const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
+      const before2 = await kernel.callTool(
+        'search_paragraphs',
+        { book_id: BOOK_ID, query: '月光石', before_chapter_id: 'ch-2' },
+        { channel: 'desktop-mcp' },
+      );
+      expect(before2.isError, before2.text).toBe(false);
+      const data = before2.data as { matches: SearchMatch[]; searched_chapter_count: number };
+      expect(data.matches.map((m) => m.id)).toEqual(['p1000001', 'p1000002']);
+      expect(data.searched_chapter_count).toBe(1);
+
+      const before1 = await kernel.callTool(
+        'search_paragraphs',
+        { book_id: BOOK_ID, query: '月光石', before_chapter_id: 'ch-1' },
+        { channel: 'desktop-mcp' },
+      );
+      expect(before1.data).toMatchObject({ matches: [], searched_chapter_count: 0 });
+
+      const missing = await kernel.callTool(
+        'search_paragraphs',
+        { book_id: BOOK_ID, query: '月光石', before_chapter_id: 'nope' },
+        { channel: 'desktop-mcp' },
+      );
+      expect(missing.errorCode).toBe('CHAPTER_NOT_FOUND');
+
+      const conflicting = await kernel.callTool(
+        'search_paragraphs',
+        { book_id: BOOK_ID, query: '月光石', chapter_id: 'ch-1', before_chapter_id: 'ch-2' },
+        { channel: 'desktop-mcp' },
+      );
+      expect(conflicting.errorCode).toBe('INVALID_ARGS');
+    });
+
+    it('volume_id 只搜该卷；可与 before_chapter_id 一起用', async () => {
+      const now = new Date();
+      await useBooksStore().addBook({
+        id: 'book-search-volumes',
+        title: '分卷搜索',
+        targetLanguage: 'zh-CN',
+        volumes: [
+          {
+            id: 'vol-a',
+            title: '第一卷',
+            chapters: [
+              chapter('va-1', '一', [paragraph('pa000001', '塔が見えた。', '看见了塔。')]),
+            ],
+          },
+          {
+            id: 'vol-b',
+            title: '第二卷',
+            chapters: [
+              chapter('vb-1', '二', [paragraph('pb000001', '塔に登った。', '登上了塔。')]),
+              chapter('vb-2', '三', [paragraph('pb000002', '塔が崩れた。')]),
+            ],
+          },
+        ],
+        createdAt: now,
+        lastEdited: now,
+      });
+      const kernel = createAgentMcpKernel({ tools: agentMcpSearchTools });
+      const ids = async (extra: Record<string, unknown>) => {
+        const res = await kernel.callTool(
+          'search_paragraphs',
+          { book_id: 'book-search-volumes', query: '塔', ...extra },
+          { channel: 'desktop-mcp' },
+        );
+        expect(res.isError, res.text).toBe(false);
+        return (res.data as { matches: SearchMatch[] }).matches.map((m) => m.id);
+      };
+
+      expect(await ids({ volume_id: 'vol-b' })).toEqual(['pb000001', 'pb000002']);
+      expect(await ids({ volume_id: 'vol-b', before_chapter_id: 'vb-2' })).toEqual(['pb000001']);
+
+      const missing = await kernel.callTool(
+        'search_paragraphs',
+        { book_id: 'book-search-volumes', query: '塔', volume_id: 'nope' },
+        { channel: 'desktop-mcp' },
+      );
+      expect(missing.errorCode).toBe('VOLUME_NOT_FOUND');
+    });
   });
 
   describe('count_occurrences', () => {

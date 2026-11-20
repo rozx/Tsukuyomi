@@ -66,6 +66,8 @@ export interface AgentMcpToolSpec {
   webMcpOnly?: boolean;
   /** 是否要求书库 Store 已加载完成 */
   requiresBookStore?: boolean;
+  /** 对同一本书的调用按顺序一个接一个执行（章节译文写入用） */
+  serializeWritesPerBook?: boolean;
   inputSchema: AgentMcpToolSchema;
   execute: (args: Record<string, unknown>, context: AgentMcpExecutionContext) => unknown;
 }

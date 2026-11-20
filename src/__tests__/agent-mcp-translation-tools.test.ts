@@ -678,6 +678,82 @@ describe('AgentMcp translation tools', () => {
     expect(pastEndData.paragraphs.map((p) => p.id)).toEqual(['p0000003', 'p0000004']);
   });
 
+  it('get_translation_chunk 用 has_more 说明这一块之后是否还有下一块（mode="all" 取到章末时为 false）', async () => {
+    const book = createTestBook();
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    type Chunk = {
+      completed: boolean;
+      has_more: boolean;
+      next_cursor: number | null;
+      paragraphs: Array<{ id: string }>;
+    };
+    const chunk = async (args: Record<string, unknown>) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-1', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as Chunk;
+    };
+
+    // 校对时一次取完整章：已到章末，没有下一块
+    const whole = await chunk({ mode: 'all', chunk_size: 20000 });
+    expect(whole.paragraphs).toHaveLength(4);
+    expect(whole.next_cursor).toBeNull();
+    expect(whole.has_more).toBe(false);
+    // completed 只在这一次没有返回段落时为 true，本块仍需处理
+    expect(whole.completed).toBe(false);
+
+    const firstOfMany = await chunk({ mode: 'all', chunk_size: 1 });
+    expect(firstOfMany.paragraphs).toHaveLength(1);
+    expect(firstOfMany.has_more).toBe(true);
+    const last = await chunk({ mode: 'all', chunk_size: 1, cursor: 3 });
+    expect(last.paragraphs.map((p) => p.id)).toEqual(['p0000004']);
+    expect(last.has_more).toBe(false);
+
+    // untranslated 模式：本块之外还有未译段落时为 true
+    expect((await chunk({ chunk_size: 1 })).has_more).toBe(true);
+    expect((await chunk({ chunk_size: 20000 })).has_more).toBe(false);
+  });
+
+  it('get_translation_chunk 的 compact 模式省略最近章节标题，术语与角色只给名称和译法', async () => {
+    const book = createTestBook();
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const call = async (args: Record<string, unknown>) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-1', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as Record<string, unknown> & {
+        matched_terms: Array<Record<string, unknown>>;
+        matched_characters: Array<Record<string, unknown>>;
+        paragraphs: unknown[];
+      };
+    };
+
+    const full = await call({});
+    expect(full).toHaveProperty('recent_chapter_titles');
+    expect(full.matched_characters[0]).toHaveProperty('speaking_style', '礼貌温柔');
+    expect(full.matched_terms[0]).toHaveProperty('description', '发光矿石');
+
+    const compact = await call({ compact: true });
+    expect(compact).not.toHaveProperty('recent_chapter_titles');
+    expect(compact.matched_terms).toEqual([
+      { id: 'term-1', name: '月光石', translation: '月光石' },
+    ]);
+    expect(compact.matched_characters).toEqual([
+      { id: 'char-1', name: 'アリス', translation: '爱丽丝', aliases: [] },
+    ]);
+    // 段落、特殊指令等翻译必需的内容不受影响
+    expect(compact.paragraphs).toEqual(full.paragraphs);
+    expect(compact.special_instructions).toBe(full.special_instructions);
+  });
+
   it('get_chapter_paragraphs 与 update_chapter_title 正常工作', async () => {
     const book = createTestBook();
     await useBooksStore().addBook(book);

@@ -121,7 +121,7 @@ export default {
       wfTranslate3:
         '逐段翻譯：一個原文段落對應一個譯文段落，不合併、不拆分、不省略；術語和角色名使用給出的譯法。',
       wfTranslate4:
-        '呼叫 submit_translations，paragraphs 裡每項包含 paragraph_id 和 translated_text。書籍啟用了原文前綴校驗時，還要帶上 original_text_prefix（對應原文開頭 3~20 個字元）。翻譯章節第一塊時可以同時用 chapter_title_translation 提交章節標題譯文；model_label 填你使用的模型名稱。',
+        '呼叫 submit_translations，paragraphs 裡每項包含 paragraph_id 和 translated_text。書籍啟用了原文前綴校驗時，還要帶上 original_text_prefix（對應原文開頭 3~20 個字元）。翻譯章節第一塊時可以同時用 chapter_title_translation 提交章節標題譯文；model_label 填你使用的模型名稱。每次提交 30~50 段左右；段落更多時分成幾批，等上一批回傳後再提交下一批，同一章不要並行提交。',
       wfTranslate5:
         '查看回傳的 failed_items：只修正並重提失敗的段落。remaining_untranslated_count 大於 0 時回到第 1 步，等於 0 時本章完成。',
       wfTranslatePlan:
@@ -134,7 +134,8 @@ export default {
       wfPolish2: '只對確實需要改進的段落呼叫 submit_translations，沒有改動的段落不要提交。',
       wfPolish3:
         '預設會新增一個譯文版本並選用它；只有使用者明確要求直接改寫目前版本時才把 write_mode 設為 "overwrite"。',
-      wfPolish4: '用回傳的 next_cursor 作為下一次呼叫的 cursor，直到章節結束。',
+      wfPolish4:
+        '用回傳的 next_cursor 作為下一次呼叫的 cursor；has_more 為 false 時這一塊已經到章末，處理完就結束。續取同一章的後續塊時可以加上 compact: true，省略重複的標題與術語、角色說明。',
       wfPolishPlan: '修改之前先做準備，與內建潤色、校對的規劃階段相同（潤色與校對沒有複核階段）：',
       wfImportTitle: '匯入新書',
       wfImport1:

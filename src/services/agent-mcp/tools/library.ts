@@ -140,6 +140,36 @@ async function countChapterStats(chapters: readonly Chapter[], language: AppLoca
   return stats;
 }
 
+type ChapterStats = Awaited<ReturnType<typeof countChapterStats>>;
+
+/**
+ * 一卷的翻译进度：已译完、译了一部分、还没开始的章节数，以及按顺序第一个没译完的章节。
+ * 没有正文的章节不计入任何一类。
+ */
+function summarizeVolumeProgress(volume: Volume, stats: ChapterStats) {
+  let translated = 0;
+  let inProgress = 0;
+  let untranslated = 0;
+  let firstUntranslated: { chapter_id: string; title_original: string } | null = null;
+  for (const ch of volume.chapters ?? []) {
+    const stat = stats.get(ch.id);
+    if (!stat || stat.paragraph_count === 0) continue;
+    if (stat.translated_count >= stat.paragraph_count) {
+      translated += 1;
+      continue;
+    }
+    if (stat.translated_count > 0) inProgress += 1;
+    else untranslated += 1;
+    firstUntranslated ??= { chapter_id: ch.id, title_original: titleOriginal(ch.title) };
+  }
+  return {
+    translated_chapter_count: translated,
+    in_progress_chapter_count: inProgress,
+    untranslated_chapter_count: untranslated,
+    first_untranslated_chapter: firstUntranslated,
+  };
+}
+
 /**
  * 从参数里取出要修改的书籍信息。只包含调用方传入的字段；
  * 空字符串或空数组表示清空该字段。
@@ -206,7 +236,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
   {
     name: 'get_book',
     description:
-      'Get metadata, volumes, chapters, and per-chapter translation progress for a book. For long books, narrow the chapter list with recent_chapters (only the latest N chapters), volume_id (one volume), or include_chapters=false (volume outline only) instead of fetching the whole table of contents.',
+      'Get metadata, volumes, chapters, and per-chapter translation progress for a book. Each volume also reports translated_chapter_count, in_progress_chapter_count, untranslated_chapter_count (chapters without text are not counted) and first_untranslated_chapter, so include_chapters=false is enough to see where translation stands. For long books, narrow the chapter list with recent_chapters (only the latest N chapters), volume_id (one volume), or include_chapters=false (volume outline only) instead of fetching the whole table of contents.',
     category: 'library',
     permission: 'read_only',
     readOnlyHint: true,
@@ -234,7 +264,11 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
         include_chapter_stats: {
           type: 'boolean',
           description:
-            'Whether to compute paragraph/translated counts for each listed chapter (default true).',
+            'Whether to compute paragraph/translated counts for each listed chapter and the per-volume progress (default true). This reads every chapter of the book; set false for a fast structure-only listing.',
+        },
+        include_urls: {
+          type: 'boolean',
+          description: 'Include each listed chapter source web_url (default false).',
         },
         include_description: {
           type: 'boolean',
@@ -259,10 +293,12 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
         includeChapters: args.include_chapters !== false,
       });
       const includeStats = args.include_chapter_stats !== false;
-      // 进度统计要读正文：分批读取，长篇不必一章一章单独读
+      const includeUrls = args.include_urls === true;
+      // 进度统计要读正文：分批读取，长篇不必一章一章单独读。
+      // 各卷的进度按整卷统计，所以即使只列出部分章节也要读全书
       const stats = includeStats
         ? await countChapterStats(
-            volumes.flatMap((vol) => vol.chapters ?? []).filter((ch) => listed.has(ch.id)),
+            volumes.flatMap((vol) => vol.chapters ?? []),
             targetLanguage,
           )
         : null;
@@ -278,7 +314,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
             title_original: chTitle.original,
             title_translation: chTitle.translation,
             ...(stats?.get(ch.id) ?? {}),
-            ...(ch.webUrl ? { web_url: ch.webUrl } : {}),
+            ...(includeUrls && ch.webUrl ? { web_url: ch.webUrl } : {}),
           });
         }
         const volTitle = formatTitle(vol.title, targetLanguage);
@@ -287,6 +323,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
           title_original: volTitle.original,
           title_translation: volTitle.translation,
           chapter_count: vol.chapters?.length ?? 0,
+          ...(stats ? summarizeVolumeProgress(vol, stats) : {}),
           // 没有列出章节的卷只给概览，不带空的 chapters 数组
           ...(args.include_chapters !== false ? { chapters: formattedChapters } : {}),
         });
