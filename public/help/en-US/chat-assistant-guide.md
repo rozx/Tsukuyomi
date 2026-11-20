@@ -27,7 +27,7 @@ Tsukuyomi is a calm, learned priestess of the moon. Her normally composed tone o
 ### Open or close {#chat-assistant-guide-section-4}
 
 - Use the right-panel button in the toolbar (column icon / ✕).
-- The panel initially shows Tsukuyomi. Select Translation progress to change panels.
+- Translation, polishing, and proofreading progress is not shown here. Open the task center in the top bar instead.
 - Drag the left edge to resize.
 
 ### Send a message {#chat-assistant-guide-section-5}

@@ -9,11 +9,9 @@ import {
 } from '../constants/ai';
 import { formatTaskDuration } from '../utils/time-utils';
 import { chunkSeparatorLabel, formatThinkingMessage } from '../composables/useThinkingFormatter';
-import { useMobilePanelData } from '../composables/translation-progress/useMobilePanelData';
 import { useAIProcessingStore, type AIProcessingTask } from '../stores/ai-processing';
 import { useSettingsStore } from '../stores/settings';
 import type { AppLocale } from '../models/locale';
-import { useThinkingTaskCard } from '../composables/ai/useThinkingTaskCard';
 import { useToastHistory } from '../composables/useToastHistory';
 import { useToastHistoryStore } from '../stores/toast-history';
 
@@ -47,51 +45,23 @@ describe('任务时长', () => {
   });
 });
 
-describe('手机端进度派生数据', () => {
-  function build(task: Partial<AIProcessingTask>, locale: AppLocale) {
-    const lang = ref<AppLocale>(locale);
-    const data = useMobilePanelData({
-      currentTask: computed(
-        () =>
-          ({
-            id: 't',
-            type: 'translation',
-            status: 'processing',
-            startTime: 0,
-            ...task,
-          }) as AIProcessingTask,
-      ),
-      now: ref(30_000),
-      getWorkingChapterLabel: () => null,
-      locale: computed(() => lang.value),
-    });
-    return { data, lang };
+describe('任务中心文案', () => {
+  function flatten(value: unknown, out: string[] = []): string[] {
+    if (typeof value === 'string') out.push(value);
+    else if (value && typeof value === 'object') {
+      for (const child of Object.values(value)) flatten(child, out);
+    }
+    return out;
   }
 
-  it('英文界面的状态、ETA、统计与图例均无中文', async () => {
-    const { data, lang } = build(
-      { workflowStatus: 'working', progress: { current: 1, total: 4, message: '' } },
-      'en-US',
-    );
-    expect(data.mobileWorkflowLabel.value).toBe('Translating');
-    expect(data.mobileEta.value).toBe('~ 1m 30s');
-    const labels = [
-      ...data.mobileStatTotals.value.map((s) => `${s.label}${s.value}`),
-      ...data.mobileLegend.value.map((l) => l.label),
-    ].join('|');
-    expect(CJK.test(labels)).toBe(false);
-    expect(data.mobileStatTotals.value[3]!.value).toBe('30.0s/para');
-
-    lang.value = 'zh-CN';
-    await nextTick();
-    expect(data.mobileWorkflowLabel.value).toBe('翻译中');
-    expect(data.mobileEta.value).toBe('~ 1 分 30 秒');
-    expect(data.mobileLegend.value.map((l) => l.label)).toEqual(['成功', '进行中', '排队', '失败']);
-  });
-
-  it('终止状态标签', () => {
-    expect(build({ status: 'error' }, 'en-US').data.mobileWorkflowLabel.value).toBe('Failed');
-    expect(build({ status: 'end' }, 'zh-CN').data.mobileEta.value).toBe('已结束');
+  it('英文资源不含中日文字符，三种语言的键一致', async () => {
+    const en = (await import('../i18n/en-US/task-queue-ui')).default.taskQueueUi;
+    const zhCN = (await import('../i18n/zh-CN/task-queue-ui')).default.taskQueueUi;
+    const zhTW = (await import('../i18n/zh-TW/task-queue-ui')).default.taskQueueUi;
+    expect(CJK.test(flatten(en).join('|'))).toBe(false);
+    const keys = (value: object) => JSON.stringify(Object.keys(value).sort());
+    expect(keys(zhCN)).toBe(keys(en));
+    expect(keys(zhTW)).toBe(keys(en));
   });
 });
 
@@ -124,14 +94,7 @@ describe('思考流分块分隔条', () => {
   });
 });
 
-describe('思考卡片与消息历史', () => {
-  it('思考卡片的任务类型与时长按界面语言', () => {
-    useSettingsStore().settings.uiLocale = 'en-US';
-    const card = useThinkingTaskCard(() => 70_000, {});
-    expect(card.typeLabel('assistant')).toBe('Assistant');
-    expect(card.formatDuration(0)).toBe('1m 10s');
-  });
-
+describe('消息历史', () => {
   it('消息历史的时间是固定标签，历史消息文本原样保留', async () => {
     useSettingsStore().settings.uiLocale = 'en-US';
     const history = useToastHistory();

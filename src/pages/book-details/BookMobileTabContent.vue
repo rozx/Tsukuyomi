@@ -12,6 +12,8 @@ import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { Chapter, Volume } from 'src/models/novel';
 import BookMobileChapterTree from './BookMobileChapterTree.vue';
+import ChapterBatchBar from 'src/components/novel/chapter-batch/ChapterBatchBar.vue';
+import ChapterBatchActions from 'src/components/novel/chapter-batch/ChapterBatchActions.vue';
 
 const { t } = useI18n();
 
@@ -27,6 +29,7 @@ const isTermsTab = computed(() => ctx.mobileActiveTab.value === 'terms');
 const isCharactersTab = computed(() => ctx.mobileActiveTab.value === 'characters');
 const isMemoryTab = computed(() => ctx.mobileActiveTab.value === 'memory');
 const activeChapterId = computed(() => ctx.continueReadingChapter.value?.id ?? null);
+const selecting = computed(() => ctx.chapterBatch.selection.active.value);
 const onChapterAction = (payload: { chapter: Chapter; volumeId: string; index: number }) =>
   emit('chapter-action', payload);
 </script>
@@ -34,7 +37,11 @@ const onChapterAction = (payload: { chapter: Chapter; volumeId: string; index: n
 <template>
   <div class="mbd-tab-content">
     <template v-if="isChaptersTab">
-      <div class="mbd-chapter-actions">
+      <ChapterBatchBar v-if="selecting" class="mbd-chapter-actions" />
+      <div v-else class="mbd-chapter-actions">
+        <button class="mbd-link-btn" @click="ctx.chapterBatch.selection.enter()">
+          <i class="pi pi-check-square" aria-hidden="true" />{{ t('taskQueueUi.batch.multiSelect') }}
+        </button>
         <button class="mbd-link-btn" @click="ctx.showAddVolumeDialog.value = true">
           <i class="pi pi-plus" aria-hidden="true" />{{ t('readerUi.newVolume') }}
         </button>
@@ -54,6 +61,7 @@ const onChapterAction = (payload: { chapter: Chapter; volumeId: string; index: n
           @chapter-action="onChapterAction"
         />
       </div>
+      <ChapterBatchActions v-if="selecting" class="mbd-batch-actions" />
     </template>
     <TerminologyPanel v-else-if="isTermsTab" :book="ctx.book.value || null" class="mbd-panel" />
     <CharacterSettingPanel

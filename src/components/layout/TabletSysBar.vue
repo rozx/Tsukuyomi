@@ -7,7 +7,7 @@ import Button from 'primevue/button';
 import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
-import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
+import TaskCenterChip from 'src/components/task-center/TaskCenterChip.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import { APP_NAME } from 'src/constants/app';
 import { APP_DISPLAY_VERSION } from 'src/constants/build-info';
@@ -16,12 +16,9 @@ const {
   unreadCount,
   pendingCount,
   syncState,
-  thinking,
   toastHistoryRef,
-  thinkingPanelRef,
   syncPanelRef,
   toggleHistory,
-  toggleThinking,
   toggleSync,
 } = useSystemBar();
 
@@ -74,24 +71,8 @@ const syncChip = computed(() => {
     </div>
 
     <div class="tst-actions">
-      <!-- AI thinking：单个持久按钮（作为弹层锚点不可被 v-if 卸载），内部内容随状态切换 -->
-      <button
-        type="button"
-        class="system-bar-chip tst-chip"
-        :class="{ 'pill thinking': thinking }"
-        data-testid="tst-thinking-chip"
-        :aria-label="i18nT('libraryUi.thinkingProcess')"
-        @click="toggleThinking"
-      >
-        <template v-if="thinking">
-          <span class="tst-dot" />
-          <span>{{ i18nT('libraryUi.aiThinkingActive') }}</span>
-        </template>
-        <template v-else>
-          <i class="pi pi-sparkles" aria-hidden="true" />
-          <span class="tst-chip-label">{{ i18nT('libraryUi.thinkingProcess') }}</span>
-        </template>
-      </button>
+      <!-- 任务中心（合并原「AI 思考」入口） -->
+      <TaskCenterChip chip-class="system-bar-chip tst-chip" pill-class="pill thinking" />
 
       <!-- Sync：同上，单个持久按钮，外观由 syncChip 描述对象驱动 -->
       <button
@@ -124,7 +105,6 @@ const syncChip = computed(() => {
     <!-- Popovers (mounted to body by PrimeVue) -->
     <ToastHistoryDialog ref="toastHistoryRef" />
     <SyncStatusPanel ref="syncPanelRef" />
-    <ThinkingProcessPanel ref="thinkingPanelRef" />
 
     <!-- Button refs used by PrimeVue popovers -->
     <Button v-show="false" />

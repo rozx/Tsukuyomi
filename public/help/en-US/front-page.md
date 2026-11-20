@@ -84,10 +84,10 @@ The built-in assistant is named **Tsukuyomi (月詠)**, the application's moonli
 
 ### 🛠️ System bar and right panels {#front-page-section-11}
 
-- **AI thinking**: task status and reasoning messages.
+- **Task center**: the chapter task queue (running / queued / finished) and other AI activity. Pause, stop, retry, and reorder tasks.
 - **Sync status**: Gist sync status and controls.
 - **Message history**: previous notifications.
-- **Tsukuyomi / Translation progress**: right rail entries for chat and task progress.
+- **Tsukuyomi**: right rail entry for the chat assistant.
 - **Vector index**: inspect or rebuild chapter and memory vectors, available in book details when local embeddings are enabled.
 
 > 💡 See [System bar and navigation](/help/toolbar-guide) and [Local embeddings](/help/local-embedding).

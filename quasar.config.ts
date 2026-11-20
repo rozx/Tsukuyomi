@@ -22,6 +22,16 @@ const resolvePrimeVueScript = (name: string) => {
     : primeVueScriptResolver.resolve(name);
 };
 
+/**
+ * 开发服务器不监听代理会话的 worktree（.claude/worktrees）与构建产物：文件数可达数十万，
+ * 会耗尽 macOS 的文件监听上限，开发服务器约一分钟后以 EMFILE 退出。
+ */
+function withDevWatchIgnores(watch: { ignored?: unknown } | undefined) {
+  const existing = watch?.ignored;
+  const ignored = Array.isArray(existing) ? existing : existing ? [existing] : [];
+  return { ...watch, ignored: [...ignored, '**/.claude/**', '**/dist/**'] };
+}
+
 export default defineConfig((ctx: any) => {
   // 构建时确定版本标识（短 SHA + 可选提交数），用于确认网站部署的是哪个 commit
   const buildInfo = resolveBuildInfo(
@@ -109,6 +119,7 @@ export default defineConfig((ctx: any) => {
 
         // 配置开发服务器端口（避免与 Node.js 应用服务器冲突）
         if (!viteConf.server) viteConf.server = {};
+        viteConf.server.watch = withDevWatchIgnores(viteConf.server.watch);
         // 开发环境：默认端口 9000，可用 PORT 环境变量覆盖；Node.js 应用服务器在 8080
         if (!viteConf.server.port) {
           viteConf.server.port = Number(process.env.PORT) || 9000;
@@ -176,6 +187,9 @@ export default defineConfig((ctx: any) => {
                   eslint: {
                     lintCommand: 'eslint -c ./eslint.config.js "./src*/**/*.{ts,js,mjs,cjs,vue}"',
                     useFlatConfig: true,
+                    // 未设置时会监听整个项目根目录（含 .claude/worktrees 下其他会话的完整副本），
+                    // 耗尽文件监听上限导致开发服务器以 EMFILE 退出；只监听 lintCommand 覆盖的目录
+                    watchPath: ['./src', './src-electron'],
                   },
                   // Turn off in-browser overlay entirely (keep terminal output)
                   overlay: false,

@@ -19,14 +19,20 @@ async function setup() {
   return { ...fixture, chapter };
 }
 
-/** 让翻译停在 TranslationService 内部，返回可控的结束信号与收到的 signal */
+/** 让翻译停在 TranslationService 内部，返回可控的结束信号与收到的 signal；与真实服务一样在中止时抛出 */
 function holdTranslation() {
   const finish = deferred();
   const started = deferred<AbortSignal>();
   vi.spyOn(TranslationService, 'translate').mockImplementation(
     async (_paragraphs, _model, options) => {
-      started.resolve(options!.signal!);
-      await finish.promise;
+      const signal = options!.signal!;
+      started.resolve(signal);
+      await Promise.race([
+        finish.promise,
+        new Promise((_, reject) =>
+          signal.addEventListener('abort', () => reject(new Error('请求已取消'))),
+        ),
+      ]);
       return { text: '', actions: [] };
     },
   );
@@ -35,10 +41,10 @@ function holdTranslation() {
 
 describe('useChapterTranslation - 离开页面后重新挂载', () => {
   it('后台仍在翻译的章节，重新挂载后仍显示翻译中与进度', async () => {
-    const { mount, chapter } = await setup();
+    const { mount, chapter, finished } = await setup();
     const { finish, started } = holdTranslation();
     const first = mount(chapter);
-    const running = first.service.translateAllParagraphs();
+    const running = finished(first.service.translateAllParagraphs());
     await started.promise;
     expect(first.service.isTranslatingChapter.value).toBe(true);
 
@@ -55,10 +61,10 @@ describe('useChapterTranslation - 离开页面后重新挂载', () => {
   });
 
   it('卸载页面不会中止后台翻译', async () => {
-    const { mount, chapter } = await setup();
+    const { mount, chapter, finished } = await setup();
     const { finish, started } = holdTranslation();
     const first = mount(chapter);
-    const running = first.service.translateAllParagraphs();
+    const running = finished(first.service.translateAllParagraphs());
     const signal = await started.promise;
 
     first.unmount();
@@ -71,17 +77,18 @@ describe('useChapterTranslation - 离开页面后重新挂载', () => {
   });
 
   it('重新挂载后仍能取消卸载前启动的翻译', async () => {
-    const { mount, chapter } = await setup();
+    const { mount, chapter, finished } = await setup();
     const { finish, started } = holdTranslation();
     const first = mount(chapter);
-    const running = first.service.translateAllParagraphs();
+    const running = finished(first.service.translateAllParagraphs());
     const signal = await started.promise;
 
     first.unmount();
     const second = mount(chapter);
     try {
-      second.service.cancelTranslation();
+      await second.service.cancelTranslation();
       expect(signal.aborted).toBe(true);
+      expect((await running)?.status).toBe('cancelled');
       expect(second.service.isTranslatingChapter.value).toBe(false);
     } finally {
       finish.resolve();

@@ -2,22 +2,19 @@
 /**
  * 桌面右侧面板分派器。
  *
- * - 折叠态 (`collapsed`)：纯图标栏（AI 助手 + 翻译进度），与左侧 side-rail /
- *   TabletNavRail 同构。
- * - 展开态：按 `ui.activeRightTab` 挂载 `AppChatPanelDesktop` 或
- *   `AppProgressPanelDesktop`，每个面板在 appbar 内自带关闭按钮，关闭即折叠。
+ * - 折叠态 (`collapsed`)：纯图标栏，与左侧 side-rail / TabletNavRail 同构。
+ * - 展开态：挂载 `AppChatPanelDesktop`（导入路由下为 `ImportChatPanel`），面板在 appbar
+ *   内自带关闭按钮，关闭即折叠。翻译进度已移到顶部系统条的任务中心。
  *
  * 外壳仅负责：固定宽度、拖拽 resize 手柄，以及激活面板的切换。业务 /
  * 视图状态完全下沉到两个独立面板文件。
  */
 import { computed, watch } from 'vue';
 import { useUiStore } from 'src/stores/ui';
-import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { usePanelResize } from 'src/composables/chat/usePanelResize';
 import AppChatPanelDesktop from './AppChatPanelDesktop.vue';
 import ImportChatPanel from 'src/components/import/ImportChatPanel.vue';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
-import AppProgressPanelDesktop from './AppProgressPanelDesktop.vue';
 import RightPanelRail from './RightPanelRail.vue';
 
 const props = withDefaults(defineProps<{ showResizeHandle?: boolean; collapsed?: boolean }>(), {
@@ -26,10 +23,6 @@ const props = withDefaults(defineProps<{ showResizeHandle?: boolean; collapsed?:
 });
 
 const ui = useUiStore();
-const aiProcessing = useAIProcessingStore();
-
-const activeRightTab = computed(() => ui.activeRightTab);
-const activeTranslationTaskCount = computed(() => aiProcessing.activeTranslationTaskCount);
 
 const { panelContainerRef, resizeHandleRef, isResizing, handleResizeStart } = usePanelResize();
 
@@ -50,8 +43,8 @@ watch(
   },
 );
 
-const expandToTab = (tab: 'chat' | 'progress') => {
-  ui.setActiveRightTab(tab);
+const expandChat = () => {
+  ui.setActiveRightTab('chat');
   if (!ui.rightPanelOpen) ui.openRightPanel();
 };
 
@@ -59,13 +52,7 @@ defineExpose({ props });
 </script>
 
 <template>
-  <RightPanelRail
-    v-if="collapsed"
-    :active-right-tab="activeRightTab"
-    :right-panel-open="ui.rightPanelOpen"
-    :active-translation-task-count="activeTranslationTaskCount"
-    @expand="expandToTab"
-  />
+  <RightPanelRail v-if="collapsed" :right-panel-open="ui.rightPanelOpen" @expand="expandChat" />
 
   <aside
     v-else
@@ -82,8 +69,7 @@ defineExpose({ props });
     />
 
     <ImportChatPanel v-if="isImportRoute" />
-    <AppChatPanelDesktop v-else-if="activeRightTab === 'chat'" />
-    <AppProgressPanelDesktop v-else />
+    <AppChatPanelDesktop v-else />
   </aside>
 </template>
 

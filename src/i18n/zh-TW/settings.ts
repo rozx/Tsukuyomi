@@ -12,6 +12,12 @@ export default {
       importExport: '匯入/匯出',
       about: '關於',
     },
+    taskQueue: {
+      title: '任務佇列',
+      maxConcurrent: '最大同時進行任務',
+      maxConcurrentHint: '所有書籍共用的上限（1–5）。調高後排隊中的章節任務會立即開始；調低不會中斷正在執行的任務。',
+      saveFailed: '無法儲存任務佇列設定',
+    },
     general: {
       title: '一般設定',
       language: '介面語言',

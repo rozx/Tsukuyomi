@@ -8,7 +8,7 @@ import { useUiStore } from 'src/stores/ui';
 import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
-import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
+import TaskCenterChip from 'src/components/task-center/TaskCenterChip.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
@@ -21,32 +21,13 @@ const {
   pendingCount,
   syncState,
   nextSyncTime,
-  latestThinkingStatus,
-  thinking,
   toastHistoryRef,
-  thinkingPanelRef,
   syncPanelRef,
   toggleHistory,
-  toggleThinking,
   toggleSync,
 } = useSystemBar();
 
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
-
-const aiTaskLabel = computed(() =>
-  latestThinkingStatus.value === 'processing'
-    ? i18nT('libraryUi.processing')
-    : i18nT('libraryUi.thinking'),
-);
-
-// 思考态徽章：thinking 时是 pill + 脉冲圆点，否则普通 chip + sparkles 图标。
-// 用一个描述对象驱动单个 <button>，避免模板里 v-if/v-else 分支。
-const thinkingChip = computed(() => ({
-  class: thinking.value ? 'system-bar-chip dsk-chip pill thinking' : 'system-bar-chip dsk-chip',
-  label: thinking.value ? `AI ${aiTaskLabel.value}` : i18nT('libraryUi.aiThinking'),
-  labelClass: thinking.value ? '' : 'dsk-chip-label',
-  showLabel: thinking.value || !isPhone.value,
-}));
 
 // 同步态徽章：syncing/changes/ok/pending/default 五种形态，全部收敛进一个描述对象。
 // 模板只做「图标 + 可选标签 + 可选倒计时」的纯渲染，状态判断留在 computed。
@@ -163,20 +144,8 @@ const syncSecondaryLabel = computed<string | null>(() => {
     </div>
 
     <div class="dsk-actions">
-      <!-- AI 思考过程 -->
-      <button
-        type="button"
-        class="system-bar-chip dsk-chip"
-        :class="thinkingChip.class"
-        :aria-label="i18nT('libraryUi.thinkingProcess')"
-        @click="toggleThinking"
-      >
-        <span v-if="thinking" class="dsk-dot" />
-        <i v-else class="pi pi-sparkles" aria-hidden="true" />
-        <span v-if="thinkingChip.showLabel" :class="thinkingChip.labelClass">{{
-          thinkingChip.label
-        }}</span>
-      </button>
+      <!-- 任务中心（合并原「AI 思考」入口） -->
+      <TaskCenterChip chip-class="system-bar-chip dsk-chip" pill-class="pill thinking" :compact="isPhone" />
 
       <!-- 同步状态 -->
       <button
@@ -211,7 +180,6 @@ const syncSecondaryLabel = computed<string | null>(() => {
 
     <ToastHistoryDialog ref="toastHistoryRef" />
     <SyncStatusPanel ref="syncPanelRef" />
-    <ThinkingProcessPanel ref="thinkingPanelRef" />
     <Button v-show="false" />
   </header>
 </template>

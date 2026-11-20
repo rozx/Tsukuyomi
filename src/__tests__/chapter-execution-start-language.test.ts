@@ -12,15 +12,9 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-const entryPoints = [
-  'translateAllParagraphs',
-  'continueTranslation',
-  'retranslateParagraph',
-  'polishParagraph',
-  'proofreadParagraph',
-  'polishAllParagraphs',
-  'proofreadAllParagraphs',
-] as const;
+// 只覆盖单段入口：整章任务改为经任务队列执行，在开始执行时（而非点击时）冻结语言，
+// 执行期间的冻结由 chapter-execution-language.test.ts 覆盖。
+const entryPoints = ['retranslateParagraph', 'polishParagraph', 'proofreadParagraph'] as const;
 describe('正文任务启动语言', () => {
   for (const entry of entryPoints) {
     it(`${entry} 在首次异步读取前冻结语言，读取期间切换设置不改变执行`, async () => {
@@ -57,12 +51,7 @@ describe('正文任务启动语言', () => {
         vi.spyOn(PolishService, 'polish').mockResolvedValue({ text: '', actions: [] }),
         vi.spyOn(ProofreadingService, 'proofread').mockResolvedValue({ text: '', actions: [] }),
       ];
-      const running =
-        entry === 'retranslateParagraph' ||
-        entry === 'polishParagraph' ||
-        entry === 'proofreadParagraph'
-          ? service[entry]('11111111')
-          : service[entry]();
+      const running = service[entry]('11111111');
       await started.promise;
       await settings.setUiLocale('zh-TW');
       await fixture.books.updateBook('fixture-book', { targetLanguage: 'zh-TW' });

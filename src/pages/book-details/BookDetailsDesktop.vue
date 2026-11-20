@@ -189,7 +189,6 @@ const settingsPanelComponent = computed<Component | null>(() => {
       :is-translating-chapter="ctx.isTranslatingChapter.value"
       :is-polishing-chapter="ctx.isPolishingChapter.value"
       :is-search-visible="ctx.isSearchVisible.value"
-      :is-small-screen="ctx.isPhone.value"
       @undo="ctx.undo"
       @redo="ctx.redo"
       @update:edit-mode="onEditModeChange"

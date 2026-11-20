@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
+import { waitForQueueItem } from './chapter-translation-fixture';
 import { computed, createApp, ref } from 'vue';
 import type { App } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
@@ -142,7 +143,7 @@ describe('章节操作执行语言', () => {
         return { text: 'DONE' };
       },
     } as never);
-    await translation!.polishAllParagraphs();
+    await waitForQueueItem(translation!.polishAllParagraphs());
     const saved = (await ChapterContentService.loadChapterContent('c'))![0]!;
     expect(
       saved.translations.some(
@@ -277,7 +278,7 @@ describe('章节操作执行语言', () => {
         return { text: 'DONE' };
       },
     } as never);
-    await translation!.translateAllParagraphs();
+    await waitForQueueItem(translation!.translateAllParagraphs());
     const saved = (await ChapterContentService.loadChapterContent('c'))![0]!;
     expect(
       saved.translations.some(

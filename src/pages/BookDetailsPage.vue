@@ -31,15 +31,19 @@ import MemoryReferencePanel from 'src/components/novel/MemoryReferencePanel.vue'
 import MemoryDetailDialog from 'src/components/novel/MemoryDetailDialog.vue';
 import KeyboardShortcutsPopover from 'src/components/novel/KeyboardShortcutsPopover.vue';
 import ChapterSettingsPopover from 'src/components/novel/ChapterSettingsPopover.vue';
+import BatchChapterTaskDialog from 'src/components/dialogs/BatchChapterTaskDialog.vue';
 import { useRoute } from 'vue-router';
 import { useDeviceVariant } from 'src/composables/useDeviceVariant';
 import { provideBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
+import { provideChapterBatch } from 'src/composables/book-details/useChapterBatch';
 import { provideBookSync, type BookSyncTarget } from 'src/composables/book-sync/useBookSync';
 import BookDetailsDesktop from './book-details/BookDetailsDesktop.vue';
 import BookDetailsTablet from './book-details/BookDetailsTablet.vue';
 import BookDetailsMobile from './book-details/BookDetailsMobile.vue';
 
 const ctx = provideBookDetailsPage();
+// 章节多选 / 批量启动状态：三个变体的章节列表与下方对话框共用
+provideChapterBatch(ctx.chapterBatch);
 const { variant } = useDeviceVariant();
 
 // 检查更新的同步会话放在页面 dispatcher：桌面/平板面板与手机全屏页共用，断点切换不重新检查；
@@ -153,6 +157,7 @@ const { t } = useI18n();
         :loading="ctx.isDeletingChapter.value"
         @confirm="ctx.handleDeleteChapter"
       />
+      <BatchChapterTaskDialog :book="bookOrNull" />
       <BookDialog
         v-model:visible="ctx.showBookDialog.value"
         mode="edit"

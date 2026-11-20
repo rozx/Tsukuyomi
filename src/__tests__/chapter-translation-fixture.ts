@@ -4,6 +4,7 @@ import ToastService from 'primevue/toastservice';
 import { useBooksStore } from '../stores/books';
 import { useAIModelsStore } from '../stores/ai-models';
 import { useChapterTranslation } from '../composables/book-details/useChapterTranslation';
+import { resetTaskQueueConfig, useTaskQueueStore } from '../stores/task-queue';
 import type { Chapter, Paragraph } from '../models/novel';
 
 export function translationChapter(id: string, paragraphId: string): Chapter {
@@ -85,5 +86,24 @@ export async function chapterTranslationFixture(chapters: Chapter[]) {
     };
     return { service, selected, loaded, unmount };
   };
-  return { pinia, books, mount, dispose: () => apps.forEach((app) => app.unmount()) };
+  return {
+    pinia,
+    books,
+    mount,
+    finished: waitForQueueItem,
+    dispose: () => {
+      apps.forEach((app) => app.unmount());
+      useTaskQueueStore().dispose();
+      resetTaskQueueConfig();
+    },
+  };
+}
+
+/**
+ * 整章任务改为经任务队列执行：入口只负责入队并返回队列项 ID。
+ * 测试用它等到该队列项结束（完成、失败、取消或被移出）。
+ */
+export async function waitForQueueItem(enqueued: Promise<string | undefined>) {
+  const id = await enqueued;
+  return id ? useTaskQueueStore().waitForItem(id) : undefined;
 }

@@ -258,7 +258,7 @@ export default {
       preparingBadge: '正在準備重新啟動更新',
       unavailableNow: '暫時無法更新',
       restartPending: '正在準備重新啟動更新，請稍後再試',
-      pendingWork: '仍有操作或儲存尚未完成，請稍後重試',
+      pendingWork: '仍有操作或儲存尚未完成，請稍後重試；如果有翻譯任務在執行，可在任務中心暫停任務佇列或全部停止後重試',
       interrupted: '準備期間有新的操作開始，請稍後重試',
     },
     backup: {

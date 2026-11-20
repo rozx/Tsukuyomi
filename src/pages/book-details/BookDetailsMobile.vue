@@ -444,6 +444,19 @@ const ctx = injectBookDetailsPage();
   color: var(--primary-300);
 }
 
+/* 多选：勾选行底色 + 底部操作栏吸底（滚动容器内 sticky） */
+.mbd-tree-row--checked {
+  background: var(--primary-opacity-10);
+}
+
+.mbd-batch-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin: 8px -2px 0;
+  border-radius: 10px;
+}
+
 /* 行尾"更多"按钮的手机端按下反馈（:active + 更深的 token，与平板 :hover 不同）。 */
 .mbd-tree-row-more:active {
   background: var(--white-opacity-8);

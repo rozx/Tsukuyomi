@@ -87,6 +87,10 @@
 - 被拖曳章節會半透明。
 - 目標章節或目標卷列表會顯示拖曳高亮樣式。
 
+## ☑️ 多選與批次啟動 {#book-details-chapters-batch}
+
+點選目錄標題旁的「多選」（手機在「章節」標籤頂部）進入多選模式：章節和卷前會出現勾選框，項目右側顯示翻譯完成度或佇列狀態，拖曳排序和行內編輯、刪除會暫時隱藏。勾選後可以批次翻譯、潤色或校對，按 Esc 或 ✕ 退出。詳見 [批次啟動](/help/book-details-translation#book-details-translation-batch)。
+
 ## 📂 卷折疊 / 展開 {#book-details-chapters-section-10}
 
 - 點選卷標題左側箭頭可折疊或展開該卷章節列表。

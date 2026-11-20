@@ -17,6 +17,28 @@ describe('桌面更新重启保护', () => {
     guard.beginAction()();
   });
 
+  it('暴露只读的重启准备状态：准备中与已提交为真，释放后为假', async () => {
+    const guard = new DesktopRestartGuard();
+    expect(guard.isRestartPending()).toBe(false);
+    let observed = false;
+    await guard.prepare(() => {
+      observed = guard.isRestartPending();
+      return Promise.resolve();
+    });
+    expect(observed).toBe(true);
+    expect(guard.isRestartPending()).toBe(true);
+    guard.release();
+    expect(guard.isRestartPending()).toBe(false);
+  });
+
+  it('有运行中工作时拒绝原因提示可暂停任务队列或全部停止', async () => {
+    const guard = new DesktopRestartGuard();
+    const done = guard.beginAction();
+    const failure = await guard.prepare(() => Promise.resolve()).catch((error: unknown) => error);
+    expect((failure as LocalizedError).messageFor('zh-CN')).toContain('暂停任务队列');
+    done();
+  });
+
   it('拒绝原因带稳定错误码，并可按界面语言显示', async () => {
     const guard = new DesktopRestartGuard();
     const done = guard.beginAction();
@@ -24,7 +46,7 @@ describe('桌面更新重启保护', () => {
     expect(failure).toBeInstanceOf(LocalizedError);
     expect((failure as LocalizedError).code).toBe('RESTART_PENDING_WORK');
     expect((failure as LocalizedError).messageFor('en-US')).toBe(
-      'Some actions or saves have not finished. Try again later',
+      'Some actions or saves have not finished. Try again later. If translation tasks are running, pause the task queue or stop all tasks in the task center first',
     );
     done();
   });

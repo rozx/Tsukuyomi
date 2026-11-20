@@ -5,7 +5,6 @@ import MobileTabBar from 'src/components/layout/MobileTabBar.vue';
 import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
 import MobileChatSheet from 'src/components/layout/MobileChatSheet.vue';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
-import MobileProgressSheet from 'src/components/layout/MobileProgressSheet.vue';
 import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
 
@@ -13,10 +12,7 @@ const ui = useUiStore();
 // 导入路由的对话是工作台的「对话」分区（常驻页面内），不挂普通月詠抽屉
 const isImportRoute = useImportRouteScope();
 
-// 右侧面板在移动端拆成两张独立的 bottom sheet：
-//   MobileChatSheet    — AI 助手（activeRightTab === 'chat'）
-//   MobileProgressSheet — 翻译进度（activeRightTab === 'progress'）
-// 两者互斥，由 activeRightTab 决定 v-model:visible
+// 右侧面板在移动端是 AI 助手的底部抽屉（翻译进度已移到顶部信息条的任务中心）
 const isChatOpen = computed<boolean>({
   get: () => ui.rightPanelOpen && ui.activeRightTab === 'chat',
   set: (open) => {
@@ -24,18 +20,6 @@ const isChatOpen = computed<boolean>({
       ui.setActiveRightTab('chat');
       if (!ui.rightPanelOpen) ui.openRightPanel();
     } else if (ui.activeRightTab === 'chat') {
-      ui.closeRightPanel();
-    }
-  },
-});
-
-const isProgressOpen = computed<boolean>({
-  get: () => ui.rightPanelOpen && ui.activeRightTab === 'progress',
-  set: (open) => {
-    if (open) {
-      ui.setActiveRightTab('progress');
-      if (!ui.rightPanelOpen) ui.openRightPanel();
-    } else if (ui.activeRightTab === 'progress') {
       ui.closeRightPanel();
     }
   },
@@ -74,11 +58,9 @@ useOverlayCloseStack({
 
     <div class="mobile-shell-tabbar"><MobileTabBar /></div>
 
-    <!-- 两张底部抽屉：chat 和 progress 互斥挂载，但都常驻 DOM，
-         这样各自的 useRightPanel / TranslationProgress 内部状态不会被 sheet
-         关闭时清掉 —— 只有 MobileBottomSheet 的 transition 控制可见性。 -->
+    <!-- AI 助手底部抽屉常驻 DOM，useRightPanel 内部状态不会被 sheet 关闭时清掉 —— 只有
+         MobileBottomSheet 的 transition 控制可见性。 -->
     <MobileChatSheet v-if="!isImportRoute" v-model:visible="isChatOpen" />
-    <MobileProgressSheet v-model:visible="isProgressOpen" />
   </div>
 </template>
 

@@ -22,6 +22,8 @@ import {
   buildChapterActionMenuItems,
 } from 'src/components/novel/volumes-list-utils';
 import TabletChapterRow from 'src/components/novel/TabletChapterRow.vue';
+import ChapterBatchCheck from 'src/components/novel/chapter-batch/ChapterBatchCheck.vue';
+import { useChapterBatchRows } from 'src/composables/book-details/useChapterBatch';
 
 const { t, locale } = useI18n();
 
@@ -112,7 +114,12 @@ const openChapterActions = (
   actionMenuRef.value?.toggle(event);
 };
 
+// 多选模式：点击章节行切换勾选而不是打开章节
+const { selecting, isChecked, volumeCheckState, toggleVolumeSelection, toggleIfSelecting } =
+  useChapterBatchRows();
+
 const handleNavigateToChapter = (chapter: Chapter) => {
+  if (toggleIfSelecting(chapter.id)) return;
   if (
     !canNavigateToChapter(
       {
@@ -140,12 +147,19 @@ const volumeFolderIcon = (volumeId: string) =>
         :class="{ 'vt-row--vol-open': isVolumeExpanded(vol.id) }"
         @click="emit('toggle-volume', vol.id)"
       >
+        <ChapterBatchCheck
+          v-if="selecting"
+          :state="volumeCheckState(vol)"
+          :title="t('taskQueueUi.batch.selectVolume')"
+          @click.stop="toggleVolumeSelection(vol)"
+        />
         <i class="pi vt-vol-icon" :class="volumeFolderIcon(vol.id)" aria-hidden="true" />
         <span class="vt-row-title">{{ getVolumeDisplayTitle(vol, book) }}</span>
         <span class="vt-row-count">{{
           t('readerUi.chapterCount', { count: vol.chapters?.length ?? 0 })
         }}</span>
         <button
+          v-if="!selecting"
           type="button"
           class="vt-row-more"
           :aria-label="t('readerUi.volumeActions')"
@@ -166,6 +180,8 @@ const volumeFolderIcon = (volumeId: string) =>
           :status-color="chapterStatusColor"
           :status-text-color="chapterStatusTextColor"
           :status-label="chapterStatusLabel"
+          :selecting="selecting"
+          :checked="isChecked(ch.id)"
           @navigate="handleNavigateToChapter"
           @more="
             (event: Event) =>

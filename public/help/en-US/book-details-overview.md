@@ -4,7 +4,7 @@ Book details (`/books/:id`) is the workspace for translation, terms, characters,
 
 Interface and book target are independent. Choose Simplified Chinese, Traditional Chinese, or English in book translation settings. Paragraph/title display follows the target with source fallback; missing term/character/alias translations stay blank. Legacy books/results are Simplified Chinese. Each language is retained separately, and target changes do not start translation. Source may contain any language.
 
-> Since v0.12.1, desktop has a narrower sidebar and collapsible Settings group. Breadcrumbs replace redundant Back/Contents headings. Progress moved to the global right panel and is accessible across pages.
+> Since v0.12.1, desktop has a narrower sidebar and collapsible Settings group. Breadcrumbs replace redundant Back/Contents headings. Chapter task progress is shown in the task center in the top bar and is accessible across pages.
 >
 > Chapter summaries were removed in v0.12. `query_chapter` retrieves relevant source passages using [Local embeddings](/help/local-embedding).
 
@@ -175,8 +175,9 @@ See [AI translation](/help/book-details-translation) and [Local embeddings](/hel
 
 ## ℹ️ Global system bar {#book-details-overview-section-18}
 
-- [System bar](/help/toolbar-guide) provides thinking, sync, and notification controls across pages.
-- Translation progress in the right panel shows task progress and activates for a new task.
+- [System bar](/help/toolbar-guide) provides the task center, sync, and notification controls across pages.
+- The **task center** ("Tasks") shows the translation/polishing/proofreading queue and progress for all books. A new task only makes it flash; it does not open by itself. See [Task queue and task center](/help/book-details-translation#book-details-translation-section-9).
+- **Select** in the chapter list adds several chapters to the queue at once. See [Batch start](/help/book-details-translation#book-details-translation-batch).
 - Vector index appears only on book routes with embeddings enabled.
 
 ---

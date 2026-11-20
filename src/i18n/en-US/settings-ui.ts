@@ -266,7 +266,7 @@ export default {
       preparingBadge: 'Preparing to restart and update',
       unavailableNow: 'Cannot update right now',
       restartPending: 'Preparing to restart for an update. Try again later',
-      pendingWork: 'Some actions or saves have not finished. Try again later',
+      pendingWork: 'Some actions or saves have not finished. Try again later. If translation tasks are running, pause the task queue or stop all tasks in the task center first',
       interrupted: 'New work started during preparation. Try again later',
     },
     backup: {

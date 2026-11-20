@@ -8,6 +8,7 @@ import type { CoverHistoryItem } from 'src/models/novel';
 import type { SyncConfig } from 'src/models/sync';
 import type { ToastHistoryItem } from 'src/stores/toast-history';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
+import type { TaskQueueRecord } from 'src/models/task-queue';
 import type { ChapterEmbedding, ChapterEmbeddingKind } from 'src/models/chapter-embedding';
 import type {
   BookRevision,
@@ -190,12 +191,19 @@ export interface TsukuyomiDB extends DBSchema {
       'by-bookId': string;
     };
   };
+  /** 章节任务队列（v16+）：队列项与固定 ID 的队列级状态，只存本设备、不参与同步 */
+  'task-queue': {
+    key: string;
+    value: TaskQueueRecord;
+    indexes: { 'by-status': string; 'by-order': number };
+  };
 }
 
 const DB_NAME = 'tsukuyomi';
 // v12 增量创建导入任务和书籍修改序号，不重写现有书籍或正文。
 // v13 增量创建同步章节结构基准，不改动现有存储。
-const DB_VERSION = 15;
+// v16 增量创建章节任务队列仓库，不改动现有存储。
+const DB_VERSION = 16;
 
 let dbPromise: Promise<IDBPDatabase<TsukuyomiDB>> | null = null;
 let dbBlocked = false;
@@ -227,6 +235,7 @@ function nowMs(): number {
 
 function ensureObjectStores(db: IDBPDatabase<TsukuyomiDB>): void {
   ensureImportStores(db);
+  ensureTaskQueueStore(db);
   if (!db.objectStoreNames.contains('sync-metadata')) {
     db.createObjectStore('sync-metadata', { keyPath: 'key' });
   }
@@ -285,6 +294,14 @@ function ensureObjectStores(db: IDBPDatabase<TsukuyomiDB>): void {
     const chapterEmbeddingsStore = db.createObjectStore('chapter-embeddings');
     chapterEmbeddingsStore.createIndex('by-chapterId', 'chapterId', { unique: false });
     chapterEmbeddingsStore.createIndex('by-bookId', 'bookId', { unique: false });
+  }
+}
+
+function ensureTaskQueueStore(db: IDBPDatabase<TsukuyomiDB>): void {
+  if (!db.objectStoreNames.contains('task-queue')) {
+    const store = db.createObjectStore('task-queue', { keyPath: 'id' });
+    store.createIndex('by-status', 'status');
+    store.createIndex('by-order', 'order');
   }
 }
 
@@ -631,6 +648,7 @@ async function clearAllData(): Promise<void> {
     'import-operations',
     'book-revisions',
     'sync-chapter-baselines',
+    'task-queue',
   ] as const;
 
   for (const storeName of storeNames) {

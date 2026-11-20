@@ -9,7 +9,7 @@ import { useUiStore } from 'src/stores/ui';
 import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
-import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
+import TaskCenterChip from 'src/components/task-center/TaskCenterChip.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import BatchEmbeddingsButton from 'src/components/novel/BatchEmbeddingsButton.vue';
 import { getAssetUrl } from 'src/utils';
@@ -26,12 +26,9 @@ const {
   unreadCount,
   pendingCount,
   syncState,
-  thinking,
   toastHistoryRef,
-  thinkingPanelRef,
   syncPanelRef,
   toggleHistory,
-  toggleThinking,
   toggleSync,
 } = useSystemBar();
 
@@ -55,24 +52,8 @@ const openHelp = () => {
 
     <div class="sys-actions">
       <BatchEmbeddingsButton class="tsm-sys-chip" />
-      <!-- AI thinking -->
-      <button
-        v-if="thinking"
-        class="tsm-sys-chip pill thinking"
-        :aria-label="i18nT('libraryUi.thinkingProcess')"
-        @click="toggleThinking"
-      >
-        <span class="tsm-sys-dot" />
-        <span>{{ i18nT('libraryUi.aiThinkingActive') }}</span>
-      </button>
-      <button
-        v-else
-        class="tsm-sys-chip"
-        :aria-label="i18nT('libraryUi.thinkingProcess')"
-        @click="toggleThinking"
-      >
-        <i class="pi pi-sparkles" aria-hidden="true" />
-      </button>
+      <!-- 任务中心（合并原「AI 思考」入口） -->
+      <TaskCenterChip chip-class="tsm-sys-chip" pill-class="pill thinking" compact />
 
       <!-- Sync -->
       <button
@@ -139,7 +120,6 @@ const openHelp = () => {
     <!-- Popovers (mounted to body by PrimeVue) -->
     <ToastHistoryDialog ref="toastHistoryRef" />
     <SyncStatusPanel ref="syncPanelRef" />
-    <ThinkingProcessPanel ref="thinkingPanelRef" />
 
     <!-- Button refs used by PrimeVue popovers -->
     <Button v-show="false" />

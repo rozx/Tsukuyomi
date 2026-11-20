@@ -25,6 +25,11 @@ export class DesktopRestartGuard {
     };
   }
 
+  /** 是否处于更新重启的准备或已提交阶段；任务队列据此暂缓启动新任务。 */
+  isRestartPending(): boolean {
+    return this.phase !== 'open';
+  }
+
   /** 在 beginAction/finish 之间执行工作，保证异常时也会结束计数。 */
   async track<T>(work: () => Promise<T>): Promise<T> {
     const finish = this.beginAction();

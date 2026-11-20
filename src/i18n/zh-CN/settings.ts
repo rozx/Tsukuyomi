@@ -12,6 +12,12 @@ export default {
       importExport: '导入/导出',
       about: '关于',
     },
+    taskQueue: {
+      title: '任务队列',
+      maxConcurrent: '最大同时进行任务',
+      maxConcurrentHint: '所有书籍共用的上限（1–5）。调高后排队中的章节任务会立即开始；调低不会中断正在运行的任务。',
+      saveFailed: '无法保存任务队列设置',
+    },
     general: {
       title: '通用设置',
       language: '界面语言',

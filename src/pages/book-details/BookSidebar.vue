@@ -13,6 +13,8 @@ import VolumesList from 'src/components/novel/VolumesList.vue';
 import VolumesListTablet from 'src/components/novel/VolumesListTablet.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import BookSidebarSettingsMenu from './BookSidebarSettingsMenu.vue';
+import ChapterBatchBar from 'src/components/novel/chapter-batch/ChapterBatchBar.vue';
+import ChapterBatchActions from 'src/components/novel/chapter-batch/ChapterBatchActions.vue';
 
 const { t } = useI18n();
 
@@ -42,6 +44,7 @@ const catalogHeaderClass = computed(() =>
   isDesktop.value ? 'sidebar-eyebrow sidebar-eyebrow--inline' : 'sidebar-title',
 );
 const catalogHeaderText = computed(() => t('readerUi.catalog'));
+const selecting = computed(() => ctx.chapterBatch.selection.active.value);
 </script>
 
 <template>
@@ -90,12 +93,23 @@ const catalogHeaderText = computed(() => t('readerUi.catalog'));
       <!-- 设置快捷入口（手机端在设置页已有二级导航） -->
       <BookSidebarSettingsMenu v-if="isDesktop" />
 
-      <!-- 目录工具 -->
-      <div class="sidebar-section-header sidebar-title-wrapper">
+      <!-- 目录工具（多选模式下换成已选数量 / 选未翻译 / 退出） -->
+      <div v-if="selecting" class="sidebar-section-header sidebar-title-wrapper">
+        <ChapterBatchBar class="sidebar-batch-bar" />
+      </div>
+      <div v-else class="sidebar-section-header sidebar-title-wrapper">
         <component :is="catalogHeaderTag" :class="catalogHeaderClass">{{
           catalogHeaderText
         }}</component>
         <div class="sidebar-actions">
+          <Button
+            icon="pi pi-check-square"
+            class="p-button-text p-button-sm"
+            size="small"
+            :title="t('taskQueueUi.batch.multiSelect')"
+            :aria-label="t('taskQueueUi.batch.multiSelect')"
+            @click="ctx.chapterBatch.selection.enter()"
+          />
           <Button
             icon="pi pi-plus"
             :label="t('readerUi.newVolume')"
@@ -161,11 +175,17 @@ const catalogHeaderText = computed(() => t('readerUi.catalog'));
         @drag-leave="ctx.onDragLeave"
         @move-chapter="ctx.onMoveChapter"
       />
+      <ChapterBatchActions v-if="selecting" />
     </div>
   </aside>
 </template>
 
 <style scoped>
+.sidebar-batch-bar {
+  flex: 1;
+  min-width: 0;
+}
+
 .book-sidebar {
   width: 19rem;
   height: 100%;

@@ -1,6 +1,6 @@
 # 🤖 Chapter Translation and Paragraph Tasks {#book-details-translation-section-1}
 
-This guide covers translation, polishing, proofreading, progress, and settings.
+This guide covers translation, polishing, proofreading, the task queue, batch start, and settings.
 
 Tasks use the book's independent target: Simplified Chinese, Traditional Chinese, or English. AI determines source language per paragraph; it is not limited to Japanese. Target-language source can be submitted unchanged and counts as processed. Mixed text converts only the necessary portions; Chinese script conversion still follows the target. Execution freezes interface/target languages, so later setting changes neither redirect late results into a new slot nor undo the user's new target.
 
@@ -38,8 +38,8 @@ The main button follows the chapter's translation state.
 
 ### 4) Running {#book-details-translation-section-7}
 
-- Shows loading and disables the button.
-- Cancel from the progress panel.
+- Shows loading and disables the button. While the task waits in the queue, the button shows "Queued (#N)".
+- To stop a running task or remove a queued one, use the task center in the top bar. See [Task queue and task center](#book-details-translation-section-9) below.
 
 ---
 
@@ -61,32 +61,65 @@ Completed results are saved as paragraph versions and can be selected from histo
 
 ---
 
-## 📊 Progress panel {#book-details-translation-section-9}
+## 📊 Task queue and task center {#book-details-translation-section-9}
 
-### Open automatically or manually {#book-details-translation-section-10}
+Whole-chapter translation, polishing, and proofreading go into a global task queue. The task center in the top system bar shows and manages it. Single-paragraph translation, polishing, and proofreading skip the queue and run directly.
 
-- Starting a chapter task switches the right panel to Translation progress.
-- Open the panel and select that tab manually if needed.
-- Progress remains accessible on other pages, including AI settings and Help.
+### Queue and concurrency {#book-details-translation-section-10}
 
-### Top controls {#book-details-translation-section-11}
+- **Settings → General → Task queue → Max concurrent tasks** limits how many chapter tasks run at once (1–5, default 2), shared across all books. Raising it starts queued tasks right away; lowering it does not interrupt running tasks.
+- When you start a chapter task from the reader, it starts right away if a slot is free. Otherwise it waits at the front of the queue, and the toolbar button shows "Queued (#N)".
+- A chapter runs one task at a time. A task of the same type for the same chapter is not queued again while one is queued or running.
+- Tasks do not depend on the open chapter. The queue keeps running when you switch chapters, leave book details, or open other pages. When a task writes to the chapter you have open, new translations appear in the reader as they arrive.
+- One failed item does not affect the others. Each batch of translations is saved as soon as it is written. After a stop, failure, or interruption, Retry continues from where it stopped and processes only the remaining paragraphs.
+- After a page reload or app restart, the queue is kept and paused, with interrupted tasks at the front. Choose "Resume queue" to continue from where they stopped.
+- While a book is importing or syncing, its tasks wait and retry automatically. Deleting a chapter or book removes its queued items.
+- With several tabs open, only one tab runs the queue; the other tabs can view and manage it. If that tab closes, another tab takes over.
+- The queue is stored on this device only and is not synced.
 
-- **Chapter filter**: show only the selected chapter's tasks; its icon highlights when active.
-- **Clear**: remove completed, failed, and canceled tasks; appears when such records exist.
+### Task center {#book-details-translation-section-11}
 
-### Task history {#book-details-translation-section-12}
+Click the "Tasks" chip in the top system bar to open the task center. The former "AI thinking" entry is merged into it. The chip shows running and queued counts with overall progress, and "Paused · N queued" while the queue is paused. When a new task starts, the chip only flashes: the task center does not open by itself, and the right panel does not switch.
 
-Recent task cards show:
+The task center has two parts:
 
-- Running/completed/error/canceled status
-- Model, task type, and elapsed time
-- Chapter
-- Inline chunk progress, `current / total`
-- Collapsible content:
-  - Thinking and output in one chronological timeline since v0.14.3, with transition labels and tool status icons
-  - Todos, when present
-- Stop for active tasks
-- Auto-scroll and auto-tab-switch options
+- **Chapter tasks**: grouped into "Running", "Queued", and "Finished". The header shows concurrency, such as "Concurrent 2/2", and offers "Pause queue" / "Resume queue" and "Stop all".
+  - Running rows show the task type, book, chapter, a progress bar, and paragraph progress. They can be stopped.
+  - Queued rows can be dragged to reorder or removed. The group offers "Remove all".
+  - Failed or cancelled rows can be retried. The "Finished" group can be cleared.
+- **Other AI activity**: assistant chats, single-paragraph tasks, term translation, and other tasks outside the queue. They do not use concurrency slots. You can stop running items or clear records.
+
+On desktop and tablet you can **pin** the task center as a floating panel. A pinned panel stays open when you click outside, can be dragged, and keeps its position after a reload. It can also **collapse** into a mini bar that shows only running tasks and overall progress. On mobile, the task center opens as a bottom sheet; tap a task row for full-screen details.
+
+### Task details {#book-details-translation-section-12}
+
+Click a chapter task row to expand its details inline. Only one row is expanded at a time:
+
+- Model name, elapsed time, and chunk progress (`current / total`)
+- Todo list
+- A timeline of thinking, tool calls, and output in the order they happened, labeled where it switches between thinking and output
+- "Open chapter" goes to the book and chapter
+
+A dot appears on a collapsed row when its task has new activity. Once a finished task's detailed log is cleared, only the result summary remains. In a tab that is not running the queue, an expanded running task shows only its progress, with a note that the details are in the other tab.
+
+### Batch start {#book-details-translation-batch}
+
+Choose "Select" in the chapter list to enter selection mode. On desktop and tablet it is next to the contents heading; on mobile it is at the top of the Chapters tab.
+
+- A checkbox appears before each chapter and volume. Clicking a chapter row toggles it and does not open the chapter. A volume checkbox selects or clears the whole volume, and shows "−" when the volume is partly selected.
+- Each chapter row ends with its completion for the book's target language: "Untranslated", a percentage, or 100%. Chapters already in the queue show "Queued" or "Running".
+- "Select untranslated" selects every chapter in the book that is below 100%.
+- Drag ordering and inline edit/delete are hidden while selecting. Click ✕ or press Esc to exit.
+
+Then choose "Polish", "Proofread", or "Translate N chapters" at the bottom. In the confirmation dialog, choose:
+
+- Task: translation, polishing, or proofreading
+- Scope (translation only): "Only untranslated paragraphs (continue translation)" or "Retranslate everything"
+- Queue position: "In chapter order, after the current queue" or "At the front of the queue"
+
+The dialog shows the model to be used, the current concurrency with running and queued counts, and how many items will be added. For polishing and proofreading, it also says how many chapters have no translation and will be skipped. After you choose "Add to queue", the chapters are queued in book order and a message reports the result, for example "Added 5 chapters; 2 chapters are already in the queue".
+
+Batch tasks do not show a message for each chapter. AI action notices, such as new terms or characters, go only to message history. When the whole batch ends, one "Batch tasks finished" summary shows the done, failed, and cancelled counts.
 
 ### Tool visualization {#book-details-translation-section-13}
 
@@ -161,7 +194,7 @@ When the target language is Simplified or Traditional Chinese, the prompt asks t
 - Each completed chunk saves immediately; cancellation or reload retains saved paragraphs.
 - A fully translated chapter defaults to polishing.
 - AI phases are `planning → working → review → end`. Since v0.14.3, former preparation maintenance is the last planning item.
-- Batch completion checks todos and displays incomplete items. Only the newest global list is retained each round to bound long-chapter context.
+- After each translation batch, AI checks the todos; incomplete items appear in the task details in the task center. Only the newest global list is retained each round to bound long-chapter context.
 - Since v0.15.0, completing an item or having no active item advances the next todo automatically; restoration also advances eligible todo state.
 - Local embeddings build paragraph and title/first-paragraph chunks. `query_chapter` uses semantic confidence, RRF ranking, and keyword fallback, weighted 0.85/0.15. See [Local embeddings](/help/local-embedding).
 - `search_memories` retrieves shared memories with natural language.

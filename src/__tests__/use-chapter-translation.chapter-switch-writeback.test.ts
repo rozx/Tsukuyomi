@@ -23,7 +23,7 @@ const result = { text: '', actions: [] };
 
 describe('useChapterTranslation - 章节切换和并发写回', () => {
   it('切换并卸载原章节后，仍写回执行章节且不覆盖当前界面', async () => {
-    const { mount, books, chapterA, chapterB } = await setup();
+    const { mount, books, chapterA, chapterB, finished } = await setup();
     const { service, selected, loaded } = mount(chapterA);
     vi.spyOn(TranslationService, 'translate').mockImplementation(
       async (_paragraphs, _model, options) => {
@@ -36,7 +36,7 @@ describe('useChapterTranslation - 章节切换和并发写回', () => {
         return result;
       },
     );
-    await service.translateAllParagraphs();
+    await finished(service.translateAllParagraphs());
     expect(loaded.value?.id).toBe(chapterB.id);
     const savedA = await ChapterContentService.loadChapterContent(chapterA.id);
     const savedB = await ChapterContentService.loadChapterContent(chapterB.id);
@@ -48,7 +48,7 @@ describe('useChapterTranslation - 章节切换和并发写回', () => {
   });
 
   it('多个章节并发保存，不回存旧卷章元数据快照', async () => {
-    const { mount, books, chapterA, chapterB } = await setup();
+    const { mount, books, chapterA, chapterB, finished } = await setup();
     const a = mount(chapterA);
     const b = mount(chapterB);
     const aSaved = deferred();
@@ -68,7 +68,10 @@ describe('useChapterTranslation - 章节切换和并发写回', () => {
         return result;
       },
     );
-    await Promise.all([a.service.translateAllParagraphs(), b.service.translateAllParagraphs()]);
+    await Promise.all([
+      finished(a.service.translateAllParagraphs()),
+      finished(b.service.translateAllParagraphs()),
+    ]);
     expect(
       (await ChapterContentService.loadChapterContent(chapterA.id))?.[0]?.translations[0]
         ?.translation,

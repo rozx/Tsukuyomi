@@ -13,6 +13,8 @@ import { useI18n } from 'vue-i18n';
 import { computed } from 'vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { Chapter, Volume } from 'src/models/novel';
+import ChapterBatchCheck from 'src/components/novel/chapter-batch/ChapterBatchCheck.vue';
+import ChapterBatchBadge from 'src/components/novel/chapter-batch/ChapterBatchBadge.vue';
 
 const { t } = useI18n();
 
@@ -43,7 +45,10 @@ const volumeRowClass = (volId: string) => [
 const chapterRowClass = (chId: string) => [
   'mbd-tree-row',
   'mbd-tree-row--chapter',
-  { 'mbd-tree-row--active': isActive(chId) },
+  {
+    'mbd-tree-row--active': isActive(chId),
+    'mbd-tree-row--checked': selecting.value && ctx.chapterBatch.selection.isSelected(chId),
+  },
 ];
 // 阻止冒泡：避免点 ⋮ 触发所在行的 click（行 click 会折叠卷 / 跳转章节）
 const onVolumeMore = (e: Event, vol: Volume) => {
@@ -53,6 +58,18 @@ const onVolumeMore = (e: Event, vol: Volume) => {
 const onChapterMore = (e: Event, chapter: Chapter, volumeId: string, index: number) => {
   e.stopPropagation();
   emit('chapter-action', { chapter, volumeId, index });
+};
+// 多选只在 Overview 目录（有行操作）中生效，阅读器章节 picker 不受影响
+const batch = ctx.chapterBatch;
+const selecting = computed(() => !!props.showRowActions && batch.selection.active.value);
+const chapterCheckState = (chId: string) => (batch.selection.isSelected(chId) ? 'all' : 'none');
+const onChapterClick = (ch: Chapter) => {
+  if (selecting.value) batch.selection.toggle(ch.id);
+  else emit('navigate', ch);
+};
+const onVolumeCheck = (e: Event, vol: Volume) => {
+  e.stopPropagation();
+  batch.selection.toggleVolume(vol);
 };
 // 把 || / ?? / ?. 留在脚本侧，避免模板表达式贡献分支复杂度
 const chaptersOf = (vol: Volume) => vol.chapters ?? [];
@@ -67,13 +84,19 @@ const chapterCount = (vol: Volume) => vol.chapters?.length ?? 0;
       :role="volumeRole"
       @click="ctx.toggleVolumeById(vol.id)"
     >
+      <ChapterBatchCheck
+        v-if="selecting"
+        :state="batch.selection.volumeState(vol)"
+        :title="t('taskQueueUi.batch.selectVolume')"
+        @click="onVolumeCheck($event, vol)"
+      />
       <i class="pi mbd-tree-vol-icon" :class="folderIcon(vol.id)" aria-hidden="true" />
       <span class="mbd-tree-row-title">{{ ctx.getVolumeDisplayTitle(vol, ctx.book.value) }}</span>
       <span class="mbd-tree-row-count">{{
         t('readerUi.chapterCount', { count: chapterCount(vol) })
       }}</span>
       <button
-        v-if="showRowActions"
+        v-if="showRowActions && !selecting"
         type="button"
         class="mbd-tree-row-more"
         :aria-label="t('readerUi.volumeActions')"
@@ -88,9 +111,11 @@ const chapterCount = (vol: Volume) => vol.chapters?.length ?? 0;
         :key="ch.id"
         :class="chapterRowClass(ch.id)"
         role="button"
-        @click="emit('navigate', ch)"
+        @click="onChapterClick(ch)"
       >
+        <ChapterBatchCheck v-if="selecting" :state="chapterCheckState(ch.id)" />
         <i
+          v-else
           class="pi mbd-tree-chap-icon"
           :class="ctx.chapterStatusIcon(ch.id)"
           :style="{ color: ctx.chapterStatusColor(ch.id) }"
@@ -99,11 +124,16 @@ const chapterCount = (vol: Volume) => vol.chapters?.length ?? 0;
         <span class="mbd-tree-row-title">
           {{ ctx.getChapterDisplayTitle(ch, ctx.book.value || undefined) }}
         </span>
-        <span class="mbd-tree-row-count" :style="{ color: ctx.chapterStatusTextColor(ch.id) }">
+        <ChapterBatchBadge v-if="selecting" :chapter-id="ch.id" />
+        <span
+          v-else
+          class="mbd-tree-row-count"
+          :style="{ color: ctx.chapterStatusTextColor(ch.id) }"
+        >
           {{ ctx.chapterStatusLabel(ch.id) }}
         </span>
         <button
-          v-if="showRowActions"
+          v-if="showRowActions && !selecting"
           type="button"
           class="mbd-tree-row-more"
           :aria-label="t('readerUi.chapterActions')"

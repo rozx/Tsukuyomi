@@ -5,7 +5,12 @@ import { useAutoSync } from 'src/composables/useAutoSync';
 import { useQuickStartGuide } from 'src/composables/useQuickStartGuide';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { useSettingsStore } from 'src/stores/settings';
-import { taskCancelToasts, taskErrorToast } from './task-status-toasts';
+import { configureTaskQueue, useTaskQueueStore } from 'src/stores/task-queue';
+import {
+  collectTaskStatusTransitions,
+  taskCancelToasts,
+  taskErrorToast,
+} from './task-status-toasts';
 import {
   useAskUserStore,
   type AskUserBatchPayload,
@@ -62,21 +67,8 @@ export function useMainLayoutShell() {
   // 性能优化：之前使用 `{ deep: true }`，会在每次 updateTask() 调用（流式响应每帧都可能触发）
   // 时对整个 activeTasks 数组做深度遍历。使用轻量签名字符串（id:status:type）替代：
   // 仅在任务数量、id、状态或类型真正变化时触发回调，流式文本长度变化不会触发。
-  const collectStatusTransitions = (
-    newTasks: AIProcessingTask[],
-  ): { errorTasks: AIProcessingTask[]; cancelledTasks: AIProcessingTask[] } => {
-    const errorTasks: AIProcessingTask[] = [];
-    const cancelledTasks: AIProcessingTask[] = [];
-    for (const task of newTasks) {
-      const oldTask = previousTasks.get(task.id);
-      if (oldTask && oldTask.status !== task.status) {
-        if (task.status === 'error') errorTasks.push(task);
-        else if (task.status === 'cancelled') cancelledTasks.push(task);
-      }
-      previousTasks.set(task.id, { ...task });
-    }
-    return { errorTasks, cancelledTasks };
-  };
+  const collectStatusTransitions = (newTasks: AIProcessingTask[]) =>
+    collectTaskStatusTransitions(previousTasks, newTasks);
 
   const showTaskErrorToasts = (errorTasks: AIProcessingTask[]): void => {
     for (const task of errorTasks) toast.add(taskErrorToast(task, settingsStore.uiLocale));
@@ -148,8 +140,15 @@ export function useMainLayoutShell() {
     if (cacheHit) void EmbeddingService.warmup();
   };
 
+  // 章节任务队列：提示接到带历史记录的全局 toast，启动时只初始化一次
+  // （恢复刷新前的队列、竞选执行者、对账中断的运行记录）
+  const taskQueue = useTaskQueueStore();
+  configureTaskQueue({ notify: (message) => toast.add(message) });
+
   onMounted(async () => {
     setupAutoSync();
+    if (!settingsStore.isLoaded) await settingsStore.loadSettings();
+    void taskQueue.ensureStarted();
 
     // 语义检索启用且模型已被缓存时，应用启动后自动预热（复用浏览器已缓存的模型文件，无需重新下载）
     // 首次安装/模型升级时需主动下载；只有当前模型文件已缓存才静默预热。

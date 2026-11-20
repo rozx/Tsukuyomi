@@ -3,6 +3,8 @@ import { useI18n } from 'vue-i18n';
 
 import type { Volume, Chapter, Novel } from 'src/models/novel';
 import { getChapterDisplayTitle } from 'src/utils';
+import ChapterBatchCheck from 'src/components/novel/chapter-batch/ChapterBatchCheck.vue';
+import ChapterBatchBadge from 'src/components/novel/chapter-batch/ChapterBatchBadge.vue';
 
 const { t } = useI18n();
 
@@ -16,6 +18,9 @@ defineProps<{
   statusColor: (chapterId: string) => string;
   statusTextColor: (chapterId: string) => string;
   statusLabel: (chapterId: string) => string;
+  /** 多选模式：复选框 + 状态徽章，隐藏 ⋮ */
+  selecting?: boolean;
+  checked?: boolean;
 }>();
 
 defineEmits<{
@@ -27,23 +32,27 @@ defineEmits<{
 <template>
   <div
     class="vt-row vt-row--chapter"
-    :class="{ 'vt-row--active': isSelected }"
+    :class="{ 'vt-row--active': isSelected, 'vt-row--checked': selecting && checked }"
     role="button"
     tabindex="0"
     @click="$emit('navigate', chapter)"
     @keydown.enter.space.prevent="$emit('navigate', chapter)"
   >
+    <ChapterBatchCheck v-if="selecting" :state="checked ? 'all' : 'none'" />
     <i
+      v-else
       class="pi vt-chap-icon"
       :class="statusIcon(chapter.id)"
       :style="{ color: statusColor(chapter.id) }"
       aria-hidden="true"
     />
     <span class="vt-row-title">{{ getChapterDisplayTitle(chapter, book || undefined) }}</span>
-    <span class="vt-row-count" :style="{ color: statusTextColor(chapter.id) }">
+    <ChapterBatchBadge v-if="selecting" :chapter-id="chapter.id" />
+    <span v-else class="vt-row-count" :style="{ color: statusTextColor(chapter.id) }">
       {{ statusLabel(chapter.id) }}
     </span>
     <button
+      v-if="!selecting"
       type="button"
       class="vt-row-more"
       :aria-label="t('readerUi.chapterActions')"
@@ -70,6 +79,10 @@ defineEmits<{
 .vt-row--active {
   background: var(--tsukuyomi-opacity-12);
   color: var(--primary-300);
+}
+
+.vt-row--checked {
+  background: var(--primary-opacity-10);
 }
 
 .vt-chap-icon {

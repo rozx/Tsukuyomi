@@ -1,8 +1,8 @@
 # 🛠️ System Bar and Navigation {#toolbar-guide-section-1}
 
-Tsukuyomi adapts its system bar to each device while keeping the same core functions: **navigation, AI thinking, sync, notifications, right panels, and the vector index**.
+Tsukuyomi adapts its system bar to each device while keeping the same core functions: **navigation, task center, sync, notifications, right panels, and the vector index**.
 
-> Since v0.12.1, desktop uses a workspace with icon rails and separate chat/progress panels. Tablet/mobile retain compact status chips. The Vector index entry is available in all three layouts: the desktop right rail, the tablet book-details side rail, and the mobile top system bar.
+> Since v0.12.1, desktop uses a workspace with icon rails. Tablet/mobile retain compact status chips. Chapter task progress is shown in the "Tasks" task center in the top bar; the former right-panel "Translation progress" entry and the "AI thinking" entry are merged into it. The Vector index entry is available in all three layouts: the desktop right rail, the tablet book-details side rail, and the mobile top system bar.
 
 ---
 
@@ -12,7 +12,7 @@ Web desktop and Electron's forced desktop layout have four areas:
 
 ```
 +------------------------------------------------------------+
-|  Sysbar (AppHeader): brand | AI | Sync | Notifications     |
+|  Sysbar (AppHeader): brand | Tasks | Sync | Notifications  |
 +--------+------------------------------------------+--------+
 |        |                                          |        |
 | Left   |          Workspace (route content)       | Right  |
@@ -29,10 +29,12 @@ From left to right:
 
 - **Menu (`☰`)**: expand/collapse the left rail.
 - **Brand**: logo, name, and Moonlit Translator subtitle.
-- **AI thinking**:
-  - ✨ with "AI thinking" when idle.
-  - A status pill with "AI Thinking" or "AI Processing" and a pulsing dot while a task runs.
-  - Opens the thinking panel: active model/type/status/time, reasoning messages, ten recently completed tasks, stop, and clear.
+- **Task center**:
+  - A quiet "Tasks" icon when idle.
+  - While chapter tasks run, it shows the running count and an overall progress bar. When items are also queued, it shows running and queued counts with a segmented bar (done / running / not started).
+  - When only other AI activity, such as an assistant chat, is running, it shows "AI working" with a pulsing dot. While the queue is paused it shows "Paused · N queued". After a batch ends, it shows done and failed counts until you open the task center or clear finished items.
+  - When a new task starts, the chip only flashes; the task center does not open by itself.
+  - Click to open the task center. Chapter tasks are grouped into "Running" / "Queued" / "Finished". Expand a task to see thinking, tool calls, and output; stop, retry, drag to reorder, or pause and resume the queue. "Other AI activity" below lists assistant chats, single-paragraph tasks, and similar items. The task center can be pinned as a floating panel or collapsed into a mini progress bar. See [Task queue and task center](/help/book-details-translation#book-details-translation-section-9).
 - **Sync status**:
 
 | State    | Display                 | Meaning                                                              |
@@ -70,7 +72,6 @@ Bottom navigation:
 When collapsed, the right side is an icon rail. Selecting an entry expands its panel (drag to resize); the panel's close button folds it back into the rail. Rail entries:
 
 - 💬 **Tsukuyomi**: chat sessions, messages, input, book/chapter/paragraph context, todos, and context usage.
-- 📊 **Translation progress**: translation/polishing/proofreading progress. A badge counts active tasks; a new task activates its panel and can be canceled there.
 - ⚡ **Vector index**, only in book details when local embeddings are actually available: opens the "Local vector index" panel. See [Local embedding access](/help/toolbar-guide#toolbar-guide-section-10) below.
 
 > Selecting an entry activates that panel. Inactive panels do not mount their watchers. On the AI import page (`/import`), the right side always shows the import assistant chat.
@@ -96,7 +97,7 @@ A compact system bar plus a left navigation rail; the Books and book-details pag
 
 ```
 +--------------------------------------------------------+
-|  TabletSysBar: brand | version | AI | Sync | Notify    |
+|  TabletSysBar: brand | version | Tasks | Sync | Notify |
 +------+------------------------------------------+------+
 | Nav  |                                          | Side |
 | rail |        Workspace (route content)         | rail |
@@ -107,13 +108,13 @@ A compact system bar plus a left navigation rail; the Books and book-details pag
 ### System bar {#toolbar-guide-section-8}
 
 - **Left**: brand and current version.
-- **Right**: AI thinking, sync, and notification chips, with the same behavior as desktop in a more compact form: "AI thinking" when idle, "AI is thinking" during a task; the sync chip shows "Sync", "Syncing", "N changes", or "Synced".
+- **Right**: task center, sync, and notification chips, with the same behavior as desktop in a more compact form. The sync chip shows "Sync", "Syncing", "N changes", or "Synced". The task center can also be pinned as a floating panel.
 
 ### Navigation and right panel {#toolbar-guide-section-9}
 
 - **Left navigation rail** (`TabletNavRail`): the logo returns home; main entries are Home / Library / AI import / AI models, with Help / Settings pinned at the bottom.
-- **Right tool rail** (`TabletSideRail`, on Books and book details): list/contents toggle, Tsukuyomi, and Translation progress (with a task badge). Book details also shows the Vector index button when local embeddings are available.
-- Tsukuyomi and Translation progress slide in from the right as overlay panels; tap the mask to close. Behavior matches desktop.
+- **Right tool rail** (`TabletSideRail`, on Books and book details): list/contents toggle and Tsukuyomi. Book details also shows the Vector index button when local embeddings are available.
+- Tsukuyomi slides in from the right as an overlay panel; tap the mask to close. Behavior matches desktop.
 
 ### Local embedding access {#toolbar-guide-section-10}
 
@@ -143,7 +144,7 @@ A minimal system bar, full-width content, and a bottom tab bar:
 ```
 +----------------------------------------+
 |  MobileSysBar:                         |
-|  logo | Vectors | AI | Sync | 🔔 | Help |
+|  logo | Vectors | Tasks | Sync | 🔔 | Help |
 +----------------------------------------+
 |                                        |
 |      Route content (full width)        |
@@ -159,12 +160,12 @@ A minimal system bar, full-width content, and a bottom tab bar:
 - **Left**: logo, name, and version.
 - **Right**:
   - **Vector index** (⚡, only on book details when local embeddings are available; opens a bottom sheet)
-  - AI thinking ("AI is thinking" during a task)
+  - Task center (shows running and queued counts during tasks; opens as a bottom sheet, and tapping a task row opens full-screen details; it cannot be pinned or collapsed on mobile)
   - Sync ("Syncing", "N changes", or "Synced" when applicable)
   - Notifications
   - **Help**, a mobile-specific chip opening `/help`
 
-> The main mobile navigation is the bottom tab bar: Home / Library / Tsukuyomi / AI models / Settings. Tsukuyomi and Translation progress open as bottom sheets; there is no left rail. Local embeddings (including semantic search in `query_chapter`) are gated by the device user agent and disabled on phones and other mobile devices to avoid WASM memory failures; a desktop browser narrowed to phone width is not affected.
+> The main mobile navigation is the bottom tab bar: Home / Library / Tsukuyomi / AI models / Settings. Tsukuyomi opens as a bottom sheet; there is no left rail. Local embeddings (including semantic search in `query_chapter`) are gated by the device user agent and disabled on phones and other mobile devices to avoid WASM memory failures; a desktop browser narrowed to phone width is not affected.
 
 ---
 
@@ -174,7 +175,7 @@ All variants use the same `useSystemBar()` state:
 
 - Pending books/models/covers/settings/memory/deletion changes
 - Countdown until automatic sync
-- Current AI task state
+- Task center state (running/queued counts, overall progress, paused state)
 - Unread notifications
 
 Sync configuration, manual sync, queue pause, and message clearing update the system bars immediately.
@@ -192,8 +193,11 @@ A: It appears only on `/books/:id` and subroutes when local embeddings are actua
 **Q: Why does Syncing stay visible?**
 A: Check the Gist configuration, network, and token permissions. Open message history for the error.
 
-**Q: Why is the AI thinking panel empty?**
-A: There may be no records, or they were cleared. Translation, polishing, and proofreading create records.
+**Q: Where did the old "AI thinking" and "Translation progress" entries go?**
+A: Both are merged into the task center ("Tasks") in the top bar. Expand a chapter task there to see its progress, thinking, and output. Assistant chats, single-paragraph tasks, and similar items are under "Other AI activity" at the bottom of the task center.
+
+**Q: Why is the task center empty?**
+A: There may be no task records, or they were cleared. Any translation, polishing, or proofreading task appears here.
 
 **Q: Why are embeddings disabled after enlarging a tablet window?**
 A: Physical mobile platform detection does not change with window width. The restriction avoids WASM memory crashes.

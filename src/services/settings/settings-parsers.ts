@@ -9,6 +9,7 @@ import type { SyncConfig } from 'src/models/sync';
 import { SyncType } from 'src/models/sync';
 import { normalizeTaskModelSettings } from './task-default-models';
 import { normalizeApiKeySettings } from './api-keys';
+import { pickTaskQueueMaxConcurrent } from 'src/models/task-queue';
 
 /**
  * 将 Date / number / string 转成毫秒时间戳。
@@ -232,6 +233,9 @@ function copyOptionalAppSettingsFields(target: AppSettings, source: AppSettings)
   if (source.memoryInjection !== undefined) target.memoryInjection = source.memoryInjection;
   if (typeof source.enableLocalEmbedding === 'boolean') {
     target.enableLocalEmbedding = source.enableLocalEmbedding;
+  }
+  if (source.taskQueueMaxConcurrent !== undefined) {
+    target.taskQueueMaxConcurrent = pickTaskQueueMaxConcurrent(source.taskQueueMaxConcurrent);
   }
 }
 

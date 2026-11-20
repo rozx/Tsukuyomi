@@ -3,8 +3,8 @@
  * Tablet book-details layout — reuses BookDetailsDesktop for the dual-pane
  * reader (catalog sidebar + chapter content), swaps in ChapterToolbarTablet
  * inside BookDetailsDesktop when isTablet, and adds a right-edge vertical
- * rail that toggles the two independent TabletChatPanel / TabletProgressPanel
- * overlays (mounted in MainLayoutTablet).
+ * rail that toggles the TabletChatPanel overlay (mounted in MainLayoutTablet).
+ * Translation progress lives in the task center on the top utility strip.
  *
  * The 2-column grid for 原文 / 译文 is applied here via :deep() so we don't
  * fork ParagraphCard / ChapterContentPanel (~2,700 LoC of highlighted-text /
@@ -16,7 +16,6 @@ import { resolveAppLocale } from 'src/models/locale';
 import { languageName } from 'src/i18n/translate';
 import BookDetailsDesktop from './BookDetailsDesktop.vue';
 import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
-import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import BatchEmbeddingsButton from 'src/components/novel/BatchEmbeddingsButton.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import { useTabletRightRail } from 'src/composables/useTabletRightRail';
@@ -28,7 +27,7 @@ const columnsHeader = computed(() => {
   const language = languageName(resolveAppLocale(locale.value), target);
   return t('readerUi.sourceTranslationHeader', { language });
 });
-const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
+const { isChatActive, toggleRail } = useTabletRightRail();
 </script>
 
 <template>
@@ -79,22 +78,9 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
         class="tsr-btn rail-base-btn"
         :class="{ 'tsr-btn--active': isChatActive }"
         title="月詠"
-        @click="() => toggleRail('chat')"
+        @click="() => toggleRail()"
       >
         <i class="pi pi-sparkles" aria-hidden="true" />
-      </button>
-
-      <button
-        type="button"
-        class="tsr-btn rail-base-btn"
-        :class="{ 'tsr-btn--active': isProgressActive }"
-        :title="t('readerUi.progress')"
-        @click="() => toggleRail('progress')"
-      >
-        <i class="pi pi-objects-column" aria-hidden="true" />
-        <NotificationBadge v-if="ctx.activeTranslationTaskCount.value > 0">
-          {{ ctx.activeTranslationTaskCount.value }}
-        </NotificationBadge>
       </button>
       <BatchEmbeddingsButton class="tsr-btn rail-base-btn" />
     </TabletSideRail>

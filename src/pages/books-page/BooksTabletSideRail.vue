@@ -8,7 +8,6 @@ const { t: i18nT } = useI18n();
  */
 import { computed } from 'vue';
 import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
-import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 import { injectBooksTabletPage } from 'src/composables/books-page/useBooksTabletPage';
 
 const t = injectBooksTabletPage();
@@ -17,7 +16,6 @@ const listButtonTitle = computed(() =>
   t.isListOpen.value ? i18nT('libraryUi.collapseBooks') : i18nT('libraryUi.expandBooks'),
 );
 const sidebarIcon = computed(() => (t.isListOpen.value ? 'pi-angle-double-left' : 'pi-bars'));
-const hasActiveTask = computed(() => t.activeTranslationTaskCount.value > 0);
 </script>
 
 <template>
@@ -43,22 +41,9 @@ const hasActiveTask = computed(() => t.activeTranslationTaskCount.value > 0);
       class="tsr-btn rail-base-btn"
       :class="{ 'tsr-btn--active': t.isChatActive.value }"
       :title="i18nT('libraryUi.assistant')"
-      @click="() => t.toggleRail('chat')"
+      @click="() => t.toggleRail()"
     >
       <i class="pi pi-sparkles" aria-hidden="true" />
-    </button>
-
-    <button
-      type="button"
-      class="tsr-btn rail-base-btn"
-      :class="{ 'tsr-btn--active': t.isProgressActive.value }"
-      :title="i18nT('libraryUi.progress')"
-      @click="() => t.toggleRail('progress')"
-    >
-      <i class="pi pi-objects-column" aria-hidden="true" />
-      <NotificationBadge v-if="hasActiveTask">
-        {{ t.activeTranslationTaskCount.value }}
-      </NotificationBadge>
     </button>
   </TabletSideRail>
 </template>

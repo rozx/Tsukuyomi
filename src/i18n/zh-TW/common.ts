@@ -16,6 +16,7 @@ import activityUi from './activity-ui';
 import bookUi from './book-ui';
 import importUi from './import-ui';
 import agentMcpUi from './agent-mcp-ui';
+import taskQueueUi from './task-queue-ui';
 export default {
   ...aiUi,
   ...embeddingUi,
@@ -35,6 +36,7 @@ export default {
   ...bookUi,
   ...importUi,
   ...agentMcpUi,
+  ...taskQueueUi,
   failed: '操作失敗',
   success: '操作成功',
 };

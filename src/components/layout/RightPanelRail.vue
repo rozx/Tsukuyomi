@@ -9,24 +9,17 @@ const { t: i18nT } = useI18n();
 import { computed } from 'vue';
 import BatchEmbeddingsButton from 'src/components/novel/BatchEmbeddingsButton.vue';
 import { useBatchEmbeddingsPanel } from 'src/composables/useBatchEmbeddingsPanel';
-import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
 
 interface Props {
-  activeRightTab: 'chat' | 'progress';
   rightPanelOpen: boolean;
-  activeTranslationTaskCount: number;
 }
 
 const props = defineProps<Props>();
 const emit = defineEmits<{
-  expand: [tab: 'chat' | 'progress'];
+  expand: [];
 }>();
 
-const chatActive = computed(() => props.activeRightTab === 'chat' && props.rightPanelOpen);
-const progressActive = computed(() => props.activeRightTab === 'progress' && props.rightPanelOpen);
-const progressBadge = computed(() =>
-  props.activeTranslationTaskCount > 99 ? '99+' : props.activeTranslationTaskCount,
-);
+const chatActive = computed(() => props.rightPanelOpen);
 
 const { isAvailable: showBatchEmbeddings } = useBatchEmbeddingsPanel();
 </script>
@@ -39,22 +32,9 @@ const { isAvailable: showBatchEmbeddings } = useBatchEmbeddingsPanel();
       :class="{ active: chatActive }"
       :aria-label="i18nT('libraryUi.assistantLabel')"
       :title="i18nT('libraryUi.assistant')"
-      @click="emit('expand', 'chat')"
+      @click="emit('expand')"
     >
       <i class="pi pi-comments" aria-hidden="true" />
-    </button>
-    <button
-      type="button"
-      class="rp-rail-item rail-base-btn"
-      :class="{ active: progressActive }"
-      :aria-label="i18nT('libraryUi.progress')"
-      :title="i18nT('libraryUi.progress')"
-      @click="emit('expand', 'progress')"
-    >
-      <i class="pi pi-list-check" aria-hidden="true" />
-      <NotificationBadge v-if="activeTranslationTaskCount > 0">
-        {{ progressBadge }}
-      </NotificationBadge>
     </button>
 
     <template v-if="showBatchEmbeddings">

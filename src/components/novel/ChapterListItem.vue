@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n';
 import type { Chapter, Novel } from 'src/models/novel';
 import Button from 'primevue/button';
 import { getChapterDisplayTitle } from 'src/utils';
+import ChapterBatchCheck from 'src/components/novel/chapter-batch/ChapterBatchCheck.vue';
+import ChapterBatchBadge from 'src/components/novel/chapter-batch/ChapterBatchBadge.vue';
 
 const { t } = useI18n();
 
@@ -20,6 +22,9 @@ defineProps<{
   isLoading: boolean;
   isDragOver: boolean;
   isDragging: boolean;
+  /** 多选模式：显示复选框与状态徽章，隐藏拖拽和行内操作 */
+  selecting?: boolean;
+  checked?: boolean;
 }>();
 
 defineEmits<{
@@ -41,10 +46,11 @@ defineEmits<{
       'chapter-item-selected': isSelected,
       'chapter-item-loading': isLoading,
       'chapter-item-touch': touchMode,
+      'chapter-item-checked': selecting && checked,
       'drag-over': isDragOver,
       dragging: isDragging,
     }"
-    :draggable="!touchMode"
+    :draggable="!touchMode && !selecting"
     role="button"
     tabindex="0"
     @click="$emit('navigate')"
@@ -62,11 +68,14 @@ defineEmits<{
         role="status"
         :aria-label="t('readerUi.chapterLoading')"
       />
+      <ChapterBatchCheck v-else-if="selecting" :state="checked ? 'all' : 'none'" />
       <i v-else-if="!touchMode" class="pi pi-bars drag-handle" aria-hidden="true" @click.stop />
       <i class="pi pi-file chapter-icon"></i>
       <span class="chapter-title">{{ getChapterDisplayTitle(chapter, book || undefined) }}</span>
     </div>
+    <ChapterBatchBadge v-if="selecting" :chapter-id="chapter.id" />
     <div
+      v-else
       class="chapter-actions"
       :class="{ 'chapter-actions-visible': touchMode && isSelected }"
       @click.stop
@@ -156,6 +165,11 @@ defineEmits<{
   background: var(--primary-opacity-15) !important;
   border-color: var(--primary-opacity-40) !important;
   color: var(--moon-opacity-95) !important;
+}
+
+.chapter-item-checked {
+  background: var(--primary-opacity-10);
+  color: var(--moon-opacity-95);
 }
 
 .chapter-item-selected .chapter-icon {

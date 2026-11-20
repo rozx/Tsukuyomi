@@ -116,6 +116,11 @@ export interface AppSettings {
    */
   scraperConcurrencyLimit: number;
   /**
+   * 章节任务队列「最大同时进行任务」（翻译 / 润色 / 校对共享）
+   * 取值 1–5，默认 2；读取时一律经 pickTaskQueueMaxConcurrent 钳制
+   */
+  taskQueueMaxConcurrent?: number;
+  /**
    * 各任务的默认 AI 模型配置
    * 键为任务类型（translation、proofreading、termsTranslation、assistant）
    * 值为模型 ID 或 null（表示未设置）

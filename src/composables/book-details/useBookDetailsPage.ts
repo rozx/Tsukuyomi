@@ -26,6 +26,7 @@ import { localizedErrorMessage } from 'src/utils/localized-error';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useContextStore } from 'src/stores/context';
 import { useUiStore } from 'src/stores/ui';
+import { injectTaskCenterOptional } from 'src/composables/task-center/useTaskCenter';
 import { CoverService } from 'src/services/cover-service';
 import { ChapterService } from 'src/services/chapter-service';
 import { ChapterContentService } from 'src/services/chapter-content-service';
@@ -91,6 +92,8 @@ import {
   chapterStatusLabel as chapterStatusLabelPure,
 } from 'src/utils/chapter-status';
 import { isPortrait } from 'src/utils/device-orientation';
+import { createChapterBatch } from 'src/composables/book-details/useChapterBatch';
+import { createCoalescedTask } from 'src/utils/coalesced-task';
 
 /**
  * BookDetailsPage 业务逻辑 composable + provide/inject 辅助。
@@ -215,6 +218,7 @@ function createBookDetailsPageContext() {
   const booksStore = useBooksStore();
   const bookDetailsStore = useBookDetailsStore();
   const contextStore = useContextStore();
+  const taskCenter = injectTaskCenterOptional();
   const uiStore = useUiStore();
   const aiProcessingStore = useAIProcessingStore();
   const aiModelsStore = useAIModelsStore();
@@ -859,7 +863,11 @@ function createBookDetailsPageContext() {
     firstIncompleteChapterId: string | null;
     byChapter: Map<string, { total: number; translated: number }>;
   } | null>(null);
-  const isCalculatingTranslationProgress = ref(false);
+
+  // 章节列表批量启动（多选 + 确认对话框）；页面 dispatcher 负责 provide 给三个变体和对话框
+  const chapterBatch = createChapterBatch(book, () => translationProgressState.value?.byChapter, {
+    isVolumeExpanded,
+  });
 
   type ChapterProgress = { total: number; translated: number };
   type AggregatedProgress = {
@@ -898,36 +906,36 @@ function createBookDetailsPageContext() {
     return { total, translated, firstIncompleteChapterId, byChapter };
   };
 
-  async function calculateTranslationProgress() {
-    if (!book.value || isCalculatingTranslationProgress.value) return;
-    isCalculatingTranslationProgress.value = true;
-
-    try {
-      const chapterOrder: { id: string; chapter: Chapter }[] = [];
-      for (const vol of book.value.volumes || []) {
-        for (const ch of vol.chapters || []) {
-          chapterOrder.push({ id: ch.id, chapter: ch });
-        }
+  // 任务队列每批落盘都会刷新书籍对象并触发重算；计算中再次请求时不能丢弃，
+  // 否则最后一批写入后的进度会停在旧值。合并成一次补跑。
+  const translationProgressTask = createCoalescedTask(async () => {
+    if (!book.value) return;
+    const chapterOrder: { id: string; chapter: Chapter }[] = [];
+    for (const vol of book.value.volumes || []) {
+      for (const ch of vol.chapters || []) {
+        chapterOrder.push({ id: ch.id, chapter: ch });
       }
-
-      if (chapterOrder.length === 0) {
-        translationProgressState.value = {
-          total: 0,
-          translated: 0,
-          firstIncompleteChapterId: null,
-          byChapter: new Map(),
-        };
-        return;
-      }
-
-      const contentsMap = await ChapterContentService.loadChapterContentsBatch(
-        chapterOrder.map((c) => c.id),
-      );
-
-      translationProgressState.value = aggregateProgressByChapter(chapterOrder, contentsMap);
-    } finally {
-      isCalculatingTranslationProgress.value = false;
     }
+
+    if (chapterOrder.length === 0) {
+      translationProgressState.value = {
+        total: 0,
+        translated: 0,
+        firstIncompleteChapterId: null,
+        byChapter: new Map(),
+      };
+      return;
+    }
+
+    const contentsMap = await ChapterContentService.loadChapterContentsBatch(
+      chapterOrder.map((c) => c.id),
+    );
+
+    translationProgressState.value = aggregateProgressByChapter(chapterOrder, contentsMap);
+  });
+
+  function calculateTranslationProgress(): Promise<void> {
+    return translationProgressTask.run();
   }
 
   const findChapterInBook = (
@@ -2146,6 +2154,7 @@ function createBookDetailsPageContext() {
     // book + chapter
     book,
     bookId,
+    chapterBatch,
     volumes,
     volumeOptions,
     selectedChapter,
@@ -2306,10 +2315,8 @@ function createBookDetailsPageContext() {
         item.command({ originalEvent: new Event('click'), item });
       }
     },
-    openMobileTranslationProgress: () => {
-      uiStore.setActiveRightTab('progress');
-      if (!uiStore.rightPanelOpen) uiStore.openRightPanel();
-    },
+    // 手机阅读页的进度按钮：打开任务中心底部抽屉
+    openMobileTranslationProgress: () => taskCenter?.toggle(),
     continueReadingChapter,
     formatRelativeDate,
     continueReadingOnPhone,

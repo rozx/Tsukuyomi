@@ -23,9 +23,13 @@ import Toast from 'primevue/toast';
 import ConfirmDialog from 'primevue/confirmdialog';
 import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
 import { useBatchEmbeddingsPanel } from 'src/composables/useBatchEmbeddingsPanel';
+import TaskCenter from 'src/components/task-center/TaskCenter.vue';
+import { provideTaskCenter } from 'src/composables/task-center/useTaskCenter';
 
 const { variant } = useDeviceVariant();
 const { handleToastClose, quickStartGuideVisible, dismissQuickStartGuide } = useMainLayoutShell();
+// 任务中心共享状态：chip（各布局变体的系统条）、弹出层、固定面板与手机抽屉共用一份
+provideTaskCenter();
 const {
   bookId,
   isAvailable: embeddingsAvailable,
@@ -61,6 +65,7 @@ const variantComponent = computed(() => {
   <ConfirmDialog group="force-sync" />
   <AskUserDialog />
   <QuickStartGuideDialog :visible="quickStartGuideVisible" @dismiss="dismissQuickStartGuide" />
+  <TaskCenter />
   <BatchEmbeddingsPanel
     v-if="embeddingsAvailable"
     :key="bookId"

@@ -84,7 +84,7 @@ The "Vector index" entry appears only on **book details pages** while local embe
 - Tablet layout: the right side rail.
 - Narrow layouts: the top system bar.
 
-Availability follows the effective local embeddings setting, independently of layout breakpoints, so narrowing a desktop browser keeps it usable. Desktop and tablet layouts open a right-side drawer; the mobile layout opens the same bottom sheet as the assistant and translation progress. An open panel stays open when the layout changes and closes when you switch to another book.
+Availability follows the effective local embeddings setting, independently of layout breakpoints, so narrowing a desktop browser keeps it usable. Desktop and tablet layouts open a right-side drawer; the mobile layout opens the same bottom sheet as the assistant and the task center. An open panel stays open when the layout changes and closes when you switch to another book.
 
 The panel is titled "Local vector index" with the subtitle "Runs locally in your browser", followed by the current book title and chapter count.
 

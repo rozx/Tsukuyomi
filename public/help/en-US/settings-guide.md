@@ -39,6 +39,10 @@ A manual choice persists across restarts and is included in settings sync. A syn
 
 A new book takes the interface language as its target when actually created. Change an existing target under **Book details → Settings → Translation settings**. Running AI tasks retain their startup languages; new executions use the changed settings.
 
+### Task queue {#settings-guide-task-queue}
+
+**Max concurrent tasks** sets how many chapter translation, polishing, and proofreading tasks run at once (1–5, default 2), shared across all books. Raising it starts queued tasks right away; lowering it does not interrupt running tasks. Single-paragraph tasks and assistant chats do not use these slots. See [Task queue and task center](/help/book-details-translation#book-details-translation-section-9).
+
 ## 1) 🤖 AI models {#settings-guide-section-4}
 
 Configure default task models.
