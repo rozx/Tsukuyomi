@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createWebMcpRelayBridge,
   WEBMCP_RELAY_EMBED_PATH,
 } from 'src/services/agent-mcp/webmcp-relay';
+
+/** 与 scripts/sync-webmcp-relay.ts 写入的第一行一致 */
+const RELAY_EMBED_HEADER = '// fallow-ignore-file unused-file\n';
 
 function fakeRuntime() {
   return {
@@ -239,15 +243,24 @@ describe('WebMCP local relay bridge', () => {
     });
   });
 
-  it('public/ 下随应用分发的中继文件与已安装的中继包完全一致', () => {
+  it('public/ 下随应用分发的中继文件与已安装的中继包一致（embed.js 只多第一行的忽略注释）', () => {
     const root = resolve(__dirname, '../..');
-    for (const file of ['embed.js', 'widget.html']) {
-      const vendored = readFileSync(resolve(root, 'public/webmcp-relay', file));
-      const packaged = readFileSync(
-        resolve(root, 'node_modules/@mcp-b/webmcp-local-relay/dist/browser', file),
-      );
-      expect(vendored.equals(packaged), `${file} 与中继包不一致，升级后需要重新复制`).toBe(true);
-    }
+    // 从已安装的包里定位浏览器端文件
+    const browserDir = resolve(
+      dirname(createRequire(import.meta.url).resolve('@mcp-b/webmcp-local-relay')),
+      'browser',
+    );
+    const read = (dir: string, file: string) => readFileSync(resolve(dir, file), 'utf8');
+    const vendoredDir = resolve(root, 'public/webmcp-relay');
+    const outdated = '与中继包不一致，升级后运行 bun run sync:webmcp-relay';
+
+    // embed.js 由页面以 <script> 注入，没有模块 import 它；第一行告诉质量检查不要把它当成没用到的文件
+    expect(read(vendoredDir, 'embed.js'), `embed.js ${outdated}`).toBe(
+      RELAY_EMBED_HEADER + read(browserDir, 'embed.js'),
+    );
+    expect(read(vendoredDir, 'widget.html'), `widget.html ${outdated}`).toBe(
+      read(browserDir, 'widget.html'),
+    );
     // 中继脚本与页面运行时必须同一主版本
     const major = (name: string) =>
       (

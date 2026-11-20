@@ -59,6 +59,24 @@ describe('agentMcp 本机配置与同步隔离', () => {
     expect(store.agentMcp.desktopPort).toBe(48500);
   });
 
+  it('上一次保存还没完成时再改另一项：两项修改都保留，后一次不会把前一次改回去', async () => {
+    const store = useSettingsStore();
+    await store.updateAgentMcpSettings({
+      permissionMode: 'translate_and_edit',
+      notifyOnWrite: true,
+    });
+
+    // 两次修改都不等待完成，与界面上连续操作的调用方式一致
+    const first = store.updateAgentMcpSettings({ permissionMode: 'read_only' });
+    const second = store.updateAgentMcpSettings({ notifyOnWrite: false });
+    await Promise.all([first, second]);
+
+    expect(store.agentMcp.permissionMode).toBe('read_only');
+    expect(store.agentMcp.notifyOnWrite).toBe(false);
+    // 每次调用返回的是它自己合并之后的结果
+    expect((await second).permissionMode).toBe('read_only');
+  });
+
   it('仅修改本机 MCP 配置不改变同步剥离后的设置内容（不触发待同步变更）', async () => {
     const store = useSettingsStore();
     const beforeStripped = JSON.stringify(stripAppSettingsLocalFields(store.getAllSettings()));

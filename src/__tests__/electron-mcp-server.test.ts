@@ -369,6 +369,30 @@ describe('Electron Streamable HTTP MCP Server (dual-era)', () => {
     expect(moved.port).not.toBe(first.port);
   });
 
+  it('连续两次更新配置：先换端口、紧接着又换令牌，最终生效的是后一次的令牌', async () => {
+    const options = { version: '0.19.2', dispatch: () => Promise.resolve({}) };
+    const server = createElectronMcpServer(options);
+    servers.push(server);
+    await server.start({ port: 0, authToken: 'token-0-000000' });
+    const probe = createElectronMcpServer(options);
+    const free = (await probe.start({ port: 0, authToken: 'x' })).port!;
+    await probe.stop();
+
+    // 两次更新都不等待完成，与界面上连续操作的调用方式一致
+    const first = server.applyConfig({ port: free, authToken: 'token-a-111111' });
+    const second = server.applyConfig({ port: free, authToken: 'token-b-222222' });
+    await Promise.all([first, second]);
+
+    const call = (token: string) =>
+      fetch(`http://127.0.0.1:${free}/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
+      }).then((res) => res.status);
+    expect(await call('token-a-111111')).toBe(401);
+    expect(await call('token-b-222222')).not.toBe(401);
+  });
+
   it('校验 Bearer Token（401）、非本机 Host / 跨站 Origin（403）、Token 轮换立即失效、两代并发与端口冲突报错', async () => {
     const { server, postJson, token, port } = await startTestServer('token-v1');
 

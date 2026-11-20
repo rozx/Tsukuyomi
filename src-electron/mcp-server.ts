@@ -529,9 +529,13 @@ export function createElectronMcpServer(
   const applyConfig = (config: DesktopMcpStartConfig): Promise<DesktopMcpServerStatus> => {
     // 令牌马上换掉，旧令牌立即失效；不等排在前面的启动或停止
     updateAuthToken(config.authToken);
+    // 入队时就记下令牌的版本：轮到执行时再读的话，之后又换过的令牌会被这次重启用旧令牌盖回去
+    const tokenUpdatesWhenRequested = tokenUpdates;
     return inOrder(async () => {
       // 服务在运行且端口变了才需要重启；没有运行时只更新令牌，下次启动用新配置
-      if (server && status.port !== config.port) return startNow(config, tokenUpdates);
+      if (server && status.port !== config.port) {
+        return startNow(config, tokenUpdatesWhenRequested);
+      }
       return { ...status };
     });
   };

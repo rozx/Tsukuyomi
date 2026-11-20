@@ -19,8 +19,7 @@
   "ignorePatterns": [
     "src/__tests__/examplePages/**",
     "src/auto-components.d.ts",
-    "src/auto-imports.d.ts",
-    "public/webmcp-relay/**"
+    "src/auto-imports.d.ts"
   ],
   "ignoreDependencies": [
     "@quasar/extras",
@@ -29,8 +28,7 @@
     "unplugin-auto-import",
     "vite-plugin-checker",
     "vite",
-    "openspec",
-    "@mcp-b/webmcp-local-relay"
+    "openspec"
   ],
   "rules": {
     "unused-files": "error",

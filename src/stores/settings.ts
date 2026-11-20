@@ -53,6 +53,16 @@ function serializeSettingsWrite(owner: object, mutation: () => Promise<void>): P
   return next;
 }
 
+// MCP 本机配置的补丁按调用顺序依次合并：每次都等上一次保存完成后再读取最新状态。
+// 提前读取状态的话，连续两次修改会都基于同一份旧状态，后一次保存把前一次改回去。
+const agentMcpPatches = new WeakMap<object, Promise<unknown>>();
+function afterPreviousAgentMcpPatch<T>(owner: object, patch: () => Promise<T>): Promise<T> {
+  const previous = agentMcpPatches.get(owner) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(patch);
+  agentMcpPatches.set(owner, next);
+  return next;
+}
+
 /** 清空的 Key 不保留字段值，修改时间仍保留供同步传播。 */
 function removeEmptyApiKeys(settings: AppSettings): void {
   for (const field of API_KEY_FIELDS) {
@@ -865,13 +875,15 @@ export const useSettingsStore = defineStore('settings', {
      * 保留原 lastEdited，避免修改本机端口/令牌/开关产生待同步的远端设置变更。
      */
     async updateAgentMcpSettings(updates: Partial<AgentMcpSettings>): Promise<AgentMcpSettings> {
-      const current = normalizeAgentMcpSettings(this.settings.agentMcp);
-      const merged = normalizeAgentMcpSettings(updates, current);
-      await this.updateSettings({
-        agentMcp: merged,
-        lastEdited: this.settings.lastEdited,
+      return afterPreviousAgentMcpPatch(this, async () => {
+        const current = normalizeAgentMcpSettings(this.settings.agentMcp);
+        const merged = normalizeAgentMcpSettings(updates, current);
+        await this.updateSettings({
+          agentMcp: merged,
+          lastEdited: this.settings.lastEdited,
+        });
+        return merged;
       });
-      return merged;
     },
 
     /**
