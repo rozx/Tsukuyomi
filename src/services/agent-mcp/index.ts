@@ -1,31 +1,24 @@
 import type { RecordAgentMcpActivityInput } from 'src/models/agent-mcp';
 import { createAgentMcpKernel, type AgentMcpKernel } from './kernel';
-import { agentMcpBookUpdateTools } from './tools/book-updates';
-import { agentMcpContextTools } from './tools/context';
-import { agentMcpLibraryTools } from './tools/library';
-import { agentMcpTranslationTools } from './tools/translation';
-import { agentMcpWorldbuildingTools } from './tools/worldbuilding';
-import type { AgentMcpToolSpec, AgentMcpWriteNotification } from './types';
+import { ALL_AGENT_MCP_TOOLS } from './tools/all-tools';
+import type { AgentMcpWriteNotification } from './types';
 
-export const ALL_AGENT_MCP_TOOLS: readonly AgentMcpToolSpec[] = [
-  ...agentMcpContextTools,
-  ...agentMcpLibraryTools,
-  ...agentMcpBookUpdateTools,
-  ...agentMcpTranslationTools,
-  ...agentMcpWorldbuildingTools,
-];
+export { ALL_AGENT_MCP_TOOLS };
 
 let sharedKernel: AgentMcpKernel | null = null;
 let sharedNavigate: ((path: string) => Promise<void> | void) | undefined;
+let sharedGetCurrentPath: (() => string | null) | undefined;
 let sharedWriteNotify: ((info: AgentMcpWriteNotification) => void) | undefined;
 let sharedRecordActivity: ((entry: RecordAgentMcpActivityInput) => void) | undefined;
 
 export function configureAgentMcpKernelHooks(hooks: {
   navigate?: (path: string) => Promise<void> | void;
+  getCurrentPath?: () => string | null;
   onWriteNotify?: (info: AgentMcpWriteNotification) => void;
   onRecordActivity?: (entry: RecordAgentMcpActivityInput) => void;
 }): void {
   sharedNavigate = hooks.navigate;
+  sharedGetCurrentPath = hooks.getCurrentPath;
   sharedWriteNotify = hooks.onWriteNotify;
   sharedRecordActivity = hooks.onRecordActivity;
 }
@@ -35,6 +28,7 @@ export function getAgentMcpKernel(): AgentMcpKernel {
     sharedKernel = createAgentMcpKernel({
       tools: ALL_AGENT_MCP_TOOLS,
       navigate: (path) => sharedNavigate?.(path),
+      getCurrentPath: () => sharedGetCurrentPath?.() ?? null,
       onWriteNotify: (info) => sharedWriteNotify?.(info),
       onRecordActivity: (entry) => sharedRecordActivity?.(entry),
     });

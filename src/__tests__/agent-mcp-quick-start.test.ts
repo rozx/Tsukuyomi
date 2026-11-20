@@ -119,6 +119,26 @@ describe('buildAgentQuickStartGuide', () => {
     expect(guide).toMatch(/^1\. .+\n2\. .+\n3\. /m);
   });
 
+  it('说明如何了解用户正在看什么、如何回答使用问题，以及统一修改译名的步骤', () => {
+    const guide = desktopGuide();
+    // 用户说「这一段」「这里」时先读上下文
+    expect(guide).toMatch(/get_app_context[^\n]*页面[^\n]*选中/);
+    expect(guide).toContain('selected_text');
+    // 使用问题先查帮助文档
+    expect(guide).toMatch(/怎么用[^\n]*search_help_docs[^\n]*get_help_doc/);
+    // 统一译名：先统计、预览，再替换
+    for (const field of [
+      'search_paragraphs',
+      'count_occurrences',
+      'replace_in_translations',
+      'dry_run',
+      'original_contains',
+    ])
+      expect(guide).toContain(field);
+    // 删除前要先向用户确认
+    expect(guide).toMatch(/delete_terms[^\n]*确认/);
+  });
+
   it('是通用说明而不是具体任务：不包含书名或待填占位', () => {
     const guide = desktopGuide();
     expect(guide).not.toContain('《');
@@ -132,7 +152,7 @@ describe('buildAgentQuickStartGuide', () => {
     });
     const reference = sections(desktopGuide('zh-CN'));
     expect(reference.h2).toBe(7);
-    expect(reference.h3).toBe(5);
+    expect(reference.h3).toBe(6);
     for (const locale of ['zh-CN', 'zh-TW', 'en-US'] as const) {
       expect(sections(desktopGuide(locale))).toEqual(reference);
       expect(sections(webGuide(locale))).toEqual(reference);

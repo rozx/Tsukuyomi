@@ -74,6 +74,28 @@ export function readTrimmedString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+export function parseNonNegativeInt(value: unknown, fallback: number): number {
+  if (value === undefined || value === null) return fallback;
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < 0) return fallback;
+  return Math.trunc(num);
+}
+
+/** 读取条数上限：缺省或非法时用默认值，并限制在 1..max 之间 */
+export function parseLimit(value: unknown, fallback: number, max: number): number {
+  return Math.min(max, Math.max(1, parseNonNegativeInt(value, fallback)));
+}
+
+/** 读取字符串数组参数：去掉首尾空白、空项与重复项 */
+export function readStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const items = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return [...new Set(items)];
+}
+
 export function readOptionalTrimmedString(value: unknown): string | undefined {
   return typeof value === 'string' ? value.trim() : undefined;
 }

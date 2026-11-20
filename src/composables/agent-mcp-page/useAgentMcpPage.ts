@@ -122,6 +122,23 @@ const DESKTOP_STATUS_META: Record<
   stopped: { labelKey: 'agentMcp.status.stopped', severity: 'secondary' },
 };
 
+export type AgentMcpSection = 'connect' | 'activity' | 'permission' | 'tools' | 'connection';
+
+export interface AgentMcpSectionItem {
+  key: AgentMcpSection;
+  label: string;
+  /** 分栏名旁的数字（如调用次数）；没有时不显示 */
+  badge?: string;
+}
+
+const SECTION_META: ReadonlyArray<{ key: AgentMcpSection; labelKey: MessageKey }> = [
+  { key: 'connect', labelKey: 'agentMcp.sections.connect' },
+  { key: 'activity', labelKey: 'agentMcp.sections.activity' },
+  { key: 'permission', labelKey: 'agentMcp.sections.permission' },
+  { key: 'tools', labelKey: 'agentMcp.sections.tools' },
+  { key: 'connection', labelKey: 'agentMcp.sections.connection' },
+];
+
 export interface AgentMcpPageContext {
   isElectronEnv: ComputedRef<boolean>;
   settings: ComputedRef<AgentMcpSettings>;
@@ -169,6 +186,14 @@ export interface AgentMcpPageContext {
   copyEndpoint: () => Promise<void>;
   copyActiveSnippet: () => Promise<void>;
   copyQuickStartGuide: () => Promise<void>;
+  /** 页面的分栏；连接设置只有桌面端有 */
+  sections: ComputedRef<AgentMcpSectionItem[]>;
+  activeSection: Ref<AgentMcpSection>;
+  selectSection: (section: AgentMcpSection) => void;
+  /** 两栏布局里「接入」固定在左栏，右栏显示的分栏：选中「接入」时为调用活动 */
+  secondarySection: ComputedRef<AgentMcpSection>;
+  /** 页面顶部的概览：服务状态、当前权限、开放的工具数、本次会话的调用次数 */
+  summaryMetrics: ComputedRef<Array<{ label: string; value: string | number; wide?: boolean }>>;
   /** 「手动添加 MCP」是否展开；把指南交给 Agent 时不需要它，默认收起 */
   manualSetupOpen: Ref<boolean>;
   toggleManualSetup: () => void;
@@ -526,6 +551,44 @@ function createAgentMcpPageContext(): AgentMcpPageContext {
     await copyText(activeSnippet.value);
   };
 
+  // 分栏选择放在 composable 里：变体组件随断点整体替换，本地 ref 留不住
+  const activeSection = ref<AgentMcpSection>('connect');
+  const selectSection = (section: AgentMcpSection): void => {
+    activeSection.value = section;
+  };
+  const secondarySection = computed<AgentMcpSection>(() =>
+    activeSection.value === 'connect' ? 'activity' : activeSection.value,
+  );
+  const sections = computed<AgentMcpSectionItem[]>(() => {
+    const locale = settingsStore.uiLocale;
+    return SECTION_META.filter((meta) => meta.key !== 'connection' || isElectronEnv.value).map(
+      ({ key, labelKey }) => ({
+        key,
+        label: translateText(locale, labelKey),
+        ...(key === 'activity' && activities.value.length > 0
+          ? { badge: String(activities.value.length) }
+          : {}),
+      }),
+    );
+  });
+
+  const summaryMetrics = computed(() => {
+    const locale = settingsStore.uiLocale;
+    const permission = permissionOptions.value.find(
+      (option) => option.value === settings.value.permissionMode,
+    );
+    return [
+      { label: translateText(locale, 'agentMcp.summary.status'), value: runtimeStatusLabel.value },
+      {
+        label: translateText(locale, 'agentMcp.summary.permission'),
+        value: permission?.label ?? '',
+        wide: true,
+      },
+      { label: translateText(locale, 'agentMcp.summary.tools'), value: exposedTools.value.length },
+      { label: translateText(locale, 'agentMcp.summary.calls'), value: activities.value.length },
+    ];
+  });
+
   const manualSetupOpen = ref(false);
   const toggleManualSetup = (): void => {
     manualSetupOpen.value = !manualSetupOpen.value;
@@ -618,6 +681,11 @@ function createAgentMcpPageContext(): AgentMcpPageContext {
     copyEndpoint,
     copyActiveSnippet,
     copyQuickStartGuide,
+    sections,
+    activeSection,
+    selectSection,
+    secondarySection,
+    summaryMetrics,
     manualSetupOpen,
     toggleManualSetup,
     toggleToolCategory,

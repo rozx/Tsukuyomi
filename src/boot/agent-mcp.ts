@@ -21,6 +21,7 @@ interface AgentMcpBootDeps {
   router?:
     | {
         push: (path: string) => unknown;
+        currentRoute?: { value: { path: string } };
       }
     | undefined;
 }
@@ -38,6 +39,7 @@ export async function initAgentMcpBoot({ app, router }: AgentMcpBootDeps): Promi
     navigate: async (path: string) => {
       await router?.push(path);
     },
+    getCurrentPath: () => router?.currentRoute?.value.path ?? null,
     onRecordActivity: (entry) => {
       agentMcpStore.recordActivity(entry);
     },

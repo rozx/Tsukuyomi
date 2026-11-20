@@ -22,6 +22,8 @@ export interface StartAgentMcpRuntimeOptions {
    */
   webMcpRelay?: WebMcpRelayBridge | null;
   navigate?: (path: string) => Promise<void> | void;
+  /** 用户当前所在的应用内路径，供 get_app_context 说明用户在哪个页面 */
+  getCurrentPath?: () => string | null;
   onWriteNotify?: (info: AgentMcpWriteNotification) => void;
   onRecordActivity?: (entry: RecordAgentMcpActivityInput) => void;
   onDesktopStatusChange?: (status: DesktopMcpServerStatus) => void;
@@ -56,6 +58,7 @@ export async function startAgentMcpRuntime(
 
   configureAgentMcpKernelHooks({
     ...(options.navigate ? { navigate: options.navigate } : {}),
+    ...(options.getCurrentPath ? { getCurrentPath: options.getCurrentPath } : {}),
     ...(options.onWriteNotify ? { onWriteNotify: options.onWriteNotify } : {}),
     ...(options.onRecordActivity ? { onRecordActivity: options.onRecordActivity } : {}),
   });

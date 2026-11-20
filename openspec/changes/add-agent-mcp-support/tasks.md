@@ -42,6 +42,14 @@
 
 - [x] 5.10 调用活动改进：每条记录增加返回结果摘要，没有参数时显示「无参数」；日志保存到 `sessionStorage`，刷新后保留、关闭标签页后清空；通过 `agent-mcp-kernel.test.ts` 与 `agent-mcp-store.test.ts` 验证。
 
+- [x] 5.11 对照站内 Agent 补齐工具：新增 `src/services/agent-mcp/tools/search.ts`（`search_paragraphs`、`count_occurrences`、`replace_in_translations`、`search_chapters`）与 `tools/help-docs.ts`（`search_help_docs`、`get_help_doc`），在 `tools/worldbuilding.ts` 补 `delete_terms`、`delete_characters`、`delete_memories`、`list_memories`，在 `tools/library.ts` 补 `update_book`；删除类工具放在 `translate_and_edit` 权限下；全书扫描类工具加入长操作清单；工具清单集中到 `tools/all-tools.ts` 供内核与指南共用。通过 `agent-mcp-search-tools.test.ts`、`agent-mcp-help-tools.test.ts`、`agent-mcp-worldbuilding-tools.test.ts`、`agent-mcp-library-tools.test.ts` 验证。
+
+- [x] 5.12 扩充用户上下文：`get_app_context` 返回所在页面、当前章节标题与进度、选中 / 鼠标所在段落的原文与译文、页面上划选的文字；boot 层通过 `getCurrentPath` 钩子把路由路径传入内核。通过 `agent-mcp-library-tools.test.ts` 与 `agent-mcp-boot.test.ts` 验证。
+
+- [x] 5.13 同步文案与文档：三语工具说明、权限说明与快速上手指南（新增「先读上下文」「使用问题先查文档」「全书搜索」说明与「统一修改译名」工作流，删除前确认的规则），三语帮助文档。通过 `agent-mcp-quick-start.test.ts` 与 `bun run check:i18n` 验证。
+
+- [x] 5.14 桌面工作台改为铺满窗口的看板：`AgentMcpDesktop.vue` 页面自身不滚动，按可用宽度（容器查询）分三档——宽屏三栏并排、中等宽度两栏（左栏接入、右栏标签切换）、较窄时一次一栏；composable 新增 `sections` / `activeSection` / `selectSection` / `secondarySection` / `summaryMetrics`；各栏外框由页面提供，`AgentMcpPanel` 在栏内不再套卡片（`panel-surface.ts`），接入栏的指南文本框与调用活动列表占满栏高。通过 `use-agent-mcp-page.test.ts` 与 2000×965、1440×900、900×800 三种窗口的真实浏览器截图验证。
+
 ## 6. 集成验证与代码质量门禁
 
 - [x] 6.1 运行完整代码质量检查与全量测试：`bun run lint && bun run type-check && bun run test:coverage && bun run quality-check`，确认零 ESLint/TypeScript/Fallow/i18n 错误且全部单元测试通过。

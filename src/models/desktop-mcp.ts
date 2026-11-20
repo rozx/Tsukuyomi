@@ -19,6 +19,10 @@ export const DESKTOP_MCP_LONG_OPERATION_TOOLS = [
   'add_chapters',
   'check_book_updates',
   'apply_book_updates',
+  // 不指定章节时要读全书正文
+  'search_paragraphs',
+  'count_occurrences',
+  'replace_in_translations',
 ] as const;
 
 export interface DesktopMcpIpcRequest {

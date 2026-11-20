@@ -1,5 +1,6 @@
 <template>
   <AgentMcpPanel
+    :class="{ 'log-panel--fill': fill }"
     :title="`${t('agentMcp.activity.title')} (${ctx.activities.value.length})`"
     :hint="t('agentMcp.activity.hint')"
   >
@@ -18,7 +19,7 @@
     <p v-if="ctx.activities.value.length === 0" class="log-empty">
       {{ t('agentMcp.activity.empty') }}
     </p>
-    <ul v-else class="log-list">
+    <ul v-else class="log-list" :class="{ 'log-list--fill': fill }">
       <li v-for="entry in ctx.activities.value" :key="entry.id" class="log-item">
         <div class="log-top">
           <Tag :value="statusLabel(entry)" :severity="statusSeverity(entry)" />
@@ -48,11 +49,14 @@ import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import AgentMcpPanel from 'src/components/agent-mcp/AgentMcpPanel.vue';
+import { useFlatAgentMcpPanels } from 'src/components/agent-mcp/panel-surface';
 import { injectAgentMcpPage } from 'src/composables/agent-mcp-page/useAgentMcpPage';
 import type { AgentMcpActivityEntry } from 'src/models/agent-mcp';
 
 const { t, locale } = useI18n();
 const ctx = injectAgentMcpPage();
+// 在桌面看板的栏位里：占满栏高，标题不动、只有列表滚动
+const fill = useFlatAgentMcpPanels();
 
 const STATUS_META: Record<
   AgentMcpActivityEntry['status'],
@@ -101,6 +105,18 @@ function formatTime(timestamp: number): string {
   gap: 8px;
   max-height: 420px;
   overflow-y: auto;
+}
+
+.log-panel--fill {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.log-list--fill {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+  overscroll-behavior: contain;
 }
 
 .log-item {

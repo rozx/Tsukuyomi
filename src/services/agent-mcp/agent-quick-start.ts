@@ -8,12 +8,8 @@ import {
   buildRelayJsonConfig,
   TOKEN_PLACEHOLDER,
 } from './client-config';
-import { agentMcpBookUpdateTools } from './tools/book-updates';
-import { agentMcpContextTools } from './tools/context';
-import { agentMcpLibraryTools } from './tools/library';
-import { agentMcpTranslationTools } from './tools/translation';
-import { agentMcpWorldbuildingTools } from './tools/worldbuilding';
-import type { AgentMcpToolCategory, AgentMcpToolSpec } from './types';
+import { ALL_AGENT_MCP_TOOLS } from './tools/all-tools';
+import type { AgentMcpToolCategory } from './types';
 
 /** 指南里「如何添加 MCP」一节需要的连接信息 */
 export type AgentQuickStartConnection =
@@ -25,15 +21,6 @@ export interface AgentQuickStartOptions {
   channel: ExternalAgentChannel;
   connection: AgentQuickStartConnection;
 }
-
-// 直接取各工具模块而不是 ./index，避免与内核入口形成循环依赖
-const GUIDE_TOOLS: readonly AgentMcpToolSpec[] = [
-  ...agentMcpContextTools,
-  ...agentMcpLibraryTools,
-  ...agentMcpBookUpdateTools,
-  ...agentMcpTranslationTools,
-  ...agentMcpWorldbuildingTools,
-];
 
 const CATEGORY_ORDER: ReadonlyArray<{ category: AgentMcpToolCategory; labelKey: MessageKey }> = [
   { category: 'context', labelKey: 'agentMcp.catalog.categoryContext' },
@@ -52,6 +39,8 @@ const CONCEPT_KEYS: readonly MessageKey[] = [
 const OVERVIEW_KEYS: readonly MessageKey[] = [
   'agentMcp.guide.overviewContext',
   'agentMcp.guide.overviewLibrary',
+  'agentMcp.guide.overviewSearch',
+  'agentMcp.guide.overviewHelp',
 ];
 
 /** 各工作流的标题与分步说明 */
@@ -95,6 +84,17 @@ const WORKFLOWS: ReadonlyArray<{ titleKey: MessageKey; stepKeys: readonly Messag
       'agentMcp.guide.wfWorld2',
       'agentMcp.guide.wfWorld3',
       'agentMcp.guide.wfWorld4',
+      'agentMcp.guide.wfWorld5',
+    ],
+  },
+  {
+    titleKey: 'agentMcp.guide.wfRenameTitle',
+    stepKeys: [
+      'agentMcp.guide.wfRename1',
+      'agentMcp.guide.wfRename2',
+      'agentMcp.guide.wfRename3',
+      'agentMcp.guide.wfRename4',
+      'agentMcp.guide.wfRename5',
     ],
   },
 ];
@@ -182,7 +182,7 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
   ];
 
   // 工具一览：按类别列出该通道的全部工具，说明取自界面文案，标出写入与危险工具
-  const channelTools = GUIDE_TOOLS.filter((tool) => !tool.webMcpOnly || isWeb);
+  const channelTools = ALL_AGENT_MCP_TOOLS.filter((tool) => !tool.webMcpOnly || isWeb);
   const toolReference = CATEGORY_ORDER.flatMap(({ category, labelKey }) => {
     const tools = channelTools.filter((tool) => tool.category === category);
     if (tools.length === 0) return [];

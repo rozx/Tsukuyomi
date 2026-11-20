@@ -86,6 +86,7 @@ export interface CreateAgentMcpKernelOptions {
   onRecordActivity?: (entry: RecordAgentMcpActivityInput) => void;
   onWriteNotify?: (info: AgentMcpWriteNotification) => void;
   navigate?: (path: string) => Promise<void> | void;
+  getCurrentPath?: () => string | null;
 }
 
 export interface AgentMcpKernel {
@@ -226,6 +227,7 @@ export function createAgentMcpKernel(options: CreateAgentMcpKernelOptions): Agen
       defaultWriteMode: config.defaultWriteMode,
       resolveBookId,
       ...(options.navigate ? { navigate: options.navigate } : {}),
+      ...(options.getCurrentPath ? { getCurrentPath: options.getCurrentPath } : {}),
     };
 
     try {

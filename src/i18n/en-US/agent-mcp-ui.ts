@@ -4,6 +4,19 @@ export default {
     title: 'External Agent Workbench',
     subtitle:
       'Let external agents such as Claude Code use the subscription you already have to work on your library and translate novels directly.',
+    sections: {
+      connect: 'Connect',
+      activity: 'Call activity',
+      permission: 'Permissions',
+      tools: 'Exposed capabilities',
+      connection: 'Connection settings',
+    },
+    summary: {
+      status: 'Service',
+      permission: 'Permission',
+      tools: 'Tools exposed',
+      calls: 'Calls this session',
+    },
     status: {
       running: 'Running',
       starting: 'Starting',
@@ -63,9 +76,13 @@ export default {
     },
     guide: {
       overviewContext:
-        'get_app_context: the book and chapter the user has open, and the interface language.',
+        'get_app_context: which page the user is on, the open book and chapter (with translation progress), the selected paragraph with its original text and translation, any text highlighted on the page (selected_text), and the interface language. Call it first when the user says "this paragraph", "this chapter" or "here" instead of guessing.',
       overviewLibrary:
         'list_books lists the library; get_book shows the chapter list and per-chapter translation progress of one book.',
+      overviewSearch:
+        'To see where a word appears across the book, use search_paragraphs (original text or translations, regular expressions supported) or count_occurrences (counts and per-chapter distribution) instead of reading chapter by chapter. With local embedding enabled, search_chapters finds chapters from a description of their content.',
+      overviewHelp:
+        'When the user asks how to use Tsukuyomi or where a feature is, find the relevant guide with search_help_docs, read it in full with get_help_doc, then answer. Do not answer from memory.',
       overviewWorkflows:
         'The full procedure for each kind of task is in the MCP prompts translate-chapter, polish-chapter and import-and-translate; read the relevant one with prompts/get before starting.',
       overviewWorkflowsWeb:
@@ -140,11 +157,24 @@ export default {
         'Record important plot turns, relationships and world-building facts with upsert_memory; use search_memories when you need to recall earlier events.',
       wfWorld4:
         'When the user has a standing requirement about style or forms of address, write it as a book-level or chapter-level special instruction with update_special_instructions.',
+      wfWorld5:
+        'list_memories pages through every memory. Remove outdated or duplicate entries with delete_terms, delete_characters and delete_memories, and confirm with the user before deleting.',
+      wfRenameTitle: 'Rename a term everywhere',
+      wfRename1:
+        'Update the rendering with upsert_terms or upsert_characters first, so later translations use the new name.',
+      wfRename2:
+        'Use count_occurrences to see how many places still use the old rendering: put it in keywords and set search_in to "translation".',
+      wfRename3:
+        'Call replace_in_translations with dry_run set to true to preview: find is the old rendering, replace_with the new one, and original_contains the name in the original text, so unrelated words spelled the same are left alone. Check the returned samples.',
+      wfRename4:
+        'When the preview looks right, call it again without dry_run. While has_more is true, keep calling until it is false. By default each changed paragraph gets a new version and the old one is kept.',
+      wfRename5:
+        'Finally run count_occurrences again to confirm nothing is left, and tell the user how many places changed.',
       rulesTitle: 'Rules',
       ruleWriteBack:
         'Write all translations and settings back to the app through the tools; do not only paste them in the conversation.',
       ruleConfirm:
-        "include_updated on apply_book_updates and delete_book destroy user data. Get the user's consent before using them.",
+        "include_updated on apply_book_updates, delete_book, and delete_terms, delete_characters and delete_memories destroy user data. Get the user's consent before using them.",
       ruleAsk:
         'Ask the user when it is unclear which book or chapters to work on, and report progress after each chapter.',
       errorsTitle: 'When something fails',
@@ -207,7 +237,7 @@ export default {
         'Can query the library and read source text and translation context. Cannot write anything.',
       translateEdit: 'Translate and edit',
       translateEditDesc:
-        'Can create books, add chapters, import, write translations back and maintain terms and characters. Cannot delete books.',
+        'Can create books, add chapters, import, write and batch-replace translations, and add, edit and delete terms, characters and memories. Cannot delete books.',
       full: 'Full control',
       fullDesc: 'Everything in "Translate and edit", plus permanently deleting books.',
       toolCount: '{count} tools exposed',
@@ -262,22 +292,28 @@ export default {
     },
     tools: {
       get_app_context:
-        'Read the currently open book/chapter/paragraph context, UI locale, and runtime capability flags.',
+        'Read which page the user is on, the open book and chapter, the selected paragraph with its text and translation, highlighted text, plus UI locale and runtime environment.',
       navigate_to:
         'Navigate the UI to home, library, a book, a chapter, or scroll directly to a paragraph.',
       get_workflow_guide:
         'Retrieve workflow instructions for translate-chapter, polish-chapter, or import-and-translate.',
+      search_help_docs:
+        'Search the built-in user guide by title, description and content, or list every guide when no query is given.',
+      get_help_doc: 'Read one built-in user guide in full.',
       list_books:
         'List all books in the local library with metadata, volume/chapter counts, and target language.',
       get_book: 'Get full volumes, chapters, and per-chapter translation progress for a book.',
       create_book: 'Create a new book in the local library with optional initial chapters.',
       add_chapters: 'Batch-add chapters from plain text or paragraph arrays to a volume.',
+      update_book: "Edit a book's author, description, tags and alternate titles.",
       import_book_from_url:
         'Fetch and import or incrementally update a book and its chapter contents from a supported URL.',
       check_book_updates:
         "Checks a book's source site for new chapters, optionally comparing the text of imported chapters for changes.",
       apply_book_updates:
         'Imports updates from the source site: new chapters by default, optionally text changes to chapters already imported.',
+      search_chapters:
+        'Find the chapters most relevant to a description of their content (needs local embedding).',
       delete_book: 'Permanently delete a book and its chapters (full permission mode only).',
       get_translation_chunk:
         'Bundle the next paragraph chunk with preceding context, matched terms, characters, memories, and instructions.',
@@ -286,13 +322,23 @@ export default {
       get_chapter_paragraphs:
         'Read chapter paragraphs by index range or keyword filter with optional translation history.',
       update_chapter_title: 'Update the translated chapter title in the book target language.',
+      search_paragraphs:
+        'Search original text and translations across the whole book or one chapter by keyword or regular expression, returning each match with its chapter.',
+      count_occurrences:
+        'Count how often keywords appear in the original text or translations, with paragraph counts and per-chapter distribution.',
+      replace_in_translations:
+        'Find and replace text in the selected translations across the whole book or one chapter, with an optional preview.',
       list_terms: 'List all terminology entries for a book.',
       upsert_terms: 'Batch create or update terminology translations and descriptions.',
       list_characters: 'List all character settings, aliases, and speaking styles for a book.',
       upsert_characters: 'Batch create or update character settings and alias translations.',
       search_memories:
-        'Search book plot memories via hybrid semantic + keyword retrieval, or list all.',
+        'Search book plot memories via hybrid semantic + keyword retrieval, or list recent memories when no query is given.',
       upsert_memory: 'Create or update a book plot memory entry.',
+      list_memories: "List all of a book's memories page by page, optionally with full content.",
+      delete_terms: 'Delete terms by ID.',
+      delete_characters: 'Delete character settings by ID.',
+      delete_memories: 'Delete memories by ID.',
       get_special_instructions:
         'Read book-level and optional chapter-level translation/polish/proofreading instructions.',
       update_special_instructions:

@@ -9,7 +9,10 @@ import {
   findChapterInBook,
   formatCharacterSummary,
   formatTermSummary,
+  parseLimit,
+  parseNonNegativeInt,
   readOptionalTrimmedString,
+  readStringList,
   readTrimmedString,
   resolveBookFromArgs,
 } from './helpers';
@@ -184,6 +187,87 @@ async function executeUpsertBatch(
     results.push(await upsertItem(resolved.book.id, resolved.targetLanguage, item));
   }
   return { book_id: resolved.book.id, results };
+}
+
+interface DeleteItemResult {
+  id: string;
+  name?: string;
+  action: 'deleted' | 'not_found' | 'failed';
+  error?: string;
+}
+
+/**
+ * 按 ID 批量删除：逐项查找并删除，找不到或删除失败的逐项报告，不影响其余项。
+ * lookup 返回待删条目的显示名；返回 null 表示不存在。
+ */
+async function executeDeleteBatch(
+  args: Record<string, unknown>,
+  ctx: AgentMcpExecutionContext,
+  idsKey: 'term_ids' | 'character_ids' | 'memory_ids',
+  prepare: (bookId: string) => Promise<{
+    lookup: (id: string) => string | null;
+    remove: (id: string) => Promise<void>;
+  }>,
+) {
+  const resolved = resolveBookFromArgs(args, ctx);
+  if (!resolved.ok) return resolved.error;
+  const ids = readStringList(args[idsKey]);
+  if (ids.length === 0) {
+    return agentMcpError('INVALID_ARGS', `${idsKey} must be a non-empty array of IDs.`);
+  }
+
+  const bookId = resolved.book.id;
+  const { lookup, remove } = await prepare(bookId);
+  const results: DeleteItemResult[] = [];
+  for (const id of ids) {
+    const name = lookup(id);
+    if (name === null) {
+      results.push({ id, action: 'not_found' });
+      continue;
+    }
+    try {
+      await remove(id);
+      results.push({ id, name, action: 'deleted' });
+    } catch (error) {
+      results.push({
+        id,
+        name,
+        action: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return {
+    book_id: bookId,
+    deleted_count: results.filter((item) => item.action === 'deleted').length,
+    results,
+  };
+}
+
+/** 术语、角色都挂在书上：每次删除前从书库里取最新的一份来查找 */
+function namedEntityLookup(
+  bookId: string,
+  kind: 'terminologies' | 'characterSettings',
+): (id: string) => string | null {
+  return (id) => {
+    const book = useBooksStore().getBookById(bookId);
+    return (book?.[kind] ?? []).find((entity) => entity.id === id)?.name ?? null;
+  };
+}
+
+function deleteIdsSchema(idsKey: string, noun: string) {
+  return {
+    type: 'object' as const,
+    properties: {
+      book_id: { type: 'string', description: 'Target book ID (optional if a book is open).' },
+      [idsKey]: {
+        type: 'array',
+        items: { type: 'string' },
+        description: `IDs of the ${noun} to delete.`,
+      },
+    },
+    required: [idsKey],
+  };
 }
 
 function matchesKeyword(keyword: string, texts: readonly string[]): boolean {
@@ -427,6 +511,112 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
       const created = await MemoryService.createMemory(book.id, content, summary);
       return { book_id: book.id, id: created.id, action: 'created', summary: created.summary };
     },
+  },
+  {
+    name: 'list_memories',
+    description:
+      'List all memories of a book page by page (newest first), with summaries and optionally full content. Use search_memories to find memories about a topic; use this to review or clean up everything.',
+    category: 'worldbuilding',
+    permission: 'read_only',
+    readOnlyHint: true,
+    requiresBookStore: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        book_id: { type: 'string', description: 'Target book ID (optional if a book is open).' },
+        limit: { type: 'number', description: 'Maximum memories to return (default 50, max 200).' },
+        offset: {
+          type: 'number',
+          description: 'Number of memories to skip; pass next_offset from the previous call.',
+        },
+        include_content: {
+          type: 'boolean',
+          description: 'Include the full content of each memory (default false: summaries only).',
+        },
+      },
+    },
+    execute: async (args, ctx) => {
+      const resolved = resolveBookFromArgs(args, ctx);
+      if (!resolved.ok) return resolved.error;
+      const { book } = resolved;
+
+      const limit = parseLimit(args.limit, 50, 200);
+      const offset = parseNonNegativeInt(args.offset, 0);
+      const includeContent = args.include_content === true;
+      // 按创建时间从新到旧，同一时刻按 ID 排，保证翻页顺序稳定
+      const all = (await MemoryService.getAllMemories(book.id)).sort(
+        (a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id),
+      );
+      const page = all.slice(offset, offset + limit);
+      const hasMore = offset + page.length < all.length;
+      return {
+        book_id: book.id,
+        total: all.length,
+        has_more: hasMore,
+        next_offset: hasMore ? offset + page.length : null,
+        memories: page.map((m) => ({
+          id: m.id,
+          summary: m.summary,
+          ...(includeContent ? { content: m.content } : {}),
+          created_at: m.createdAt,
+          updated_at: m.updatedAt ?? m.lastAccessedAt,
+        })),
+      };
+    },
+  },
+  {
+    name: 'delete_terms',
+    description:
+      'Delete terminology entries by ID (get IDs from list_terms). Existing translations are not changed. Confirm with the user before deleting.',
+    category: 'worldbuilding',
+    permission: 'translate_and_edit',
+    readOnlyHint: false,
+    requiresBookStore: true,
+    inputSchema: deleteIdsSchema('term_ids', 'terms'),
+    execute: (args, ctx) =>
+      executeDeleteBatch(args, ctx, 'term_ids', (bookId) =>
+        Promise.resolve({
+          lookup: namedEntityLookup(bookId, 'terminologies'),
+          remove: (id) => TerminologyService.deleteTerminology(bookId, id),
+        }),
+      ),
+  },
+  {
+    name: 'delete_characters',
+    description:
+      'Delete character settings by ID (get IDs from list_characters). Existing translations are not changed. Confirm with the user before deleting.',
+    category: 'worldbuilding',
+    permission: 'translate_and_edit',
+    readOnlyHint: false,
+    requiresBookStore: true,
+    inputSchema: deleteIdsSchema('character_ids', 'characters'),
+    execute: (args, ctx) =>
+      executeDeleteBatch(args, ctx, 'character_ids', (bookId) =>
+        Promise.resolve({
+          lookup: namedEntityLookup(bookId, 'characterSettings'),
+          remove: (id) => CharacterSettingService.deleteCharacterSetting(bookId, id),
+        }),
+      ),
+  },
+  {
+    name: 'delete_memories',
+    description:
+      'Delete book memories by ID (get IDs from list_memories or search_memories). Confirm with the user before deleting.',
+    category: 'worldbuilding',
+    permission: 'translate_and_edit',
+    readOnlyHint: false,
+    requiresBookStore: true,
+    inputSchema: deleteIdsSchema('memory_ids', 'memories'),
+    execute: (args, ctx) =>
+      executeDeleteBatch(args, ctx, 'memory_ids', async (bookId) => {
+        const summaries = new Map(
+          (await MemoryService.getAllMemories(bookId)).map((m) => [m.id, m.summary]),
+        );
+        return {
+          lookup: (id) => summaries.get(id) ?? null,
+          remove: (id) => MemoryService.deleteMemory(bookId, id),
+        };
+      }),
   },
   {
     name: 'get_special_instructions',

@@ -820,6 +820,167 @@ describe('AgentMcp context & library tools', () => {
     expect(stored[0]!.translations.map((t) => t.translation)).toContain('先写入的译文。');
   });
 
+  it('update_book 修改作者、简介、标签与别名，只改传入的字段；什么都没传时报错', async () => {
+    const kernel = createAgentMcpKernel({
+      tools: [...agentMcpContextTools, ...agentMcpLibraryTools],
+    });
+    const createRes = await kernel.callTool(
+      'create_book',
+      { title: '星之旅人', author: '旧作者', description: '旧简介', tags: ['奇幻'] },
+      { channel: 'desktop-mcp' },
+    );
+    const bookId = (createRes.data as { book_id: string }).book_id;
+
+    const res = await kernel.callTool(
+      'update_book',
+      {
+        book_id: bookId,
+        author: ' 新作者 ',
+        tags: ['奇幻', ' 冒险 ', ''],
+        alternate_titles: ['Star Traveler'],
+      },
+      { channel: 'desktop-mcp' },
+    );
+    expect(res.isError).toBe(false);
+    expect(res.data).toMatchObject({
+      book_id: bookId,
+      updated_fields: ['author', 'tags', 'alternate_titles'],
+      author: '新作者',
+      description: '旧简介',
+      tags: ['奇幻', '冒险'],
+      alternate_titles: ['Star Traveler'],
+    });
+    const stored = useBooksStore().getBookById(bookId);
+    expect(stored?.author).toBe('新作者');
+    expect(stored?.description).toBe('旧简介');
+    expect(stored?.tags).toEqual(['奇幻', '冒险']);
+    expect(stored?.alternateTitles).toEqual(['Star Traveler']);
+    expect(stored?.title).toBe('星之旅人');
+
+    // 传空字符串 / 空数组表示清空该字段
+    const cleared = await kernel.callTool(
+      'update_book',
+      { book_id: bookId, description: '', tags: [] },
+      { channel: 'desktop-mcp' },
+    );
+    expect(cleared.isError).toBe(false);
+    expect(useBooksStore().getBookById(bookId)?.description).toBeUndefined();
+    expect(useBooksStore().getBookById(bookId)?.tags).toBeUndefined();
+
+    const nothing = await kernel.callTool(
+      'update_book',
+      { book_id: bookId },
+      { channel: 'desktop-mcp' },
+    );
+    expect(nothing.isError).toBe(true);
+    expect(nothing.errorCode).toBe('INVALID_ARGS');
+
+    await useSettingsStore().updateAgentMcpSettings({ permissionMode: 'read_only' });
+    const denied = await kernel.callTool(
+      'update_book',
+      { book_id: bookId, author: 'x' },
+      { channel: 'desktop-mcp' },
+    );
+    expect(denied.errorCode).toBe('PERMISSION_DENIED');
+  });
+
+  it('get_app_context 说明用户在哪个页面、打开了哪一章、选中了哪个段落及其内容', async () => {
+    let currentPath = '/books';
+    const kernel = createAgentMcpKernel({
+      tools: [...agentMcpContextTools, ...agentMcpLibraryTools, ...agentMcpTranslationTools],
+      getCurrentPath: () => currentPath,
+    });
+    const createRes = await kernel.callTool(
+      'create_book',
+      {
+        title: '月下旅人',
+        chapters: [{ title: '第一章', paragraphs: ['第一段原文', '第二段原文'] }],
+      },
+      { channel: 'desktop-mcp' },
+    );
+    const bookId = (createRes.data as { book_id: string }).book_id;
+    const chapterId = useBooksStore().getBookById(bookId)!.volumes![0]!.chapters![0]!.id;
+    const paragraphs = (await ChapterContentService.loadChapterContent(chapterId))!;
+
+    // 在书库页、没有打开任何书
+    const listPage = (await kernel.callTool('get_app_context', {}, { channel: 'desktop-mcp' }))
+      .data as Record<string, unknown>;
+    expect(listPage.page).toEqual({ kind: 'books', path: '/books' });
+    expect(listPage.current_chapter).toBeNull();
+    expect(listPage.selected_paragraph).toBeNull();
+
+    // 打开了书的某一章并选中第二段
+    currentPath = `/books/${bookId}`;
+    useContextStore().setCurrentBook(bookId);
+    useContextStore().setCurrentChapter(chapterId);
+    useContextStore().setSelectedParagraph(paragraphs[1]!.id);
+    await kernel.callTool(
+      'submit_translations',
+      {
+        book_id: bookId,
+        chapter_id: chapterId,
+        paragraphs: [{ paragraph_id: paragraphs[1]!.id, translated_text: '第二段译文' }],
+      },
+      { channel: 'desktop-mcp' },
+    );
+
+    const reading = (await kernel.callTool('get_app_context', {}, { channel: 'desktop-mcp' }))
+      .data as Record<string, unknown>;
+    expect(reading.page).toEqual({ kind: 'book', path: `/books/${bookId}`, book_id: bookId });
+    expect(reading.current_book_id).toBe(bookId);
+    expect(reading.current_chapter).toMatchObject({
+      id: chapterId,
+      title_original: '第一章',
+      paragraph_count: 2,
+      translated_count: 1,
+    });
+    expect(reading.selected_paragraph_id).toBe(paragraphs[1]!.id);
+    expect(reading.selected_paragraph).toEqual({
+      id: paragraphs[1]!.id,
+      chapter_id: chapterId,
+      index: 1,
+      text: '第二段原文',
+      translation: '第二段译文',
+    });
+
+    // 书籍设置页与帮助页能说明具体位置
+    currentPath = `/books/${bookId}/settings/terms`;
+    const settingsPage = (await kernel.callTool('get_app_context', {}, { channel: 'desktop-mcp' }))
+      .data as Record<string, unknown>;
+    expect(settingsPage.page).toEqual({
+      kind: 'book_settings',
+      path: `/books/${bookId}/settings/terms`,
+      book_id: bookId,
+      section: 'terms',
+    });
+
+    currentPath = '/help/import-guide';
+    const helpPage = (await kernel.callTool('get_app_context', {}, { channel: 'desktop-mcp' }))
+      .data as Record<string, unknown>;
+    expect(helpPage.page).toEqual({
+      kind: 'help',
+      path: '/help/import-guide',
+      help_doc_id: 'import-guide',
+    });
+  });
+
+  it('get_app_context 带上用户在页面上划选的文字；没有接入路由时页面为未知', async () => {
+    const kernel = createAgentMcpKernel({ tools: agentMcpContextTools });
+    vi.spyOn(window, 'getSelection').mockReturnValue({
+      toString: () => '  划选的一句话  ',
+    } as Selection);
+
+    const data = (await kernel.callTool('get_app_context', {}, { channel: 'desktop-mcp' }))
+      .data as Record<string, unknown>;
+    expect(data.selected_text).toBe('划选的一句话');
+    expect(data.page).toEqual({ kind: 'unknown', path: null });
+
+    vi.spyOn(window, 'getSelection').mockReturnValue({ toString: () => '' } as Selection);
+    const none = (await kernel.callTool('get_app_context', {}, { channel: 'desktop-mcp' }))
+      .data as Record<string, unknown>;
+    expect(none.selected_text).toBeNull();
+  });
+
   it('delete_book 在 translate_and_edit 被拦截，仅在 full 模式下允许删除', async () => {
     const kernel = createAgentMcpKernel({
       tools: [...agentMcpContextTools, ...agentMcpLibraryTools],

@@ -13,7 +13,8 @@ const { platformState } = vi.hoisted(() => ({
   platformState: { isElectron: false },
 }));
 
-vi.mock('src/utils/platform', () => ({
+vi.mock('src/utils/platform', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   isElectron: () => platformState.isElectron,
 }));
 
@@ -138,7 +139,7 @@ describe('Agent MCP boot/runtime lifecycle', () => {
     const { initAgentMcpBoot } = await import('src/boot/agent-mcp');
     disposeBoot = await initAgentMcpBoot({
       app: { config: { globalProperties: { $toast: { add: toastAdd } } } },
-      router: { push: routerPush },
+      router: { push: routerPush, currentRoute: { value: { path: '/mcp' } } },
     });
 
     // 初始关闭：不应注册任何工具
@@ -176,6 +177,10 @@ describe('Agent MCP boot/runtime lifecycle', () => {
     );
     expect(toastHistorySpy).toHaveBeenCalled();
     expect(useAgentMcpStore().activities[0]?.toolName).toBe('navigate_to');
+
+    // boot 把路由的当前路径接给 get_app_context，外部 Agent 能知道用户在哪个页面
+    const ctxRes = await kernel.callTool('get_app_context', {}, { channel: 'webmcp' });
+    expect((ctxRes.data as { page: { kind: string } }).page.kind).toBe('agent_mcp');
 
     // 清理：关闭开关并触发同步释放
     await settings.updateAgentMcpSettings({ webMcpEnabled: false });

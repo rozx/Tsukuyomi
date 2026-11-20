@@ -3,6 +3,19 @@ export default {
     eyebrow: '外部 AGENT / MCP',
     title: '外部 Agent 工作台',
     subtitle: '让 Claude Code 等外部 Agent 用你已有的订阅额度，直接操作书库并翻译小说。',
+    sections: {
+      connect: '接入',
+      activity: '调用活动',
+      permission: '权限与写回',
+      tools: '开放的能力',
+      connection: '连接设置',
+    },
+    summary: {
+      status: '服务',
+      permission: '权限',
+      tools: '开放工具',
+      calls: '本次调用',
+    },
     status: {
       running: '运行中',
       starting: '启动中',
@@ -56,8 +69,13 @@ export default {
       webRelayFailed: 'WebMCP 运行时加载失败，请刷新页面后重试。',
     },
     guide: {
-      overviewContext: 'get_app_context：用户当前打开的书、章节，以及界面语言。',
+      overviewContext:
+        'get_app_context：用户现在在哪个页面、打开的书和章节（含翻译进度）、选中的段落及其原文与译文、在页面上划选的文字（selected_text），以及界面语言。用户说「这一段」「这一章」「这里」时先调用它，不要猜。',
       overviewLibrary: 'list_books 列出书库；get_book 查看一本书的章节列表与各章翻译进度。',
+      overviewSearch:
+        '要知道一个词在全书哪些地方出现，用 search_paragraphs（可搜原文、译文，支持正则）或 count_occurrences（统计次数与章节分布），不要逐章读取；开启了本地嵌入时还可以用 search_chapters 按内容描述找章节。',
+      overviewHelp:
+        '用户问 Tsukuyomi 怎么用、某个功能在哪里时，先用 search_help_docs 找到相关文档，再用 get_help_doc 读完全文后回答，不要凭印象回答。',
       overviewWorkflows:
         '每类任务的完整流程在 MCP 提示词 translate-chapter、polish-chapter、import-and-translate 里，开工前用 prompts/get 读取。',
       overviewWorkflowsWeb:
@@ -125,10 +143,21 @@ export default {
         '重要的剧情转折、人物关系和世界观设定用 upsert_memory 记下；需要回忆前文时用 search_memories。',
       wfWorld4:
         '用户对文风或称呼有长期要求时，用 update_special_instructions 写成书籍级或章节级的特殊指令。',
+      wfWorld5:
+        '用 list_memories 可以翻页查看全部记忆。过时或重复的条目用 delete_terms、delete_characters、delete_memories 删除，删除前先向用户确认。',
+      wfRenameTitle: '统一修改译名',
+      wfRename1: '先用 upsert_terms 或 upsert_characters 把译名改成新的，之后的翻译会沿用新译名。',
+      wfRename2:
+        '用 count_occurrences 统计旧译名还剩多少处：keywords 填旧译名，search_in 设为 "translation"。',
+      wfRename3:
+        '调用 replace_in_translations 并把 dry_run 设为 true 预览：find 填旧译名，replace_with 填新译名，original_contains 填原文里的名字，避免误改同字的其他词。检查返回的 samples。',
+      wfRename4:
+        '确认无误后去掉 dry_run 再调用一次。返回 has_more 为 true 时继续调用，直到为 false。默认会给每个改动的段落追加一个新版本，旧版本仍然保留。',
+      wfRename5: '最后再用 count_occurrences 确认旧译名已经没有残留，并向用户汇报改了多少处。',
       rulesTitle: '规则',
       ruleWriteBack: '所有译文和设定都通过工具写回应用，不要只贴在对话里。',
       ruleConfirm:
-        'apply_book_updates 的 include_updated 和 delete_book 会丢失用户的数据，使用前必须先得到用户同意。',
+        'apply_book_updates 的 include_updated、delete_book，以及 delete_terms、delete_characters、delete_memories 会丢失用户的数据，使用前必须先得到用户同意。',
       ruleAsk: '不确定要处理哪本书、哪些章节时先问用户；每完成一章汇报进度。',
       errorsTitle: '出错时',
       errPermission:
@@ -179,11 +208,12 @@ export default {
       noArgs: '无参数',
     },
     permission: {
-      title: '权限',
+      title: '权限与写回',
       readOnly: '仅只读',
       readOnlyDesc: '只能查询书库、读取原文与翻译上下文，不能写入任何内容。',
       translateEdit: '翻译与编辑',
-      translateEditDesc: '可以建书、加章、导入、写回译文、维护术语与角色，不能删除书籍。',
+      translateEditDesc:
+        '可以建书、加章、导入、写回与批量替换译文，新增、修改和删除术语、角色与记忆，不能删除书籍。',
       full: '完全控制',
       fullDesc: '在「翻译与编辑」之上，还允许永久删除书籍。',
       toolCount: '开放 {count} 个工具',
@@ -230,29 +260,41 @@ export default {
       'import-and-translate': '从 URL 或本地文本导入小说并立即开始分块翻译。',
     },
     tools: {
-      get_app_context: '读取当前打开的书籍/章节/段落上下文、界面语言与运行环境能力标记。',
+      get_app_context:
+        '读取用户所在页面、打开的书籍与章节、选中段落的原文与译文、划选的文字，以及界面语言与运行环境。',
       navigate_to: '切换界面到首页、书库、指定书籍、章节或定位到具体段落。',
       get_workflow_guide:
         '获取 translate-chapter / polish-chapter / import-and-translate 标准工作流指引。',
+      search_help_docs: '按标题、简介和正文搜索内置使用文档；不带搜索词时列出全部文档。',
+      get_help_doc: '读取一篇内置使用文档的全文。',
       list_books: '列出本地书库全部书籍的元数据、卷章数与目标翻译语言。',
       get_book: '获取单本书籍完整卷章目录及各章翻译进度统计。',
       create_book: '在本地书库创建新书籍，支持同时写入初始章节。',
       add_chapters: '按纯文本分段或段落数组向指定卷批量新增章节。',
+      update_book: '修改书籍的作者、简介、标签与别名。',
       import_book_from_url: '通过内置站点能力从受支持 URL 导入或增量更新书籍及章节正文。',
       check_book_updates: '检查书籍来源站点是否有新章节，可选比对已导入章节的正文是否改动。',
       apply_book_updates:
         '把来源站点的更新导入书籍：默认只导入新章节，可选应用已导入章节的正文改动。',
+      search_chapters: '按内容描述找出最相关的章节（需要开启本地嵌入）。',
       delete_book: '永久删除指定书籍及章节（仅完全控制模式可用）。',
       get_translation_chunk: '按字符预算打包待翻段落、前文衔接、命中术语/角色/记忆与特殊指令。',
       submit_translations: '校验并批量持久化段落译文及可选章节标题译文，实时刷新界面。',
       get_chapter_paragraphs: '按索引区间或关键词读取章节段落、当前译文及可选历史版本。',
       update_chapter_title: '更新指定章节在目标语言下的译文标题。',
+      search_paragraphs: '在全书或单个章节里按关键词或正则搜索原文与译文，返回命中段落及所在章节。',
+      count_occurrences: '统计关键词在全书原文或译文里出现的次数、段落数与章节分布。',
+      replace_in_translations: '在全书或单个章节当前选用的译文里查找并替换文字，可先预览再写入。',
       list_terms: '列出书籍全部术语及当前目标语言译法。',
       upsert_terms: '按名称批量新增或更新术语译法与说明。',
       list_characters: '列出书籍全部角色设定、别名与说话风格。',
       upsert_characters: '按角色名批量新增或更新角色设定与别名译法。',
-      search_memories: '按自然语言混合检索书籍剧情记忆，或列出全部记忆。',
+      search_memories: '按自然语言混合检索书籍剧情记忆；不带查询时列出最近的记忆。',
       upsert_memory: '新增或更新书籍剧情记忆条目。',
+      list_memories: '分页列出书籍的全部记忆，可选带上正文。',
+      delete_terms: '按 ID 批量删除术语。',
+      delete_characters: '按 ID 批量删除角色设定。',
+      delete_memories: '按 ID 批量删除记忆。',
       get_special_instructions: '读取书籍级与可选章节级的翻译/润色/校对特殊指令。',
       update_special_instructions: '更新书籍级或章节级的翻译/润色/校对特殊指令。',
     },

@@ -49,6 +49,8 @@ export interface AgentMcpExecutionContext {
   defaultWriteMode: AgentMcpWriteMode;
   resolveBookId: (explicitBookId?: string | null) => ResolveBookIdResult;
   navigate?: (path: string) => Promise<void> | void;
+  /** 用户当前所在的应用内路径（如 /books/abc）；未接入路由时不提供 */
+  getCurrentPath?: () => string | null;
 }
 
 export interface AgentMcpToolSpec {

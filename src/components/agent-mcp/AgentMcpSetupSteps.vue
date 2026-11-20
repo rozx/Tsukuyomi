@@ -1,6 +1,6 @@
 <template>
-  <AgentMcpPanel>
-    <ol class="steps">
+  <AgentMcpPanel :class="{ 'setup-panel--fill': fill }" :title="t('agentMcp.sections.connect')">
+    <ol class="steps" :class="{ 'steps--fill': fill }">
       <!-- 第一步：开启服务（桌面端本地 MCP / 浏览器端 WebMCP） -->
       <li class="step">
         <span class="step-index" :class="{ 'step-index--done': ctx.connectionReady.value }">
@@ -81,7 +81,7 @@
       </li>
 
       <!-- 第二步：把快速上手指南交给 Agent，由它完成项目文件夹、MCP 与 AGENTS.md 的设置 -->
-      <li class="step">
+      <li class="step step--guide">
         <span class="step-index">2</span>
         <div class="step-body">
           <div class="amcp-row">
@@ -96,7 +96,9 @@
               @click="ctx.copyQuickStartGuide"
             />
           </div>
-          <pre class="amcp-pre amcp-pre--wrap"><code>{{ ctx.quickStartGuide.value }}</code></pre>
+          <pre
+            class="amcp-pre amcp-pre--wrap guide-text"
+          ><code>{{ ctx.quickStartGuide.value }}</code></pre>
 
           <!-- 手动添加 MCP：把指南交给 Agent 时不需要，默认收起 -->
           <button
@@ -172,6 +174,7 @@ import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import ToggleSwitch from 'primevue/toggleswitch';
 import AgentMcpPanel from 'src/components/agent-mcp/AgentMcpPanel.vue';
+import { useFlatAgentMcpPanels } from 'src/components/agent-mcp/panel-surface';
 import {
   injectAgentMcpPage,
   type AgentMcpConnectTab,
@@ -179,6 +182,8 @@ import {
 
 const { t, locale } = useI18n();
 const ctx = injectAgentMcpPage();
+// 在桌面看板的栏位里：指南文本框占满剩余高度，而不是固定高度
+const fill = useFlatAgentMcpPanels();
 
 const TAB_LABEL_KEYS: Record<AgentMcpConnectTab, string> = {
   'claude-code': 'agentMcp.steps.tabClaudeCode',
@@ -229,6 +234,26 @@ const linkStatusText = computed(() => {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
   gap: 12px;
+}
+
+/* 占满栏高；内容放不下时由栏位滚动，所以只增不缩 */
+.setup-panel--fill {
+  flex: 1 0 auto;
+}
+
+.steps--fill {
+  flex: 1 0 auto;
+}
+
+.steps--fill .step--guide {
+  flex: 1 0 auto;
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.steps--fill .guide-text {
+  flex: 1 1 12rem;
+  min-height: 12rem;
+  max-height: none;
 }
 
 .step-index {

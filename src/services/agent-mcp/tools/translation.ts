@@ -27,6 +27,7 @@ import {
   formatCharacterSummary,
   formatTermSummary,
   loadChapterParagraphs,
+  parseNonNegativeInt,
   readTrimmedString,
   resolveBookAndChapterFromArgs,
 } from './helpers';
@@ -66,13 +67,6 @@ async function persistChapterTitleTranslation(
 function isTranslatedForLanguage(paragraph: Paragraph, language: AppLocale): boolean {
   const tr = getLanguageTranslation(paragraph, language);
   return Boolean(tr && tr.translation.trim().length > 0);
-}
-
-function parseNonNegativeInt(value: unknown, fallback: number): number {
-  if (value === undefined || value === null) return fallback;
-  const num = Number(value);
-  if (!Number.isFinite(num) || num < 0) return fallback;
-  return Math.trunc(num);
 }
 
 function matchRelevantTerms(book: Novel, chunkText: string, language: AppLocale) {
@@ -209,7 +203,8 @@ function resolveBatchItemId(
   };
 }
 
-function buildEditForParagraph(
+/** 按写入方式生成一条译文修改：追加为新版本并选用，或就地修改当前选用的版本 */
+export function buildEditForParagraph(
   targetParagraph: Paragraph,
   translatedText: string,
   writeMode: AgentMcpWriteMode,

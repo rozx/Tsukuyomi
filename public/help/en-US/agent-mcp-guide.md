@@ -26,8 +26,8 @@ Use the **External Agent Workbench** (`/mcp`) to connect local agents such as Cl
 
 ## Permission Modes & Translation Versions {#agent-mcp-guide-section-5}
 
-- **Read only (`read_only`)**: Read library, chapters, terms, characters, memories, and translation chunks only.
-- **Translate and edit (`translate_and_edit`, default)**: Allows creating/importing books, adding chapters, checking for and importing book updates, submitting translations, and maintaining terms, characters, and memories; blocks deleting books.
+- **Read only (`read_only`)**: Read library, chapters, terms, characters and memories, search the whole book and count keyword occurrences, fetch translation chunks, and read your current page and the built-in user guide.
+- **Translate and edit (`translate_and_edit`, default)**: Allows creating books and editing their details, importing, adding chapters, checking for and importing book updates, submitting and batch-replacing translations, and adding, editing and deleting terms, characters, and memories; blocks deleting books.
 - **Full control (`full`)**: Additionally unlocks `delete_book`; the page asks for confirmation before switching to it.
 - **Version retention**: Submissions default to `append` (adding and selecting a new version). Each paragraph retains up to 5 versions per target language; older versions are evicted beyond that limit, so avoid submitting repeated revisions to the same paragraph unnecessarily.
 
@@ -38,3 +38,7 @@ Use the **External Agent Workbench** (`/mcp`) to connect local agents such as Cl
 3. For long web novels, `import_book_from_url` fetches up to 20 chapters per batch by default; adjust with `max_chapters` and call it again while `pending_chapter_count > 0`.
 4. For ongoing serials, `check_book_updates` checks the source site for new chapters and `apply_book_updates` imports them. Only new chapters are imported by default; applying text changes to imported chapters (`include_updated`) clears the translations of revised paragraphs.
 5. Saved translations appear live in the reader, "Call activity" on the page shows every tool call in real time with a summary of its arguments and result (kept across reloads, cleared when the tab is closed), and translation history displays the external source label (such as `MCP · claude-opus-4`).
+6. The agent can tell what you are looking at: `get_app_context` returns the page you are on, the open book and chapter, the selected paragraph with its text and translation, and any text you highlighted on the page. You can simply say "polish the paragraph I selected".
+7. To rename a term everywhere, the agent counts the old rendering with `count_occurrences`, then previews and applies the change with `replace_in_translations`. With the default write mode each changed paragraph gets a new version and the old one is kept. Use `search_paragraphs` (regular expressions supported) to search the whole book; with local embedding enabled, `search_chapters` finds chapters from a description of their content.
+8. You can ask the agent usage questions such as "how do I import a novel in Tsukuyomi": it looks up this guide with `search_help_docs` and `get_help_doc` before answering.
+9. `delete_terms`, `delete_characters` and `delete_memories` remove outdated or duplicate entries. The guide tells the agent to get your consent before deleting.

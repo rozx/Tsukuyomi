@@ -97,8 +97,8 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
   - `mainWindow` 会被置空并重建（macOS 关窗后 `activate` 重新 `createWindow`）：服务端每次请求时动态取当前窗口而不是缓存 `webContents`；窗口 `closed` 时立即以 `-32002` 结束所有挂起请求。
 - **理由**：复用现有 `electron-preload.ts` 中 `desktop-update:prepare` / `prepared` 已验证的 `id` 关联模式，类型安全且无需在渲染进程暴露任何 Node 能力。
 
-### 4. 精选 22 个面向工作流的聚合工具（而非透传 30+ 内部工具）
-- **决策**：对外提供 20 个高内聚工具（WebMCP 通道额外暴露 `get_workflow_guide`），底层复用现有 services 与验证逻辑：
+### 4. 精选面向工作流的聚合工具（而非透传 50+ 内部工具）
+- **决策**：对外提供一组高内聚工具（首批 22 个，WebMCP 通道额外暴露 `get_workflow_guide`；后按 4.1 补到 33 个），底层复用现有 services 与验证逻辑：
   - **应用与导航（2）**：`get_app_context`（读）、`navigate_to`（写 UI，支持跳转首页/书库/书籍/章节/段落）。
   - **书库与导入（6）**：`list_books`（读）、`get_book`（读）、`create_book`（写）、`add_chapters`（写，支持纯文本按空行/换行分段或段落数组，自动创建或追加到指定卷）、`import_book_from_url`（写，实现位于 `tools/url-import.ts`，调用 `NovelScraperFactory`；按规范化目录 URL 匹配已有书并增量合并目录，不覆盖用户改过的书名/作者/简介；每次调用抓取至多 `max_chapters` 个缺正文章节（默认 20、上限 50），返回 `pending_chapter_count` / `has_more` 供 Agent 续调；同一 URL 的重叠调用返回 `IMPORT_IN_PROGRESS`；已有正文的章节不重抓、不覆盖；新建书在未写入任何章节就失败时回滚删除空壳；失败时若书仍在书库则带回 `book_id` 且只建议 `add_chapters`，否则给出 `create_book` + `add_chapters` 的降级指引；Web 端 CORS 失败与站点不受支持同样返回结构化降级指引）、`delete_book`（危险写，仅 `full` 模式）；后补 `check_book_updates`（写级权限：快速检查可能把手动章节关联到目录网址，但不改章节内容；`deep` 时比对已导入章节正文）与 `apply_book_updates`（写：默认只导入站点新增章节，`include_updated` 才应用已导入章节的正文改动，`urls` 可限定范围），实现位于 `tools/book-updates.ts`，直接复用 `BookSyncService.openSession` 的检查与应用会话，每次调用重新检查而不跨调用保留会话。
   - **翻译核心循环（4）**：
@@ -112,6 +112,23 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
 - **理由**：
   - 减少外部 Agent 上下文里的工具 schema 体积，同时用「打包拉取 + 批量 upsert」把翻译一章的轮次压到最低。
   - 拆分 `get_special_instructions` 与 `update_special_instructions` 让每个工具的 `readOnlyHint` 与三级权限门禁 100% 静态明确，无参数级歧义。
+
+### 4.1 与站内 Agent 的能力对齐：补 11 个工具并扩充用户上下文
+
+站内翻译 / 助手 Agent 共有 55 个工具。逐项对照后，其中多数已被外部工具合并覆盖（章节与书籍信息 → `get_book`；段落读取与译文历史 → `get_chapter_paragraphs`；术语 / 角色 / 记忆的读写 → `list_*` 与 `upsert_*`；写译文 → `submit_translations`），待办、`ask_user`、任务状态与联网搜索是站内任务循环自身的能力、外部 Agent 自带，不提供。真正缺的补成以下 11 个工具（共 33 个，WebMCP 通道另有 `get_workflow_guide`）：
+
+- **全书搜索（`tools/search.ts`）**：
+  - `search_paragraphs`（读）：关键词或正则，搜原文、当前选用的译文或两者；`chapter_id` 可选，省略时按卷章顺序扫全书；`limit`（默认 20、上限 100）与 `offset` 翻页，多找到一条即可判断 `has_more`，不必扫完全书。正则写错返回 `INVALID_REGEX`，而不是空结果。
+  - `count_occurrences`（读）：至多 20 个关键词，统计出现次数、段落数与章节分布；默认统计原文，`search_in: "translation"` 统计当前选用的译文（用于确认旧译名还剩多少处）。
+  - `replace_in_translations`（写）：在当前选用的译文里做字面替换，可用 `chapter_id` 限定章节、`original_contains` 限定「原文包含某词」的段落、`dry_run` 预览；单次最多改 `max_paragraphs` 段（默认 200、上限 1000），超出时返回 `has_more`。写入方式与 `submit_translations` 一致：跟随用户的 `defaultWriteMode`，`append` 为每个改动的段落追加新版本并选用（旧版本保留），`overwrite` 就地修改当前版本；替换后会变成空白的译文跳过不改。按章节分组后一次提交（`BookService.editParagraphTranslationGroups`），再刷新书库。
+  - `search_chapters`（读）：按内容描述找章节，复用 `ChapterEmbeddingService.queryChapters`；本地嵌入未开启或模型未就绪时返回 `EMBEDDING_DISABLED` / `EMBEDDING_NOT_READY`，并提示改用 `search_paragraphs`。工具始终列出而不是按开关隐藏，保证工具清单只由权限决定。
+  - **扫描方式**：三个全书工具共用同一个逐章扫描器，正文不在内存里的章节按 40 章一批从存储读取，不一次性把整本书放进内存；没有复用站内的全文索引，结果因此是确定的、与索引是否建好无关。三者加入桌面端长操作清单（180s）。
+- **删除与浏览设定**：`delete_terms`、`delete_characters`、`delete_memories`（写，按 ID 批量删除，找不到或失败的逐项报告）与 `list_memories`（读，分页列出全部记忆，默认只带摘要）。删除类工具放在 `translate_and_edit` 权限下（用户决定）：它们只影响设定条目、不动正文与译文，与「删除书籍」不是一个量级；快速上手指南要求 Agent 删除前先征得用户同意。
+- **书籍信息**：`update_book`（写）修改作者、简介、标签与别名，只改传入的字段，空字符串或空数组表示清空；不改书名与章节。
+- **内置使用文档**：`search_help_docs`（读，按标题、简介与正文匹配并给出片段，不带搜索词时列出全部文档，不含更新日志）与 `get_help_doc`（读，返回全文），按界面语言读取。用户可以直接问 Agent「怎么用」，指南要求 Agent 先查文档再回答。这两个工具不依赖书库加载完成。
+- **用户上下文**：`get_app_context` 除了原有的书籍 / 章节 / 段落 ID，还返回用户所在的页面（由路由路径解析为 `home` / `books` / `book` / `book_settings` / `import` / `ai_models` / `agent_mcp` / `settings` / `help` 等，书籍设置页带上具体分栏，帮助页带上文档 ID）、当前章节的标题与翻译进度、选中段落与鼠标所在段落的序号、原文与译文，以及用户在页面上划选的文字（`selected_text`，至多 2000 字符）。路由路径由 boot 层通过 `getCurrentPath` 钩子传入内核（与 `navigate` 同一条通路），services 层不直接依赖路由。
+
+工具清单集中在 `tools/all-tools.ts`，内核注册与快速上手指南共用同一份，不再各自维护。
 
 ### 5. 外部译文 `aiModelId` 约定与兼容渲染
 - **决策**：
@@ -169,16 +186,22 @@ Tsukuyomi 的核心业务数据（书籍、卷章、段落多版本译文、术�
   - 路由：`{ path: 'mcp', component: () => import('src/pages/AgentMcpPage.vue') }`。
   - 文件组织严格遵循 `device-variant-dispatch` 与 `desktop-tool-pages`：
     - `src/pages/AgentMcpPage.vue`（Dispatcher，调用 `provideAgentMcpPage()`）
-    - `src/pages/agent-mcp/AgentMcpDesktop.vue`（两栏：主栏为接入步骤与调用活动，侧栏为权限、连接设置与开放能力）
+    - `src/pages/agent-mcp/AgentMcpDesktop.vue`（铺满窗口的看板，按可用宽度分三档，见下方「桌面布局」）
     - `src/pages/agent-mcp/AgentMcpTablet.vue`（复用桌面布局）
     - `src/pages/agent-mcp/AgentMcpMobile.vue`（同一组面板按使用顺序单列排列）
-    - `src/composables/agent-mcp-page/useAgentMcpPage.ts`（`provideAgentMcpPage` / `injectAgentMcpPage`，保存跨断点存活的配置标签页、已展开的工具类别、端口草稿与两处待确认状态）
-    - `src/components/agent-mcp/`：`AgentMcpPanel`（基于 `DesktopWorkbenchSurface` 的共用面板与小部件样式）、`AgentMcpSetupSteps`、`AgentMcpActivityLog`、`AgentMcpPermissionPanel`、`AgentMcpConnectionSettings`、`AgentMcpToolCatalog`。
+    - `src/composables/agent-mcp-page/useAgentMcpPage.ts`（`provideAgentMcpPage` / `injectAgentMcpPage`，保存跨断点存活的当前分栏、配置标签页、已展开的工具类别、端口草稿与两处待确认状态）
+    - `src/components/agent-mcp/`：`AgentMcpPanel`（共用面板与小部件样式；手机端是基于 `DesktopWorkbenchSurface` 的独立卡片，桌面工作区内通过 `panel-surface.ts` 的 provide / inject 改为不带外框的一节）、`AgentMcpSetupSteps`、`AgentMcpActivityLog`、`AgentMcpPermissionPanel`、`AgentMcpConnectionSettings`、`AgentMcpToolCatalog`。
   - **页面按「用户要完成什么」组织，而不是按设置项平铺**：
     - 接入步骤只有两步：开启服务 → 把快速上手指南交给 Agent；客户端配置片段收进默认折叠的「手动添加 MCP」（展开状态存于 composable），桌面端服务未运行时片段置灰且不可复制；底部显示是否已收到首次调用。
     - 第二步是把快速上手指南交给 Agent，由 `src/services/agent-mcp/agent-quick-start.ts` 的 `buildAgentQuickStartGuide` 生成。指南以「首次设置」开头，让 Agent 替用户完成：询问并建立项目文件夹（默认 `~/tsukuyomi-translation`）、在其中以项目级方式配置 MCP（Claude Code 用 `claude mcp add --scope project …`）、把指南保存为该文件夹的 AGENTS.md（Claude Code 另建只含 `@AGENTS.md` 的 CLAUDE.md，已有文件时追加为一节）、告知用户之后在该文件夹里启动即可、无需再粘贴。随后是数据模型、了解现状、工具一览、五个分步工作流、规则、出错处理。它是通用内容，不让用户选任务或书籍。配置命令与「手动添加」里的片段共用 `src/services/agent-mcp/client-config.ts`（指南用项目级作用域，手动片段用客户端默认作用域）；工具一览由已注册工具和界面文案生成，测试校验其完整。桌面端指南含访问令牌，因此附带「不要把该文件夹提交到公开仓库」的提醒。（这一步的形态经过三次调整：按任务和书籍拼接的任务提示 → 简短指南 → 误改成纯 AGENTS.md 说明 → 现在的「首次设置 + 参考」。）
     - （已弃用，见决策 6）浏览器端检测不到 WebMCP 接口时：状态只显示「浏览器不支持」，开关禁用且始终显示为关（已保存的开启设置保留，接口出现后自动生效）；按浏览器给出开启指南，默认选中 `src/utils/browser-kind.ts` 按 UA 识别出的当前浏览器。Chrome 给出 `chrome://flags/#enable-webmcp-testing`（WebMCP for testing）；Edge 的确切开关名未能核实，只引导到 `edge://flags` 搜索；Firefox 与 Safari 未查到原生支持，引导改用 Chrome / Edge。页面不在安全上下文时另行提示。这些说明依据的是 2026-11 的公开资料，实验特性变化快，需要随浏览器版本复核。
-    - 调用活动放在主栏；工具目录收成按类别折叠的概览，不再提供搜索；页头不再重复展示状态与数量指标。
+    - 工具目录收成按类别折叠的概览，不再提供搜索。
+    - **桌面布局**：页面固定为视口高度、自身不滚动，只有栏内滚动（与其他桌面页面一致）；页头带一行概览（服务状态、当前权限、开放的工具数、本次会话的调用次数，由 composable 的 `summaryMetrics` 提供）。页头下方是铺满剩余高度的看板，按本页可用宽度（CSS 容器查询，而不是窗口宽度，侧边栏展开与否都能正确切换）分三档：
+      - **宽（≥ 78rem）**：三栏并排——接入（指南文本框占满剩余高度）、调用活动（标题固定、只有列表滚动）、权限与写回 + 开放的能力（桌面端另有连接设置，整栏滚动）。
+      - **中（52–78rem）**：两栏——左栏固定为接入，右栏用标签在调用活动 / 权限与写回 / 开放的能力（/ 连接设置）之间切换；右栏显示哪一个由 `secondarySection` 决定（选中「接入」时为调用活动）。
+      - **窄（< 52rem，含平板）**：顶部分栏标签，一次显示一栏。
+      分栏状态由 composable 的 `sections` / `activeSection` / `selectSection` 提供，调用活动分栏带调用次数。各栏的外框由页面提供，面板在栏内不再套卡片。手机端保持单列卡片。
+      - **走过的弯路**：最初是两栏、五张高度不一的卡片，整页滚动且显得杂乱；随后照「设置」页改成「左侧分栏导航 + 右侧单一内容区」，在宽屏上内容只占一窄条、留下大片空白，被否定。看板方案同时满足「不整页滚动」和「宽屏不留白」。
     - 权限以带后果说明和工具数量的选项呈现；切换到 `full` 与重新生成令牌用页面内的二次确认（状态保存在 composable，不依赖全局确认对话框）。
   - 导航入口：
     - `MainNavTab` / `MainNavTarget` 新增 `'mcp'`；

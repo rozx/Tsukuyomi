@@ -1,3 +1,7 @@
+import type { AppLocale } from 'src/models/locale';
+import type { Chapter, Novel, Paragraph } from 'src/models/novel';
+import { getLanguageTranslation, getNameTranslation } from 'src/services/localization/selection';
+import { titleOriginal } from 'src/services/localization/title-edit';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useBooksStore } from 'src/stores/books';
 import { useContextStore } from 'src/stores/context';
@@ -13,11 +17,128 @@ import {
   resolveBookFromArgs,
 } from './helpers';
 
+/** 页面上划选的文字最多带回的长度 */
+const MAX_SELECTED_TEXT_LENGTH = 2000;
+
+type AppPage =
+  | { kind: 'unknown'; path: string | null }
+  | {
+      kind:
+        | 'home'
+        | 'books'
+        | 'book_import'
+        | 'import'
+        | 'ai_models'
+        | 'agent_mcp'
+        | 'settings'
+        | 'help';
+      path: string;
+      help_doc_id?: string;
+      import_task_id?: string;
+    }
+  | { kind: 'book'; path: string; book_id: string }
+  | { kind: 'book_settings'; path: string; book_id: string; section: string };
+
+const SIMPLE_PAGES: Record<string, 'home' | 'books' | 'ai_models' | 'agent_mcp' | 'settings'> = {
+  '': 'home',
+  books: 'books',
+  ai: 'ai_models',
+  mcp: 'agent_mcp',
+  settings: 'settings',
+};
+
+/** 把应用内路径翻译成外部 Agent 能看懂的「用户在哪个页面」（与 src/router/routes.ts 对应） */
+function describeAppPage(rawPath: string | null): AppPage {
+  if (rawPath === null) return { kind: 'unknown', path: null };
+  const path = rawPath.split(/[?#]/)[0] ?? '';
+  const segments = path.split('/').filter((segment) => segment.length > 0);
+  const [first = '', second, third, fourth] = segments;
+
+  if (segments.length <= 1 && first in SIMPLE_PAGES) {
+    return { kind: SIMPLE_PAGES[first]!, path };
+  }
+  if (first === 'help') {
+    return { kind: 'help', path, ...(second ? { help_doc_id: second } : {}) };
+  }
+  if (first === 'import') {
+    return { kind: 'import', path, ...(second ? { import_task_id: second } : {}) };
+  }
+  if (first === 'books' && second) {
+    if (second === 'new') return { kind: 'book_import', path };
+    if (third === 'settings' && fourth) {
+      return { kind: 'book_settings', path, book_id: second, section: fourth };
+    }
+    if (segments.length === 2) return { kind: 'book', path, book_id: second };
+  }
+  return { kind: 'unknown', path };
+}
+
+function readSelectedText(): string | null {
+  if (typeof window === 'undefined' || typeof window.getSelection !== 'function') return null;
+  const text = window.getSelection()?.toString().trim() ?? '';
+  if (!text) return null;
+  return text.length > MAX_SELECTED_TEXT_LENGTH
+    ? `${text.slice(0, MAX_SELECTED_TEXT_LENGTH)}…`
+    : text;
+}
+
+function describeParagraph(
+  paragraphs: readonly Paragraph[],
+  paragraphId: string | null,
+  chapterId: string,
+  language: AppLocale,
+) {
+  if (!paragraphId) return null;
+  const index = paragraphs.findIndex((p) => p.id === paragraphId);
+  if (index < 0) return null;
+  const paragraph = paragraphs[index]!;
+  return {
+    id: paragraph.id,
+    chapter_id: chapterId,
+    index,
+    text: paragraph.text,
+    translation: getLanguageTranslation(paragraph, language)?.translation || null,
+  };
+}
+
+/** 用户当前打开的章节，以及其中选中 / 鼠标所在的段落 */
+async function describeOpenChapter(
+  book: Novel | undefined,
+  chapterId: string | null,
+  selectedParagraphId: string | null,
+  hoveredParagraphId: string | null,
+) {
+  const empty = { current_chapter: null, selected_paragraph: null, hovered_paragraph: null };
+  if (!book || !chapterId) return empty;
+  const chapter: Chapter | null = findChapterInBook(book, chapterId);
+  if (!chapter) return empty;
+
+  const language = book.targetLanguage ?? 'zh-CN';
+  const paragraphs = await loadChapterParagraphs(chapter);
+  const nonEmpty = paragraphs.filter((p) => p.text.trim().length > 0);
+  return {
+    current_chapter: {
+      id: chapter.id,
+      title_original: titleOriginal(chapter.title),
+      title_translation:
+        typeof chapter.title === 'object'
+          ? (getNameTranslation(chapter.title, language)?.translation ?? '')
+          : '',
+      paragraph_count: nonEmpty.length,
+      translated_count: nonEmpty.filter((p) =>
+        Boolean(getLanguageTranslation(p, language)?.translation.trim()),
+      ).length,
+    },
+    selected_paragraph: describeParagraph(paragraphs, selectedParagraphId, chapter.id, language),
+    hovered_paragraph: describeParagraph(paragraphs, hoveredParagraphId, chapter.id, language),
+  };
+}
+
 export const agentMcpContextTools: AgentMcpToolSpec[] = [
   {
     name: 'get_app_context',
     description:
-      'Get current Tsukuyomi application context: currently open book/chapter/paragraph IDs, UI locale, runtime environment (desktop/web), and capability flags.',
+      'Get what the user is currently looking at in Tsukuyomi: which page they are on, the open book and chapter (with progress), the selected paragraph with its text and translation, any text they highlighted on the page, plus UI locale, runtime environment and capability flags. Call this first when the user says "this paragraph", "this chapter", "here" or "the current book".',
     category: 'context',
     permission: 'read_only',
     readOnlyHint: true,
@@ -26,19 +147,28 @@ export const agentMcpContextTools: AgentMcpToolSpec[] = [
       type: 'object',
       properties: {},
     },
-    execute: (_args, ctx) => {
+    execute: async (_args, ctx) => {
       const contextStore = useContextStore();
       const settingsStore = useSettingsStore();
       const booksStore = useBooksStore();
       const currentBook = contextStore.currentBookId
         ? booksStore.getBookById(contextStore.currentBookId)
         : undefined;
+      const openChapter = await describeOpenChapter(
+        currentBook,
+        contextStore.currentChapterId,
+        contextStore.selectedParagraphId,
+        contextStore.hoveredParagraphId,
+      );
 
       return {
+        page: describeAppPage(ctx.getCurrentPath?.() ?? null),
         current_book_id: contextStore.currentBookId,
         current_book_title: currentBook?.title ?? null,
         current_chapter_id: contextStore.currentChapterId,
+        ...openChapter,
         selected_paragraph_id: contextStore.selectedParagraphId,
+        selected_text: readSelectedText(),
         ui_locale: settingsStore.uiLocale,
         target_language: currentBook?.targetLanguage ?? 'zh-CN',
         is_electron: isElectron(),

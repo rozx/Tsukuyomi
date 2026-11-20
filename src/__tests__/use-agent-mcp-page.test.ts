@@ -427,6 +427,95 @@ describe('useAgentMcpPage composable', () => {
     runtime.dispose();
   });
 
+  it('页面分栏：浏览器端四个分栏、桌面端多一个连接设置；选中的分栏跨断点切换保持', async () => {
+    const harness = mountHarness();
+    const ctx = harness.getCtx();
+    expect(ctx.sections.value.map((section) => section.key)).toEqual([
+      'connect',
+      'activity',
+      'permission',
+      'tools',
+    ]);
+    expect(ctx.activeSection.value).toBe('connect');
+
+    ctx.selectSection('permission');
+    expect(ctx.activeSection.value).toBe('permission');
+    harness.variant.value = 'mobile';
+    await nextTick();
+    expect(harness.getCtx().activeSection.value).toBe('permission');
+    harness.unmount();
+
+    platformState.isElectron = true;
+    const desktop = mountHarness();
+    expect(desktop.getCtx().sections.value.map((section) => section.key)).toEqual([
+      'connect',
+      'activity',
+      'permission',
+      'tools',
+      'connection',
+    ]);
+    desktop.unmount();
+  });
+
+  it('两栏布局下右栏显示的分栏：选中「接入」时显示调用活动，其余跟随选中的分栏', () => {
+    const harness = mountHarness();
+    const ctx = harness.getCtx();
+    expect(ctx.activeSection.value).toBe('connect');
+    expect(ctx.secondarySection.value).toBe('activity');
+
+    ctx.selectSection('tools');
+    expect(ctx.secondarySection.value).toBe('tools');
+    ctx.selectSection('activity');
+    expect(ctx.secondarySection.value).toBe('activity');
+    harness.unmount();
+  });
+
+  it('调用活动分栏带上本次会话的调用次数；没有调用时不显示数字', async () => {
+    const harness = mountHarness();
+    const ctx = harness.getCtx();
+    const activity = () => ctx.sections.value.find((section) => section.key === 'activity');
+    expect(activity()?.badge).toBeUndefined();
+
+    useAgentMcpStore().recordActivity({
+      channel: 'webmcp',
+      toolName: 'list_books',
+      argsSummary: '',
+      status: 'success',
+      durationMs: 3,
+    });
+    await nextTick();
+    expect(activity()?.badge).toBe('1');
+    harness.unmount();
+  });
+
+  it('页面顶部概览显示服务状态、当前权限、开放的工具数与调用次数，并随设置变化', async () => {
+    const harness = mountHarness();
+    const ctx = harness.getCtx();
+    const values = () => ctx.summaryMetrics.value.map((item) => String(item.value));
+
+    await useSettingsStore().updateAgentMcpSettings({
+      webMcpEnabled: false,
+      permissionMode: 'translate_and_edit',
+    });
+    await nextTick();
+    expect(ctx.summaryMetrics.value).toHaveLength(4);
+    expect(values()[0]).toBe(ctx.runtimeStatusLabel.value);
+    expect(values()[1]).toBe(
+      ctx.permissionOptions.value.find((option) => option.value === 'translate_and_edit')?.label,
+    );
+    expect(values()[2]).toBe(String(ctx.exposedTools.value.length));
+    expect(values()[3]).toBe('0');
+
+    const before = Number(values()[2]);
+    await useSettingsStore().updateAgentMcpSettings({ permissionMode: 'read_only' });
+    await nextTick();
+    expect(Number(values()[2])).toBeLessThan(before);
+    expect(values()[1]).toBe(
+      ctx.permissionOptions.value.find((option) => option.value === 'read_only')?.label,
+    );
+    harness.unmount();
+  });
+
   it('所有工具与内置工作流在三语 i18n 资源中均有完整专属描述键', async () => {
     const { ALL_AGENT_MCP_TOOLS } = await import('src/services/agent-mcp');
     const { listAgentMcpPrompts } = await import('src/services/agent-mcp/prompts');

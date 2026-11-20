@@ -1,5 +1,10 @@
 <template>
-  <DesktopWorkbenchSurface class="amcp-panel" tone="muted">
+  <component
+    :is="flat ? 'section' : DesktopWorkbenchSurface"
+    class="amcp-panel"
+    :class="{ 'amcp-panel--flat': flat }"
+    v-bind="flat ? {} : { tone: 'muted' }"
+  >
     <header v-if="title || $slots.actions" class="amcp-panel-head">
       <div class="amcp-panel-copy">
         <h2 v-if="title" class="amcp-panel-title">{{ title }}</h2>
@@ -10,13 +15,17 @@
       </div>
     </header>
     <slot />
-  </DesktopWorkbenchSurface>
+  </component>
 </template>
 
 <script setup lang="ts">
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
+import { useFlatAgentMcpPanels } from 'src/components/agent-mcp/panel-surface';
 
 withDefaults(defineProps<{ title?: string; hint?: string }>(), { title: '', hint: '' });
+
+// 桌面看板的栏位已有外框，这里不再套一层卡片
+const flat = useFlatAgentMcpPanels();
 </script>
 
 <!-- 工作台各面板共用的小部件样式集中在这里，统一以 amcp- 前缀命名，避免在每个面板里重复定义 -->
@@ -26,6 +35,11 @@ withDefaults(defineProps<{ title?: string; hint?: string }>(), { title: '', hint
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+}
+
+/* 放在页面提供的栏位里时没有自己的外框 */
+.amcp-panel--flat {
+  gap: 16px;
 }
 
 .amcp-panel-head {
@@ -110,6 +124,17 @@ withDefaults(defineProps<{ title?: string; hint?: string }>(), { title: '', hint
 .amcp-disclosure .pi {
   font-size: 11px;
   color: var(--moon-50-opacity-55);
+}
+
+/* 行右侧的控件组（状态标签 + 开关）保持原尺寸，不被文字挤出栏外 */
+.amcp-row > .amcp-inline {
+  flex-shrink: 0;
+}
+
+/* 状态标签不换行、不被挤压 */
+.amcp-inline > .p-tag {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* 行内的按钮不随文字区域被挤压换行 */

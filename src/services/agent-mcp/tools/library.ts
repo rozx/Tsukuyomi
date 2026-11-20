@@ -7,7 +7,12 @@ import { titleOriginal } from 'src/services/localization/title-edit';
 import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
 import { agentMcpError, type AgentMcpToolSpec } from '../types';
-import { loadChapterParagraphs, readTrimmedString, resolveBookFromArgs } from './helpers';
+import {
+  loadChapterParagraphs,
+  readStringList,
+  readTrimmedString,
+  resolveBookFromArgs,
+} from './helpers';
 import {
   buildParagraphs,
   countChaptersInVolumes,
@@ -78,6 +83,37 @@ function buildChapterEntity(input: ChapterInput, now: Date): Chapter {
     createdAt: now,
     lastEdited: now,
   };
+}
+
+/**
+ * 从参数里取出要修改的书籍信息。只包含调用方传入的字段；
+ * 空字符串或空数组表示清空该字段。
+ */
+function buildBookInfoPatch(args: Record<string, unknown>): {
+  updates: Partial<Novel>;
+  updatedFields: string[];
+} {
+  const updates: Partial<Novel> = {};
+  const updatedFields: string[] = [];
+  if (typeof args.author === 'string') {
+    updates.author = args.author.trim() || undefined;
+    updatedFields.push('author');
+  }
+  if (typeof args.description === 'string') {
+    updates.description = args.description.trim() || undefined;
+    updatedFields.push('description');
+  }
+  if (Array.isArray(args.tags)) {
+    const tags = readStringList(args.tags);
+    updates.tags = tags.length > 0 ? tags : undefined;
+    updatedFields.push('tags');
+  }
+  if (Array.isArray(args.alternate_titles)) {
+    const titles = readStringList(args.alternate_titles);
+    updates.alternateTitles = titles.length > 0 ? titles : undefined;
+    updatedFields.push('alternate_titles');
+  }
+  return { updates, updatedFields };
 }
 
 export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
@@ -184,6 +220,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
         author: book.author ?? '',
         description: book.description ?? '',
         tags: book.tags ?? [],
+        alternate_titles: book.alternateTitles ?? [],
         target_language: targetLanguage,
         enable_original_text_validation: Boolean(book.enableOriginalTextValidation),
         translation_chunk_size: book.translationChunkSize ?? null,
@@ -395,6 +432,60 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
           title: titleOriginal(ch.title),
           paragraph_count: ch.content?.length ?? 0,
         })),
+      };
+    },
+  },
+  {
+    name: 'update_book',
+    description:
+      "Update a book's author, description, tags, or alternate titles. Only the fields you pass are changed; pass an empty string or empty array to clear a field. The title and chapters are not affected.",
+    category: 'library',
+    permission: 'translate_and_edit',
+    readOnlyHint: false,
+    requiresBookStore: true,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        book_id: {
+          type: 'string',
+          description: 'Target book ID (optional if a book is currently open).',
+        },
+        author: { type: 'string', description: 'Author name.' },
+        description: { type: 'string', description: 'Book synopsis.' },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Full list of tags (replaces the existing tags).',
+        },
+        alternate_titles: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Full list of alternate titles (replaces the existing list).',
+        },
+      },
+    },
+    execute: async (args, ctx) => {
+      const bookRes = resolveBookFromArgs(args, ctx);
+      if (!bookRes.ok) return bookRes.error;
+      const { updates, updatedFields } = buildBookInfoPatch(args);
+      if (updatedFields.length === 0) {
+        return agentMcpError(
+          'INVALID_ARGS',
+          'Provide at least one of author, description, tags, or alternate_titles.',
+        );
+      }
+
+      const booksStore = useBooksStore();
+      await booksStore.updateBook(bookRes.book.id, updates);
+      const updated = booksStore.getBookById(bookRes.book.id) ?? bookRes.book;
+      return {
+        book_id: updated.id,
+        title: updated.title,
+        updated_fields: updatedFields,
+        author: updated.author ?? '',
+        description: updated.description ?? '',
+        tags: updated.tags ?? [],
+        alternate_titles: updated.alternateTitles ?? [],
       };
     },
   },
