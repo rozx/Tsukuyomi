@@ -39,7 +39,7 @@ import {
 } from 'src/services/chapter-task/task-queue-notifications';
 import type { ChapterTaskRunResult } from 'src/services/chapter-task/chapter-task-executor';
 import { BookExecutionGuard } from 'src/services/book-execution-guard';
-import { BookService } from 'src/services/book-service';
+import { ImportLibraryReader } from 'src/services/import/import-library-reader';
 import type { Novel } from 'src/models/novel';
 import { desktopRestartGuard } from 'src/services/desktop-restart-guard';
 import type { ToastMessageWithHistoryOptions } from 'src/composables/useToastHistory';
@@ -87,7 +87,10 @@ interface TaskQueueConfig {
    * （普通书籍编辑不经队列广播），执行者手里的 Pinia 副本与章节缓存可能已过期
    */
   refreshBook: (bookId: string, chapterId: string) => Promise<unknown>;
-  /** 只读地从存储读取书籍（不改动本标签页的书库副本），确认章节是否真的已删除 */
+  /**
+   * 只读地从存储读取书籍（不改动本标签页的书库副本），确认章节是否真的已删除。
+   * 不存在返回 undefined；读取失败或记录损坏必须 reject，清理逻辑据此跳过而不是当成已删除
+   */
   loadStoredBook: (bookId: string) => Promise<Novel | undefined>;
   /** 已结束项的历史保留上限 */
   finishedLimit: number;
@@ -115,7 +118,12 @@ function defaultConfig(): TaskQueueConfig {
     restartPending: () => desktopRestartGuard.isRestartPending(),
     watchLibrary: true,
     refreshBook: (bookId, chapterId) => useBooksStore().refreshBookFromStorage(bookId, chapterId),
-    loadStoredBook: (bookId) => BookService.getBookById(bookId),
+    // 不用 BookService.getBookById：它把读取失败也吞成 undefined，与「不存在」分不开
+    loadStoredBook: async (bookId) => {
+      const read = await ImportLibraryReader.readBook(bookId, { chapterIds: [] });
+      if (read.kind === 'failed') throw new Error(`BOOK_READ_FAILED: ${read.message}`);
+      return read.kind === 'absent' ? undefined : read.book;
+    },
     finishedLimit: TASK_QUEUE_FINISHED_LIMIT,
     now: () => Date.now(),
   };

@@ -14,6 +14,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { useBooksStore } from 'src/stores/books';
 import { CodedLocalizedError } from 'src/utils/coded-localized-error';
 import { BookService } from 'src/services/book-service';
+import { ImportLibraryReader } from 'src/services/import/import-library-reader';
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -393,6 +394,36 @@ describe('任务队列 store · 删除联动', () => {
     await store.enqueue([req('x1', { bookId: 'other-tab-book' })], { position: 'back' });
     // 本标签页新建另一本书，触发书库监听
     await books.addBook(novel('local-book', 'y1'));
+    await settle(12);
+    expect(store.items.map((i) => i.chapterId)).toEqual(['x1']);
+  });
+
+  it('从存储确认时读取失败（瞬时错误或记录损坏）：不当成已删除，任务保留', async () => {
+    configureTaskQueue({ watchLibrary: true });
+    const books = useBooksStore();
+    await books.loadBooks();
+    const { runner } = controlledRunner();
+    const store = await startStore(runner, 1);
+    await store.pause();
+    await store.enqueue([req('x1', { bookId: 'unreadable-book' })], { position: 'back' });
+    vi.spyOn(ImportLibraryReader, 'readBook').mockResolvedValue({
+      kind: 'failed',
+      message: '读取失败',
+    } as never);
+    // 本标签页新建一本带章节的书，书库签名变化才会触发监听
+    await books.addBook({
+      id: 'local-book',
+      title: 'L',
+      createdAt: new Date(0),
+      lastEdited: new Date(0),
+      volumes: [
+        {
+          id: 'lv',
+          title: '',
+          chapters: [{ id: 'y1', title: '', createdAt: new Date(0), lastEdited: new Date(0) }],
+        },
+      ],
+    } as never);
     await settle(12);
     expect(store.items.map((i) => i.chapterId)).toEqual(['x1']);
   });
