@@ -2,9 +2,9 @@
 /**
  * Tablet book-details layout — reuses BookDetailsDesktop for the dual-pane
  * reader (catalog sidebar + chapter content), swaps in ChapterToolbarTablet
- * inside BookDetailsDesktop when isTablet, and adds a right-edge vertical
- * rail that toggles the TabletChatPanel overlay (mounted in MainLayoutTablet).
- * Translation progress lives in the task center on the top utility strip.
+ * inside BookDetailsDesktop when isTablet. The catalog toggle is rendered into
+ * the tablet top utility strip (TabletSysbarToggle); the assistant button and
+ * the task center (translation progress, embeddings) live on that strip too.
  *
  * The 2-column grid for 原文 / 译文 is applied here via :deep() so we don't
  * fork ParagraphCard / ChapterContentPanel (~2,700 LoC of highlighted-text /
@@ -15,10 +15,8 @@ import { useI18n } from 'vue-i18n';
 import { resolveAppLocale } from 'src/models/locale';
 import { languageName } from 'src/i18n/translate';
 import BookDetailsDesktop from './BookDetailsDesktop.vue';
-import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
-import BatchEmbeddingsButton from 'src/components/novel/BatchEmbeddingsButton.vue';
+import TabletSysbarToggle from 'src/components/layout/TabletSysbarToggle.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
-import { useTabletRightRail } from 'src/composables/useTabletRightRail';
 
 const { t, locale } = useI18n();
 const ctx = injectBookDetailsPage();
@@ -27,7 +25,6 @@ const columnsHeader = computed(() => {
   const language = languageName(resolveAppLocale(locale.value), target);
   return t('readerUi.sourceTranslationHeader', { language });
 });
-const { isChatActive, toggleRail } = useTabletRightRail();
 </script>
 
 <template>
@@ -46,51 +43,17 @@ const { isChatActive, toggleRail } = useTabletRightRail();
       @click="ctx.toggleTabletSidebar"
     />
 
-    <TabletSideRail>
-      <button
-        type="button"
-        class="tsr-btn rail-base-btn"
-        :class="{ 'tsr-btn--active': ctx.isTabletSidebarOpen.value }"
-        :title="
-          ctx.isTabletSidebarOpen.value
-            ? t('readerUi.collapseCatalog')
-            : t('readerUi.expandCatalog')
-        "
-        :aria-label="
-          ctx.isTabletSidebarOpen.value
-            ? t('readerUi.collapseCatalog')
-            : t('readerUi.expandCatalog')
-        "
-        :aria-pressed="ctx.isTabletSidebarOpen.value"
-        @click="ctx.toggleTabletSidebar"
-      >
-        <i
-          class="pi"
-          :class="ctx.isTabletSidebarOpen.value ? 'pi-angle-double-left' : 'pi-bars'"
-          aria-hidden="true"
-        />
-      </button>
-
-      <div class="tsr-sep" />
-
-      <button
-        type="button"
-        class="tsr-btn rail-base-btn"
-        :class="{ 'tsr-btn--active': isChatActive }"
-        title="月詠"
-        @click="() => toggleRail()"
-      >
-        <i class="pi pi-sparkles" aria-hidden="true" />
-      </button>
-      <BatchEmbeddingsButton class="tsr-btn rail-base-btn" />
-    </TabletSideRail>
+    <!-- 目录开关：渲染到平板顶部信息条最左侧 -->
+    <TabletSysbarToggle
+      :open="ctx.isTabletSidebarOpen.value"
+      :collapse-label="t('readerUi.collapseCatalog')"
+      :expand-label="t('readerUi.expandCatalog')"
+      @toggle="ctx.toggleTabletSidebar"
+    />
   </div>
 </template>
 
 <style scoped>
-/* 侧轨按钮基础样式与 RightPanelRail 共用，见 rail-base.css */
-@import 'src/components/layout/rail-base.css';
-
 .book-details-tablet {
   position: relative;
   width: 100%;

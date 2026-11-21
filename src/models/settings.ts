@@ -6,6 +6,8 @@ import type { AppLocale } from './locale';
 
 /** 「通用设置」分区的稳定序号：首次进入设置页（没有保存过分区）时打开它 */
 export const GENERAL_SETTINGS_TAB = 10;
+/** 设置页「嵌入」分区的保存索引（任务中心后台向量化区的「嵌入设置」直接打开这里） */
+export const EMBEDDING_SETTINGS_TAB = 7;
 
 /**
  * 任务默认模型配置

@@ -25,29 +25,32 @@ const chip = center.chip;
 
 const active = computed(() => chip.value.kind !== 'idle');
 
-const label = computed(() => {
+/** chip 文字；compact 时只保留数字（运行数 / 排队数） */
+const labelFor = (compact: boolean): string => {
   const state = chip.value;
   switch (state.kind) {
     case 'running':
-      return props.compact
+      return compact
         ? String(state.running)
         : t('taskQueueUi.chipRunning', { running: state.running });
     case 'running-queued':
-      return props.compact
+      return compact
         ? `${state.running} · ${state.queued}`
         : t('taskQueueUi.chipRunningQueued', { running: state.running, queued: state.queued });
     case 'paused':
-      return props.compact
-        ? String(state.queued)
-        : t('taskQueueUi.chipPaused', { queued: state.queued });
+      return compact ? String(state.queued) : t('taskQueueUi.chipPaused', { queued: state.queued });
     case 'other':
-      return props.compact ? '' : t('taskQueueUi.chipOther');
+      return compact ? '' : t('taskQueueUi.chipOther');
     case 'finished':
       return t('taskQueueUi.chipDone', { done: state.done });
     default:
-      return props.compact ? '' : t('taskQueueUi.chipIdle');
+      return compact ? '' : t('taskQueueUi.chipIdle');
   }
-});
+};
+
+const label = computed(() => labelFor(props.compact));
+// 非 compact 时也备一份只含数字的文字：系统条变窄时由外层容器查询切换显示
+const narrowLabel = computed(() => (props.compact ? '' : labelFor(true)));
 
 const icon = computed(() => {
   switch (chip.value.kind) {
@@ -75,7 +78,12 @@ const failed = computed(() => (chip.value.kind === 'finished' ? chip.value.faile
   <button
     type="button"
     class="tc-chip"
-    :class="[chipClass, active ? pillClass : '', `tc-chip--${chip.kind}`, { 'tc-chip--flash': center.flash.value }]"
+    :class="[
+      chipClass,
+      active ? pillClass : '',
+      `tc-chip--${chip.kind}`,
+      { 'tc-chip--flash': center.flash.value },
+    ]"
     :aria-label="t('taskQueueUi.title')"
     aria-haspopup="dialog"
     data-testid="task-center-chip"
@@ -83,7 +91,8 @@ const failed = computed(() => (chip.value.kind === 'finished' ? chip.value.faile
   >
     <span v-if="chip.kind === 'other'" class="tc-dot" aria-hidden="true" />
     <i v-else :class="icon" aria-hidden="true" />
-    <span v-if="label" class="tc-label">{{ label }}</span>
+    <span v-if="label" class="tc-label" :class="{ 'tc-label--wide': !compact }">{{ label }}</span>
+    <span v-if="narrowLabel" class="tc-label tc-label--narrow">{{ narrowLabel }}</span>
     <span v-if="failed > 0" class="tc-failed">{{ t('taskQueueUi.chipFailed', { failed }) }}</span>
     <span v-if="showBar" class="tc-bar" aria-hidden="true">
       <span class="tc-bar-done" :style="{ width: `${center.overall.value.donePercent}%` }" />
@@ -109,6 +118,11 @@ const failed = computed(() => (chip.value.kind === 'finished' ? chip.value.faile
 
 .tc-label {
   font-size: 11px;
+}
+
+/* 窄系统条用的数字版文字，默认隐藏；由系统条的容器查询与 .tc-label--wide 互换 */
+.tc-label--narrow {
+  display: none;
 }
 
 .tc-failed {

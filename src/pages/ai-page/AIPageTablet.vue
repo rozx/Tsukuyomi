@@ -467,8 +467,13 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
   padding-top: 12px;
   border-top: 1px solid var(--white-opacity-5);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* minmax(0, 1fr)：不换行的长值（API Key）不能把列撑出卡片，交给省略号截断 */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.ait-param {
+  min-width: 0;
 }
 
 .ait-param-full {
@@ -655,7 +660,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
 
   /* 参数 4 列 grid 在窄宽度下挤，改成 2 列 */
   .ait-params {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .ait-param-full {

@@ -8,8 +8,13 @@ import ProgressBar from 'primevue/progressbar';
 import { useSettingsStore } from 'src/stores/settings';
 import { EmbeddingService } from 'src/services/embedding-service';
 import { EmbeddingQueue } from 'src/services/embedding-queue';
-import type { EmbeddingStatus, EmbeddingProgressEvent } from 'src/services/embedding-service';
-import { MODEL_ID } from 'src/services/embedding-service';
+import type {
+  EmbeddingBackend,
+  EmbeddingStatus,
+  EmbeddingProgressEvent,
+} from 'src/services/embedding-service';
+import { MODEL_ID, MODEL_VERSION } from 'src/services/embedding-service';
+import { CHAPTER_MODEL_VERSION } from 'src/services/chapter-embedding-service';
 import { isMobileDevice } from 'src/utils/platform';
 import { useI18n } from 'vue-i18n';
 
@@ -27,6 +32,19 @@ const isMobile = computed(() => isMobileDevice());
 const effectiveEnableLocalEmbedding = computed(() => !isMobile.value && enableLocalEmbedding.value);
 
 const embeddingStatus = ref<EmbeddingStatus>(EmbeddingService.getStatus());
+/** 实际运行的后端（WebGPU / WASM），模型加载后才确定 */
+const activeBackend = ref<EmbeddingBackend | null>(EmbeddingService.getActiveBackend());
+const chapterModelVersion = CHAPTER_MODEL_VERSION.split('@').pop() ?? '';
+const backendLabel = computed(() => {
+  if (activeBackend.value === 'webgpu') return 'WebGPU';
+  if (activeBackend.value === 'wasm') return t('embeddingUi.slowWasm');
+  return '—';
+});
+const backendClass = computed(() => {
+  if (activeBackend.value === 'webgpu') return 'text-green-400';
+  if (activeBackend.value === 'wasm') return 'text-amber-300';
+  return 'text-moon/60';
+});
 const downloadProgress = ref<number | null>(null);
 const downloadFile = ref('');
 const downloadPhase = ref<NonNullable<EmbeddingProgressEvent['phase']>>('preparing');
@@ -148,6 +166,7 @@ onMounted(async () => {
   }
   syncFormState();
   embeddingStatus.value = EmbeddingService.getStatus();
+  activeBackend.value = EmbeddingService.getActiveBackend();
   const currentProgress = EmbeddingService.getProgress();
   if (embeddingStatus.value === 'loading' && currentProgress)
     updateDownloadProgress(currentProgress);
@@ -155,6 +174,7 @@ onMounted(async () => {
   unsubscribers.push(
     EmbeddingService.addEventListener('status-changed', (e: CustomEvent) => {
       embeddingStatus.value = (e.detail as { status: EmbeddingStatus }).status;
+      activeBackend.value = EmbeddingService.getActiveBackend();
       if (embeddingStatus.value === 'loading') resetDownloadProgress();
       if (embeddingStatus.value !== 'loading') {
         downloadProgress.value = null;
@@ -341,6 +361,22 @@ const semanticDescription = computed(() => {
           {{ MODEL_ID }}
           {{ t('settingsUi.embedding.modelSize') }}
         </p>
+
+        <!-- 运行后端与模型版本（原向量化面板底部的状态块） -->
+        <dl
+          class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-moon/60"
+          data-testid="embedding-backend-info"
+        >
+          <dt>{{ t('embeddingUi.backend') }}</dt>
+          <dd :class="backendClass">{{ backendLabel }}</dd>
+          <dt>{{ t('embeddingUi.model') }}</dt>
+          <dd class="font-mono break-all text-moon/70">
+            {{ MODEL_VERSION
+            }}<span class="text-moon/50">{{
+              t('embeddingUi.chapterModel', { version: chapterModelVersion })
+            }}</span>
+          </dd>
+        </dl>
       </div>
     </div>
 
@@ -439,7 +475,7 @@ const semanticDescription = computed(() => {
         <p class="text-xs text-moon/70">
           <span class="pi pi-info-circle mr-1"></span>
           {{ t('settingsUi.embedding.chapterAuto') }}
-          <strong class="text-moon/90">{{ t('settingsUi.embedding.vectorIndex') }}</strong>
+          <strong class="text-moon/90">{{ t('settingsUi.embedding.backgroundSection') }}</strong>
           {{ t('settingsUi.embedding.chapterAutoSuffix') }}
         </p>
       </div>

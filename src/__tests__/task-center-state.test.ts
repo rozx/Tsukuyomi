@@ -27,7 +27,13 @@ function item(patch: Partial<TaskQueueItem>): TaskQueueItem {
   };
 }
 
-const base = { items: [] as TaskQueueItem[], otherActive: 0, paused: false, acknowledgedAt: 0 };
+const base = {
+  items: [] as TaskQueueItem[],
+  otherActive: 0,
+  backgroundActive: false,
+  paused: false,
+  acknowledgedAt: 0,
+};
 
 describe('computeChipState', () => {
   it('全部空闲', () => {
@@ -51,23 +57,52 @@ describe('computeChipState', () => {
     expect(computeChipState({ ...base, otherActive: 1 }).kind).toBe('other');
   });
 
+  it('只有向量化在运行：显示活动指示', () => {
+    expect(computeChipState({ ...base, backgroundActive: true }).kind).toBe('other');
+  });
+
+  it('章节任务与向量化同时进行：运行数只反映章节任务', () => {
+    const state = computeChipState({
+      ...base,
+      backgroundActive: true,
+      items: [item({ status: 'running' }), item({ status: 'running' })],
+    });
+    expect(state).toMatchObject({ kind: 'running', running: 2, queued: 0 });
+  });
+
+  it('向量化之外没有活动：批次结果仍优先于空闲', () => {
+    const items = [item({ status: 'done', endedAt: 10 })];
+    expect(computeChipState({ ...base, items }).kind).toBe('finished');
+    expect(computeChipState({ ...base, items, backgroundActive: true }).kind).toBe('other');
+  });
+
   it('批次结束后保留结果直到确认', () => {
-    const items = [
-      item({ status: 'done', endedAt: 10 }),
-      item({ status: 'failed', endedAt: 11 }),
-    ];
-    expect(computeChipState({ ...base, items })).toMatchObject({ kind: 'finished', done: 1, failed: 1 });
+    const items = [item({ status: 'done', endedAt: 10 }), item({ status: 'failed', endedAt: 11 })];
+    expect(computeChipState({ ...base, items })).toMatchObject({
+      kind: 'finished',
+      done: 1,
+      failed: 1,
+    });
     expect(computeChipState({ ...base, items, acknowledgedAt: 20 }).kind).toBe('idle');
   });
 
   it('队列暂停且有排队项', () => {
-    expect(computeChipState({ ...base, paused: true, items: [item({})] })).toMatchObject({ kind: 'paused', queued: 1 });
+    expect(computeChipState({ ...base, paused: true, items: [item({})] })).toMatchObject({
+      kind: 'paused',
+      queued: 1,
+    });
   });
 });
 
 describe('itemProgress', () => {
   it('按断点信息计算百分比', () => {
-    const p = itemProgress(item({ status: 'running', targetParagraphIds: ['a', 'b', 'c', 'd'], completedParagraphIds: ['a'] }));
+    const p = itemProgress(
+      item({
+        status: 'running',
+        targetParagraphIds: ['a', 'b', 'c', 'd'],
+        completedParagraphIds: ['a'],
+      }),
+    );
     expect(p).toEqual({ current: 1, total: 4, percent: 25 });
   });
 
@@ -95,7 +130,14 @@ describe('overallProgress', () => {
 
 describe('isOtherActivity', () => {
   const task = (patch: Partial<AIProcessingTask>) =>
-    ({ id: 't', type: 'translation', modelName: 'M', status: 'thinking', startTime: 1, ...patch }) as AIProcessingTask;
+    ({
+      id: 't',
+      type: 'translation',
+      modelName: 'M',
+      status: 'thinking',
+      startTime: 1,
+      ...patch,
+    }) as AIProcessingTask;
 
   it('队列任务记录不算其他活动', () => {
     expect(isOtherActivity(task({ queueItemId: 'q1' }))).toBe(false);

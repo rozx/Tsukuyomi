@@ -11,7 +11,6 @@ import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
 import TaskCenterChip from 'src/components/task-center/TaskCenterChip.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
-import BatchEmbeddingsButton from 'src/components/novel/BatchEmbeddingsButton.vue';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 import { APP_DISPLAY_VERSION } from 'src/constants/build-info';
@@ -51,7 +50,6 @@ const openHelp = () => {
     </div>
 
     <div class="sys-actions">
-      <BatchEmbeddingsButton class="tsm-sys-chip" />
       <!-- 任务中心（合并原「AI 思考」入口） -->
       <TaskCenterChip chip-class="tsm-sys-chip" pill-class="pill thinking" compact />
 

@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
  * 任务中心分区标题栏：吸顶色带 + 状态色点 + 数量徽标 + 右侧操作（默认插槽，按钮用 class tc-sh-action）。
- * 进行中 / 排队中 / 已完成 / 其他 AI 活动共用，保证各分区外观一致、分隔清晰。
+ * 进行中 / 排队中 / 已完成 / 后台向量化 / 其他 AI 活动共用，保证各分区外观一致、分隔清晰。
  */
 const props = defineProps<{
   label: string;
   count: number;
-  tone: 'running' | 'queued' | 'finished' | 'other';
+  tone: 'running' | 'queued' | 'finished' | 'background' | 'other';
   /** 可折叠时标签变为按钮 */
   collapsible?: boolean;
   collapsed?: boolean;
@@ -106,6 +106,10 @@ const onLabelClick = () => {
 
 .tc-sh--finished .tc-sh-dot {
   background: #7fc29b;
+}
+
+.tc-sh--background .tc-sh-dot {
+  background: #8fb8c9;
 }
 
 .tc-sh--other .tc-sh-dot {

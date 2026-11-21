@@ -10,13 +10,14 @@ import {
   onMounted,
   provide,
   ref,
+  watch,
   type Component,
   type InjectionKey,
   type Ref,
 } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useSettingsStore } from 'src/stores/settings';
-import { GENERAL_SETTINGS_TAB } from 'src/models/settings';
+import { EMBEDDING_SETTINGS_TAB, GENERAL_SETTINGS_TAB } from 'src/models/settings';
 import { useElectron } from 'src/composables/useElectron';
 import AIModelSettingsTab from 'src/components/settings/AIModelSettingsTab.vue';
 import ProxySettingsTab from 'src/components/settings/ProxySettingsTab.vue';
@@ -92,7 +93,11 @@ const SETTINGS_TAB_DEFS: readonly SettingsTabDef[] = [
   { label: 'settings.tabs.sites', savedIndex: 9, component: SiteMappingSettingsTab },
   { label: 'settings.tabs.apiKeys', savedIndex: 6, component: ApiKeysSettingsTab },
   { label: 'settings.tabs.sync', savedIndex: 2, component: SyncSettingsTab },
-  { label: 'settings.tabs.embedding', savedIndex: 7, component: EmbeddingSettingsTab },
+  {
+    label: 'settings.tabs.embedding',
+    savedIndex: EMBEDDING_SETTINGS_TAB,
+    component: EmbeddingSettingsTab,
+  },
   { label: 'settings.tabs.scraper', savedIndex: 3, component: ScraperSettingsTab },
   { label: 'settings.tabs.importExport', savedIndex: 4, component: ImportExportTab },
   { label: 'settings.tabs.about', savedIndex: 8, component: AboutSection },
@@ -106,6 +111,11 @@ function platformTabDefs(isElectron: boolean): SettingsTabDef[] {
 }
 
 /** 当前平台的标签列表；value 为位置序号字符串 */
+/** `/settings?tab=<name>` 可直接打开的分区 */
+const QUERY_TAB_SAVED_INDEX: Readonly<Record<string, number>> = {
+  embedding: EMBEDDING_SETTINGS_TAB,
+};
+
 export function settingsTabsFor(isElectron: boolean, locale: AppLocale = 'zh-CN'): SettingsTab[] {
   return platformTabDefs(isElectron).map((def, index) => ({
     value: String(index),
@@ -134,6 +144,7 @@ function createSettingsPageContext(): SettingsPageContext {
   const { locale } = useI18n();
   const settingsStore = useSettingsStore();
   const router = useRouter();
+  const route = useRoute();
   const { isElectron } = useElectron();
 
   // 当前选中的标签页值（字符串）
@@ -150,9 +161,20 @@ function createSettingsPageContext(): SettingsPageContext {
     }
   };
 
-  // 初始化 activeTab（页面挂载时调用）
+  /** `?tab=` 指定的分区对应的标签值；未指定或不认识时为 null */
+  const queryTabValue = (tab: unknown): string | null => {
+    const savedIndex = typeof tab === 'string' ? QUERY_TAB_SAVED_INDEX[tab] : undefined;
+    return savedIndex === undefined ? null : savedIndexToTabValue(isElectron.value, savedIndex);
+  };
+
+  // 初始化 activeTab（页面挂载时调用）：`?tab=` 优先，其次是上次打开的分区
   const initializeActiveTab = async () => {
     await ensureStoreLoaded();
+    const requested = queryTabValue(route.query.tab);
+    if (requested !== null) {
+      handleTabChange(requested);
+      return;
+    }
     activeTab.value = savedIndexToTabValue(isElectron.value, settingsStore.lastOpenedSettingsTab);
   };
 
@@ -181,6 +203,16 @@ function createSettingsPageContext(): SettingsPageContext {
   onMounted(async () => {
     await initializeActiveTab();
   });
+
+  // 其他入口用 `?tab=` 指定分区（如任务中心的「嵌入设置」）：设置页已打开时也切过去。
+  // 只认路由参数，不监听保存的「上次打开分区」——它随设置同步，远端改动不应把用户正在看的标签切走。
+  watch(
+    () => route.query.tab,
+    (tab) => {
+      const value = queryTabValue(tab);
+      if (value !== null) handleTabChange(value);
+    },
+  );
 
   return {
     isElectron,

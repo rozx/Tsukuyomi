@@ -3,15 +3,45 @@ import AppHeader from 'src/components/layout/AppHeader.vue';
 import AppFooter from 'src/components/layout/AppFooter.vue';
 import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
 import AppRightPanel from 'src/components/layout/AppRightPanel.vue';
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useUiStore } from 'src/stores/ui';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
+
+/** 与 .desktop-shell-aside 的宽度过渡时长一致：收起动画结束后再卸载面板 */
+const ASIDE_TRANSITION_MS = 220;
 
 const ui = useUiStore();
 // 导入工作台以月詠对话为核心：导入路由下右栏始终展开，不能折叠
 const isImportRoute = useImportRouteScope();
 const asideOpen = computed(() => ui.rightPanelOpen || isImportRoute.value);
-const asideWidth = computed(() => (asideOpen.value ? `${ui.rightPanelWidth}px` : '3rem'));
+const asideWidth = computed(() => (asideOpen.value ? `${ui.rightPanelWidth}px` : '0px'));
+
+// 关闭时右侧零宽度；面板内容在收起动画播完后才卸载，打开时立即挂载
+const panelMounted = ref(asideOpen.value);
+let unmountTimer: ReturnType<typeof setTimeout> | undefined;
+watch(asideOpen, (open) => {
+  clearTimeout(unmountTimer);
+  if (open) {
+    panelMounted.value = true;
+    return;
+  }
+  unmountTimer = setTimeout(() => {
+    panelMounted.value = false;
+  }, ASIDE_TRANSITION_MS);
+});
+onBeforeUnmount(() => clearTimeout(unmountTimer));
+
+// 段落「复制到助手 / 解释选中」写入 ui.assistantInputMessage。面板关闭时对话组件不在，
+// 由一直挂载的桌面外壳打开面板；消息的填入与清空交给挂载后的对话面板（useRightPanel 的
+// immediate watcher）。平板 / 手机的对话面板常驻挂载，自己处理，不在共享壳层里重复。
+watch(
+  () => ui.assistantInputMessage,
+  (message) => {
+    if (message == null) return;
+    if (ui.activeRightTab !== 'chat') ui.setActiveRightTab('chat');
+    if (!ui.rightPanelOpen) ui.openRightPanel();
+  },
+);
 </script>
 
 <template>
@@ -31,8 +61,8 @@ const asideWidth = computed(() => (asideOpen.value ? `${ui.rightPanelWidth}px` :
       </main>
 
       <div class="desktop-shell-aside" :style="{ width: asideWidth }">
-        <div class="desktop-shell-aside-inner" :style="{ width: asideWidth }">
-          <AppRightPanel :collapsed="!asideOpen" />
+        <div class="desktop-shell-aside-inner" :style="{ width: `${ui.rightPanelWidth}px` }">
+          <AppRightPanel v-if="panelMounted" />
         </div>
       </div>
     </div>
@@ -73,11 +103,20 @@ const asideWidth = computed(() => (asideOpen.value ? `${ui.rightPanelWidth}px` :
   flex-direction: column;
 }
 
+/* 面板内层保持自身宽度，外层宽度过渡时裁切，开合像滑入滑出而不是挤压重排 */
+.desktop-shell-aside {
+  overflow: hidden;
+}
+
 .desktop-shell-rail-inner,
 .desktop-shell-aside-inner {
   height: 100%;
   display: flex;
   flex-direction: column;
+}
+
+.desktop-shell-aside-inner {
+  flex-shrink: 0;
 }
 
 .desktop-shell-canvas {

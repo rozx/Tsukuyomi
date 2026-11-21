@@ -45,6 +45,16 @@ describe('ui store · 任务中心状态', () => {
     expect(restored.taskCenterOtherCollapsed).toBe(true);
   });
 
+  it('后台向量化区默认折叠，展开后刷新仍保持展开', () => {
+    const store = useUiStore();
+    store.loadState();
+    expect(store.taskCenterEmbeddingCollapsed).toBe(true);
+    store.setTaskCenterEmbeddingCollapsed(false);
+    expect(reload().taskCenterEmbeddingCollapsed).toBe(false);
+    reload().setTaskCenterEmbeddingCollapsed(true);
+    expect(reload().taskCenterEmbeddingCollapsed).toBe(true);
+  });
+
   it('取消固定时同时清除收起状态', () => {
     const store = useUiStore();
     store.loadState();

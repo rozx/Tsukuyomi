@@ -14,7 +14,6 @@ import { useRouter } from 'vue-router';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useBooksStore } from 'src/stores/books';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
-import { useTabletRightRail } from 'src/composables/useTabletRightRail';
 import { injectBooksPage } from 'src/composables/books-page/useBooksPage';
 import { useChapterManagement } from 'src/composables/book-details/useChapterManagement';
 import { ChapterContentService } from 'src/services/chapter-content-service';
@@ -69,7 +68,6 @@ function createBooksTabletPageContext() {
   const bookDetailsStore = useBookDetailsStore();
   const booksStore = useBooksStore();
   const toast = useToastWithHistory();
-  const { isChatActive, toggleRail } = useTabletRightRail();
 
   // 添加书籍菜单：与桌面 SplitButton、手机底部选择器语义一致
   const addMenuRef = ref<InstanceType<typeof Menu> | null>(null);
@@ -302,8 +300,6 @@ function createBooksTabletPageContext() {
   return {
     ctx,
     booksStore,
-    isChatActive,
-    toggleRail,
     addMenuRef,
     addMenuItems,
     toggleAddMenu,

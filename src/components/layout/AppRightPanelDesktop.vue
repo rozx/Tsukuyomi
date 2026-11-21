@@ -1,26 +1,13 @@
 <script setup lang="ts">
 /**
- * 桌面右侧面板分派器。
- *
- * - 折叠态 (`collapsed`)：纯图标栏，与左侧 side-rail / TabletNavRail 同构。
- * - 展开态：挂载 `AppChatPanelDesktop`（导入路由下为 `ImportChatPanel`），面板在 appbar
- *   内自带关闭按钮，关闭即折叠。翻译进度已移到顶部系统条的任务中心。
- *
- * 外壳仅负责：固定宽度、拖拽 resize 手柄，以及激活面板的切换。业务 /
- * 视图状态完全下沉到两个独立面板文件。
+ * 桌面右侧助手面板：可拖宽的外壳 + 对话面板（导入路由下为 ImportChatPanel）。
+ * 只在面板打开时由 MainLayoutDesktop 挂载；关闭后右侧不占宽度，入口在顶部系统条。
  */
-import { computed, watch } from 'vue';
 import { useUiStore } from 'src/stores/ui';
 import { usePanelResize } from 'src/composables/chat/usePanelResize';
 import AppChatPanelDesktop from './AppChatPanelDesktop.vue';
 import ImportChatPanel from 'src/components/import/ImportChatPanel.vue';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
-import RightPanelRail from './RightPanelRail.vue';
-
-const props = withDefaults(defineProps<{ showResizeHandle?: boolean; collapsed?: boolean }>(), {
-  showResizeHandle: true,
-  collapsed: false,
-});
 
 const ui = useUiStore();
 
@@ -28,40 +15,11 @@ const { panelContainerRef, resizeHandleRef, isResizing, handleResizeStart } = us
 
 // 导入路由的聊天绑定当前导入任务：挂导入外壳替代普通月詠，同一时间只有一个聊天控制器
 const isImportRoute = useImportRouteScope();
-
-// ParagraphCard 的 "复制到助手 / 解释选中" 通过 ui.assistantInputMessage 下发。
-// AppChatPanelDesktop 仅在 activeRightTab === 'chat' 且面板展开时挂载，它内部的
-// useRightPanel watcher 拿不到刚才的消息。这里在一直挂载的 dispatcher 上拦一层：
-// 只负责切换到 chat tab + 打开面板，消息的填充与清理留给 useRightPanel 自己完成
-// （watcher 已配置 immediate，面板挂起后会立即接管当前值）。
-watch(
-  () => ui.assistantInputMessage,
-  (message) => {
-    if (message == null) return;
-    if (ui.activeRightTab !== 'chat') ui.setActiveRightTab('chat');
-    if (!ui.rightPanelOpen) ui.openRightPanel();
-  },
-);
-
-const expandChat = () => {
-  ui.setActiveRightTab('chat');
-  if (!ui.rightPanelOpen) ui.openRightPanel();
-};
-
-defineExpose({ props });
 </script>
 
 <template>
-  <RightPanelRail v-if="collapsed" :right-panel-open="ui.rightPanelOpen" @expand="expandChat" />
-
-  <aside
-    v-else
-    ref="panelContainerRef"
-    class="rp-shell"
-    :style="{ width: `${ui.rightPanelWidth}px` }"
-  >
+  <aside ref="panelContainerRef" class="rp-shell" :style="{ width: `${ui.rightPanelWidth}px` }">
     <div
-      v-if="showResizeHandle"
       ref="resizeHandleRef"
       class="rp-resize"
       :class="{ 'rp-resize--active': isResizing }"

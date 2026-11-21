@@ -305,11 +305,11 @@ Local vectors support semantic memory search and `query_chapter`. See [Local emb
 - Character budget: default **2000** per injection.
 - Inspect score distributions and test retrieval in the panel.
 
-### Local vector index dialog {#settings-guide-section-34}
+### Embedding progress and model status {#settings-guide-section-34}
 
-- Chapter/memory counts per book: embedded, total, and stale.
-- Batch recomputation, individual book rebuild, and test queries showing the most similar chapters.
-- Queue progress with pause/resume. Sync temporarily suspends the queue and resumes afterward without overriding a user's manual pause.
+- The "Embedding model" group on this page shows the backend (WebGPU or "WASM (slow)") and the model / chapter model version.
+- Per-book chapter and memory vector progress is in the "Background · Embeddings" section of the task center ("Tasks") in the top bar. On book details it shows "Embedded X / Y" and offers "Backfill missing"; its "⋯" menu has "Rebuild this book's chapter embeddings", "Test vector search", and "Embedding settings" (which returns to this page).
+- The section header pauses or resumes the embedding queue. Sync temporarily suspends the queue (showing "Syncing, will resume after") and resumes afterward without overriding a user's manual pause.
 
 ---
 

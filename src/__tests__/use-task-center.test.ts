@@ -132,6 +132,26 @@ describe('useTaskCenter', () => {
     expect(center.chip.value.kind).toBe('idle');
   });
 
+  it('向量化统计只在任务中心真正可见且该区展开时刷新：手机没有固定面板，保存的固定状态不算', async () => {
+    const center = mountCenter();
+    const ui = useUiStore();
+    ui.setTaskCenterEmbeddingCollapsed(false);
+    ui.setTaskCenterPinned(true);
+    await nextTick();
+    // 固定面板没有渲染（手机布局）时不算可见
+    expect(center.embeddingStatsVisible.value).toBe(false);
+
+    center.setPinnedPanelShown(true);
+    expect(center.embeddingStatsVisible.value).toBe(true);
+    ui.setTaskCenterEmbeddingCollapsed(true);
+    expect(center.embeddingStatsVisible.value).toBe(false);
+
+    ui.setTaskCenterEmbeddingCollapsed(false);
+    center.setPinnedPanelShown(false);
+    center.setOpen(true);
+    expect(center.embeddingStatsVisible.value).toBe(true);
+  });
+
   it('其他 AI 活动不计入章节任务数量', () => {
     const ai = useAIProcessingStore();
     ai.activeTasks = [task({ id: 'x', type: 'assistant' })];

@@ -72,6 +72,8 @@ interface TaskCenterUiState {
   taskCenterSize: TaskCenterSize | null;
   taskCenterExpandedId: string | null;
   taskCenterOtherCollapsed: boolean;
+  /** 后台向量化区是否折叠（默认折叠，只占一行区头） */
+  taskCenterEmbeddingCollapsed: boolean;
 }
 
 const DEFAULT_TASK_CENTER_UI_STATE: TaskCenterUiState = {
@@ -81,6 +83,7 @@ const DEFAULT_TASK_CENTER_UI_STATE: TaskCenterUiState = {
   taskCenterSize: null,
   taskCenterExpandedId: null,
   taskCenterOtherCollapsed: false,
+  taskCenterEmbeddingCollapsed: true,
 };
 
 function parseTaskCenterUiState(state: Record<string, unknown>): TaskCenterUiState {
@@ -93,6 +96,7 @@ function parseTaskCenterUiState(state: Record<string, unknown>): TaskCenterUiSta
     taskCenterExpandedId:
       typeof state.taskCenterExpandedId === 'string' ? state.taskCenterExpandedId : null,
     taskCenterOtherCollapsed: state.taskCenterOtherCollapsed === true,
+    taskCenterEmbeddingCollapsed: state.taskCenterEmbeddingCollapsed !== false,
   };
 }
 
@@ -168,7 +172,6 @@ export const useUiStore = defineStore('ui', {
     isLoaded: boolean;
     assistantInputMessage: string | null; // 要复制到助手输入框的消息
     activeRightTab: ActiveRightTab; // 右侧面板当前激活的 Tab
-    batchEmbeddingsPanelOpen: boolean; // 向量面板跨布局共享，不持久化
   } & TaskCenterUiState => ({
     sideMenuOpen: true,
     rightPanelOpen: false,
@@ -179,7 +182,6 @@ export const useUiStore = defineStore('ui', {
     isLoaded: false,
     assistantInputMessage: null,
     activeRightTab: 'chat',
-    batchEmbeddingsPanelOpen: false,
     ...DEFAULT_TASK_CENTER_UI_STATE,
   }),
 
@@ -210,6 +212,7 @@ export const useUiStore = defineStore('ui', {
       this.taskCenterSize = state.taskCenterSize;
       this.taskCenterExpandedId = state.taskCenterExpandedId;
       this.taskCenterOtherCollapsed = state.taskCenterOtherCollapsed;
+      this.taskCenterEmbeddingCollapsed = state.taskCenterEmbeddingCollapsed;
       this.isLoaded = true;
     },
 
@@ -259,6 +262,7 @@ export const useUiStore = defineStore('ui', {
         taskCenterSize: this.taskCenterSize,
         taskCenterExpandedId: this.taskCenterExpandedId,
         taskCenterOtherCollapsed: this.taskCenterOtherCollapsed,
+        taskCenterEmbeddingCollapsed: this.taskCenterEmbeddingCollapsed,
       });
     },
     /**
@@ -299,6 +303,10 @@ export const useUiStore = defineStore('ui', {
     },
     setTaskCenterOtherCollapsed(collapsed: boolean) {
       this.taskCenterOtherCollapsed = collapsed;
+      this.saveState();
+    },
+    setTaskCenterEmbeddingCollapsed(collapsed: boolean) {
+      this.taskCenterEmbeddingCollapsed = collapsed;
       this.saveState();
     },
   },

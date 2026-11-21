@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
- * 平板书库变体（主从布局：左侧列表 + 右侧详情 + 右侧 rail）。
+ * 平板书库变体（主从布局：左侧列表 + 右侧详情；列表开关在顶部信息条最左侧）。
  *
  * 本文件只做编排：业务状态由 useBooksTabletPage 统一持有并 provide 给各片段
- * （Sidebar / Detail / SideRail），片段通过 injectBooksTabletPage() 取同一份状态。
+ * （Sidebar / Detail / ListToggle），片段通过 injectBooksTabletPage() 取同一份状态。
  * 注意：本文件保留全部平板样式（非 scoped），因为 tl- 前缀仅在本页使用，
  * 抽出的片段作为后代元素可直接命中这些全局类，避免跨组件 scoped 样式失效。
  */
@@ -17,7 +17,7 @@ import AddChapterDialog from 'src/components/dialogs/AddChapterDialog.vue';
 import { provideBooksTabletPage } from 'src/composables/books-page/useBooksTabletPage';
 import BooksTabletSidebar from './BooksTabletSidebar.vue';
 import BooksTabletDetail from './BooksTabletDetail.vue';
-import BooksTabletSideRail from './BooksTabletSideRail.vue';
+import BooksTabletListToggle from './BooksTabletListToggle.vue';
 
 const t = provideBooksTabletPage();
 // 模板字符串 ref 绑定只查 <script setup> 顶层变量，故把 composable 的 ref 暴露到顶层。
@@ -43,8 +43,8 @@ const actionMenuRef = t.actionMenuRef;
     <!-- 右侧详情 -->
     <BooksTabletDetail />
 
-    <!-- 右侧 rail -->
-    <BooksTabletSideRail />
+    <!-- 书籍列表开关：渲染到平板顶部信息条最左侧 -->
+    <BooksTabletListToggle />
 
     <!-- 隐藏的文件输入（JSON 导入）—— 桌面与手机都在自己模板里挂一份 -->
     <input

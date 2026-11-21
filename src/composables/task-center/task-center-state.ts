@@ -14,12 +14,14 @@ export type ChipState =
  * 任务中心 chip 的形态。
  * - 有章节任务运行：运行数（+ 排队数）
  * - 暂停且有排队：暂停标识 + 排队数
- * - 只有其他 AI 活动：活动指示
+ * - 只有其他 AI 活动或后台向量化：活动指示（不计入运行数 / 排队数 / 进度条）
  * - 批次结束：在用户打开任务中心（acknowledgedAt）之前保留完成 / 失败数
  */
 export function computeChipState(input: {
   items: readonly TaskQueueItem[];
   otherActive: number;
+  /** 后台向量化正在处理或有待处理项（未被暂停 / 同步挂起） */
+  backgroundActive?: boolean;
   paused: boolean;
   acknowledgedAt: number;
 }): ChipState {
@@ -32,7 +34,7 @@ export function computeChipState(input: {
   }
   if (queued > 0 && input.paused) return { kind: 'paused', queued };
   if (queued > 0) return { kind: 'running-queued', running: 0, queued };
-  if (input.otherActive > 0) return { kind: 'other' };
+  if (input.otherActive > 0 || input.backgroundActive) return { kind: 'other' };
   const unseen = input.items.filter(
     (item) => !isTaskQueueItemPending(item.status) && (item.endedAt ?? 0) > input.acknowledgedAt,
   );

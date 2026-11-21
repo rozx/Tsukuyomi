@@ -21,7 +21,7 @@
 
 ### Requirement: 平板顶部实用信息条
 
-`TabletSysBar` MUST 复用 `MobileSysBar` 同套状态源（`useSettingsStore().gistSync`、任务中心状态、`useToastHistory().unreadCount`），以横向平板宽度从左到右呈现：页面开关挂载点、品牌标识，以及任务中心 / 「月詠」助手 / 同步状态 / 通知的胶囊与按钮集群。
+`TabletSysBar` MUST 复用 `MobileSysBar` 同套状态源（`useSettingsStore().gistSync`、任务中心状态、`useToastHistory().unreadCount`），以横向平板宽度从左到右呈现：页面开关挂载点、品牌标识，以及任务中心 · 同步状态 | 「月詠」助手 · 通知的胶囊与按钮集群（竖线为分隔线）。
 
 #### Scenario: 状态变化时 Pill 样式切换
 
@@ -69,4 +69,4 @@
 #### Scenario: 竖屏宽度下不溢出
 
 - **WHEN** 平板竖屏窗口宽约 768px，且页面开关与全部 chip 都显示
-- **THEN** 品牌文字 MUST 收缩并以省略号截断，开关、任务中心、「月詠」、同步、通知 MUST 保持在一行内且都可点击
+- **THEN** 品牌文字 MUST 收缩并以省略号截断，开关、任务中心、同步、「月詠」、通知 MUST 保持在一行内且都可点击

@@ -181,7 +181,7 @@
   {
     "category": "使用指南",
     "categoryId": "guides",
-    "description": "桌面 sysbar + 圖標軌道、平板 / 移動端緊湊 sysbar、任務中心 / 同步 / 消息歷史 / 右欄面板入口完整說明",
+    "description": "桌面 sysbar + 左欄圖標軌道、平板 / 移動端緊湊 sysbar、任務中心（含背景向量化）/ 同步 / 月詠助手 / 消息歷史入口完整說明",
     "file": "toolbar-guide.md",
     "id": "toolbar-guide",
     "path": "help/zh-TW",
@@ -265,7 +265,7 @@
   {
     "category": "使用指南",
     "categoryId": "guides",
-    "description": "本地嵌入引擎完整說明：bekko-embedding-v1-a25m 模型（384 維 mean pooling）、Web Worker 推論與 WebGPU/WASM 後端、向量索引面板、長文分段嵌入、模型版本與 stale 重算、同步 sync gate、故障排查",
+    "description": "本地嵌入引擎完整說明：bekko-embedding-v1-a25m 模型（384 維 mean pooling）、Web Worker 推論與 WebGPU/WASM 後端、任務中心背景向量化區、長文分段嵌入、模型版本與 stale 重算、同步 sync gate、故障排查",
     "file": "local-embedding.md",
     "id": "local-embedding",
     "path": "help/zh-TW",

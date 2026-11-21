@@ -13,6 +13,7 @@ import messages from '../i18n';
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createApp, defineComponent, h, nextTick, type App } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
 import { provideTaskCenter } from 'src/composables/task-center/useTaskCenter';
 import { useSettingsStore } from 'src/stores/settings';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
@@ -73,7 +74,12 @@ const mountSysBar = () => {
       },
     }),
   );
-  app.use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
+  // 月詠按钮按路由判断导入页
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', component: { render: () => null } }],
+  });
+  app.use(router).use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
   app.mount(host);
   return host;
 };

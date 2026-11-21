@@ -114,6 +114,8 @@ async function renderPage(
     ],
   });
   await router.push('/books/b');
+  // 平板目录开关渲染进顶部信息条的挂载点（由 TabletSysBar 提供）
+  document.body.appendChild(document.createElement('div')).id = 'tablet-sysbar-leading';
   const host = document.body.appendChild(document.createElement('div'));
   app = createApp({ template: '<router-view />' });
   app
@@ -132,11 +134,14 @@ async function renderPage(
 }
 
 describe('书籍详情三设备变体的界面文字', () => {
-  it('桌面设备使用平板布局时，启用本地嵌入即可看到向量索引入口', async () => {
+  it('平板布局：目录开关在顶部信息条，页面没有右侧竖栏与向量按钮（向量化在任务中心）', async () => {
     const host = await renderPage('tablet', 'zh-CN');
     useSettingsStore().settings.enableLocalEmbedding = true;
     await flush();
-    expect(host.querySelector('button[aria-label="向量索引"]')).not.toBeNull();
+    const toggle = document.querySelector('#tablet-sysbar-leading button');
+    expect(toggle?.getAttribute('aria-label')).toMatch(/目录/);
+    expect(host.querySelector('.tsr-rail')).toBeNull();
+    expect(document.querySelector('button[aria-label="向量索引"]')).toBeNull();
   });
 
   it.each(['desktop', 'tablet', 'mobile'] as const)(

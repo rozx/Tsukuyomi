@@ -21,7 +21,7 @@ When disabled:
 
 - Relevance falls back to keyword/recency weights of 0.75/0.25. Similar meaning expressed differently may be missed.
 - `query_chapter` and its prompt guidance are removed.
-- The "Vector index" entry is hidden and any open panel closes.
+- The task center's "Background · Embeddings" section is not shown.
 
 ---
 
@@ -64,7 +64,7 @@ This check uses the device type, not the window width: narrowing a desktop brows
 3. During the download, the settings card shows "Model loading progress" with a percentage, followed by the current phase: "Preparing model files…" → "Downloading model files…" → "Initializing model…".
 4. Browser Cache Storage retains the model, so **later launches warm it up automatically without downloading again**.
 5. Once the status shows "Ready", continue to the next step.
-6. Open any book and click the "Vector index" entry (see section 4) to inspect or build that book's chapter and memory vectors.
+6. Open any book, click "Tasks" in the top bar, and use the "Background · Embeddings" section (see section 4) to inspect that book's chapter and memory vectors or backfill missing ones.
 
 About the progress display:
 
@@ -76,53 +76,48 @@ About the progress display:
 
 ---
 
-## 4. Vector index panel {#local-embedding-section-8}
+## 4. The task center's "Background · Embeddings" section {#local-embedding-section-8}
 
-The "Vector index" entry appears only on **book details pages** while local embeddings are effectively enabled; it is hidden when local embeddings are off or on a physical mobile device. Its position follows the layout:
+Embeddings have no separate entry button or drawer. While local embeddings are effectively enabled, the "Tasks" task center in the top bar shows a "Background · Embeddings" section above "Other AI activity". The desktop/tablet popover and pinned floating panel and the mobile bottom sheet show the same content; when local embeddings are off or on a physical mobile device, the section does not appear. Availability follows the effective local embeddings setting, independently of layout breakpoints, so narrowing a desktop browser keeps it usable.
 
-- Desktop layout: the right tool rail.
-- Tablet layout: the right side rail.
-- Narrow layouts: the top system bar.
+Background embeddings do not count toward chapter tasks' counts, concurrency slots, or queue order. When only embeddings are running, the task center chip shows a pulsing dot (without a progress bar); while embeddings are paused or suspended for sync, the chip counts as idle.
 
-Availability follows the effective local embeddings setting, independently of layout breakpoints, so narrowing a desktop browser keeps it usable. Desktop and tablet layouts open a right-side drawer; the mobile layout opens the same bottom sheet as the assistant and the task center. An open panel stays open when the layout changes and closes when you switch to another book.
+### Section header and queue {#local-embedding-section-9}
 
-The panel is titled "Local vector index" with the subtitle "Runs locally in your browser", followed by the current book title and chapter count.
+- **Section header**: the "Background · Embeddings" title, the total pending count, and a "Pause embeddings" / "Resume embeddings" button. Click the title to collapse or expand the section (collapsed by default); the collapsed state is remembered.
+- **Queue line** (when expanded): what the queue is processing — "This book · {kind} ×{count}" for this book, or, highlighted, "Another book · {kind} ×{count}" with that book's **title**. While items are pending, it shows the time left (estimated from the average of the latest five batches). When the queue is idle it shows "Queue idle"; while paused it shows "Paused · N pending". The queue is shared across books, so it can include other books' tasks.
+- **Outdated vectors**: when stale (version-mismatched) vectors exist, it shows "Outdated vectors: N chapters / N memories"; click "Rebuild" to queue them. The notice hides once clicked, and after the queue finishes, the latest counts decide whether it appears again. Stale vectors are not counted as embedded, so totals may drop noticeably after an upgrade.
 
-### Status and counts {#local-embedding-section-9}
+> Stale records are **not** recomputed automatically for every book. Missing and stale chapters and memories are queued automatically only for a book whose details page is opened while the model is ready (or when the model finishes loading while that page is open). For other books, open them to trigger this, or click "Rebuild" / "Backfill missing" in that section.
 
-- **Status pill**: at the right of the title bar, showing Ready / Loading model / Could not load / Not ready / Disabled.
-- **"Chapter vectors"**: shows "Embedded X / Y" (X counts chapters embedded with the current model version), a progress bar, and "Pending: N" (chapters waiting in the embedding queue; the queue is shared across books, so this can include other books' tasks).
-- **"Memory vectors"**: likewise shows "Embedded X / Y", a progress bar, and "Pending: N".
-- **Bottom status block**: model version, backend (WebGPU or "WASM (slow)"), and current status.
+### This book's counts and actions {#local-embedding-section-10}
 
-When stale (version-mismatched) vectors exist, an "Embedding space upgraded" banner appears at the top of the panel, listing the outdated chapter and memory counts, with a "Rebuild now" button. Stale vectors are not counted as embedded, so totals may drop noticeably after an upgrade.
+When the section is expanded on a book details page:
 
-> Stale records are **not** recomputed automatically for every book. Missing and stale chapters and memories are queued automatically only for a book whose details page is opened while the model is ready (or when the model finishes loading while that page is open). For other books, open them to trigger this, or click "Rebuild now" / "Fill missing" in the panel.
+- It shows the current book title and a "Backfill missing" button, which queues this book's unembedded or stale chapters and memories together.
+- **"Chapter vectors" / "Memory vectors"**: each shows "Embedded X / Y" (X counts items embedded with the current model version) and a progress bar.
+- **"⋯" menu**:
+  - "Rebuild this book's chapter embeddings": queues every chapter in the book for recomputation.
+  - "Test vector search": opens the query dialog (see below).
+  - "Embedding settings": opens **Settings → Local embeddings**.
+- "Backfill missing", "Rebuild", and "Rebuild this book's chapter embeddings" are available only while the model is "Ready" and the queue is idle, avoiding conflicts with a running rebuild; "Test vector search" only needs the model to be ready.
 
-### Actions {#local-embedding-section-10}
+Outside a book details page, the section shows only the global queue status, with the hint "Open a book to backfill or rebuild its embeddings".
 
-- **Chapters**: "Fill missing" queues this book's unembedded or stale chapters; "Rebuild all" queues every chapter in the book for recomputation.
-- **Memories**: "Fill missing" queues this book's unembedded or stale memories.
-- **"Rebuild now"**: appears only in the stale banner and queues this book's stale chapters and memories at once.
-- These buttons are available only while the model is "Ready" and the queue is idle, avoiding conflicts with a running rebuild.
-- **"Test vector search"**: opens the query dialog (see below).
-- **"Pause" / "Resume"**: appear in the bottom status block only while the queue is running or paused, to suspend or continue it manually.
-
-**Test vector search dialog**: the intro reads "Describe a scene, character relationship, or keyword to search this book’s chapters and memories." Enter a query, then click "Query chapters" or "Query memories" (Enter runs a chapter query; memory queries match current-model vectors, and memories without a usable vector can also appear on a strong keyword match).
+**Test vector search dialog**: the intro reads "Describe a scene, character relationship, or keyword to search this book’s chapters and memories." Enter a query, then click "Query chapters" or "Query memories" (Enter runs a chapter query; memory queries match current-model vectors, and memories without a usable vector can also appear on a strong keyword match). The dialog closes automatically when you switch to another book or leave the book details page.
 
 - Before a search, the dialog shows a "Find scenes and memories" prompt.
 - While a search runs, a loading state appears.
 - Results are ranked by relevance, each with its rank number and score (hover tooltip "Relevance"). Select a chapter result to open the chapter, or a memory result to view its details.
 - This helps tune settings or investigate why a memory was not injected.
 
-### Progress and current task {#local-embedding-section-11}
+### Refresh and compute cost {#local-embedding-section-11}
 
-While the queue runs, progress appears inside each section; there is no separate banner at the top of the panel:
+This book's counts read the whole book's vectors, so they refresh only while the task center is open (or the pinned panel is expanded) and the section is expanded, with events from the same batch combined into a single read; nothing is read while the task center is closed or the section is collapsed. Queue progress always updates in the background (it is only a lightweight count), so the chip can show embedding activity even if you have never opened the task center.
 
-- "Chapter vectors" and "Memory vectors" each show "Pending: N", plus an ETA (based on the latest five batch durations) while items are pending.
-- The current task card shows what the queue is processing: "This book · {kind} ×{count}" for this book, or, highlighted, "Another book · {kind} ×{count}" with that book's **title**, so you can see where the queue is busy even from another book's panel.
+Background memory and chapter inference uses groups of at most four inputs, split by length to reduce padding overhead. Interactive queries and paragraph reranking use groups of at most eight and take priority over waiting background jobs. Pauses between background batches reduce sustained CPU / GPU use, so whole-book rebuilds may take longer. Chapters can pause between batches; unfinished chapters remain queued and restart on resume, with results saved only after the whole chapter finishes.
 
-Background memory and chapter inference uses groups of at most four inputs, split by length to reduce padding overhead. Interactive queries and paragraph reranking use groups of at most eight and take priority over waiting background jobs. Pauses between background batches reduce sustained CPU / GPU use, so whole-book rebuilds may take longer. Chapters can pause between batches; unfinished chapters remain queued and restart on resume, with results saved only after the whole chapter finishes. Panel statistics are read while the drawer is open, with updates from the same batch combined.
+The model version and backend (WebGPU or "WASM (slow)") are shown in the "Embedding model" group under **Settings → Local embeddings**.
 
 ---
 
@@ -150,7 +145,7 @@ Cloud sync and revision restoration temporarily suspend the queue through a **de
 - A batch still running inference when the gate closes is not written: memory and chapter work goes back to the queue and is recomputed from the synced content once the gate opens.
 - This avoids vector writes racing `overwriteFromSnapshot` or indexing partially restored data.
 
-In the UI: the panel has no dedicated sync message. During sync the queue is paused, so the bottom status block shows "Resume", but the button is disabled so vectors are not written mid-sync. When sync finishes, the queue continues automatically without a click; if you clicked "Pause" during sync, the queue stays paused afterwards.
+In the UI: during sync, the header of the task center's "Background · Embeddings" section shows "Syncing, will resume after". The pause / resume button reflects your own pause state; clicking "Resume embeddings" during sync still waits until sync finishes before processing starts. When sync finishes, the queue continues automatically without a click; if you clicked "Pause embeddings" during sync, the queue stays paused afterwards.
 
 ---
 
@@ -167,17 +162,17 @@ In the UI: the panel has no dedicated sync message. During sync the queue is pau
 - Read console errors prefixed `[EmbeddingService]`. Common causes:
   - WebGPU driver incompatibility falls back to WASM; if WASM fails too, browser memory may be insufficient.
   - Switching away from the tab for a long time during the first load may time out. Reopen the app; cached startup is faster.
-- In **Settings → Local embeddings**, click "Retry" when loading has failed or "Reload" when the model is ready; both release the old model and check WebGPU again. The vector index panel has no reload button. After a Worker crash or request timeout, unfinished jobs remain queued and resume when the model recovers. Incomplete chapters never replace a saved chapter cache.
+- In **Settings → Local embeddings**, click "Retry" when loading has failed or "Reload" when the model is ready; both release the old model and check WebGPU again. The task center's "Background · Embeddings" section has no reload button. After a Worker crash or request timeout, unfinished jobs remain queued and resume when the model recovers. Incomplete chapters never replace a saved chapter cache.
 
 ### Poor retrieval {#local-embedding-section-17}
 
-- Use the "Test vector search" dialog to run the query directly and inspect the results.
-- If a memory/chapter that should match is missing, check whether it is stale (the "Embedding space upgraded" banner appears at the top of the panel). Click "Rebuild now" or "Fill missing", then test again.
+- Use the "Test vector search" dialog (in the "⋯" menu of the task center's "Background · Embeddings" section) to run the query directly and inspect the results.
+- If a memory/chapter that should match is missing, check whether it is stale (the section shows an "Outdated vectors" notice). Click "Rebuild" or "Backfill missing", then test again.
 - Mixed-language queries are supported natively. Enter plain text without a prefix; query prefixes were removed in v0.14.3.
 
 ### Queue still active after disabling {#local-embedding-section-18}
 
-This usually means a batch was running when you turned the switch off. The current batch finishes before the queue stops; forced interruption would discard that batch. The "Vector index" entry is hidden immediately; unprocessed items stay queued and continue automatically when you re-enable local embeddings.
+This usually means a batch was running when you turned the switch off. The current batch finishes before the queue stops; forced interruption would discard that batch. The task center's "Background · Embeddings" section is hidden immediately; unprocessed items stay queued and continue automatically when you re-enable local embeddings.
 
 ---
 

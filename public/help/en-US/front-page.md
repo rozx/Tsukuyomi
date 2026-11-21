@@ -82,13 +82,12 @@ The built-in assistant is named **Tsukuyomi (月詠)**, the application's moonli
 
 > 💡 See [Chat assistant](/help/chat-assistant-guide).
 
-### 🛠️ System bar and right panels {#front-page-section-11}
+### 🛠️ System bar {#front-page-section-11}
 
-- **Task center**: the chapter task queue (running / queued / finished) and other AI activity. Pause, stop, retry, and reorder tasks.
+- **Task center**: the chapter task queue (running / queued / finished) and other AI activity. Pause, stop, retry, and reorder tasks. With local embeddings enabled, it also has a "Background · Embeddings" section for inspecting and backfilling this book's chapter and memory vectors.
 - **Sync status**: Gist sync status and controls.
 - **Message history**: previous notifications.
-- **Tsukuyomi**: right rail entry for the chat assistant.
-- **Vector index**: inspect or rebuild chapter and memory vectors, available in book details when local embeddings are enabled.
+- **Tsukuyomi**: the assistant button in the system bar opens or closes the chat assistant on the right (on mobile, it is in the bottom tab bar).
 
 > 💡 See [System bar and navigation](/help/toolbar-guide) and [Local embeddings](/help/local-embedding).
 

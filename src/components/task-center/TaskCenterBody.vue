@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 任务中心内容：标题区（并发、暂停 / 继续、全部停止、固定）、
- * 进行中 / 排队中 / 已完成三组章节任务，以及「其他 AI 活动」区。
+ * 进行中 / 排队中 / 已完成三组章节任务，「后台 · 向量化」区，以及「其他 AI 活动」区。
  * 点击任务行时整个内容区切换为该任务的详情视图（标题区保留，固定面板仍可拖动）；
  * 手机抽屉不在这里切换，而是把事件交给外层打开全屏详情。
  * popover、固定悬浮面板、手机抽屉共用。
@@ -11,6 +11,7 @@ import { useI18n } from 'vue-i18n';
 import { injectTaskCenter, type TaskCenterRow } from 'src/composables/task-center/useTaskCenter';
 import TaskCenterQueueRow from './TaskCenterQueueRow.vue';
 import TaskCenterOtherSection from './TaskCenterOtherSection.vue';
+import TaskCenterEmbeddingSection from './TaskCenterEmbeddingSection.vue';
 import TaskCenterSectionHeader from './TaskCenterSectionHeader.vue';
 import TaskCenterDetailView from './TaskCenterDetailView.vue';
 
@@ -207,9 +208,11 @@ const pausedText = computed(() => {
             @open-detail="onOpenDetail"
           />
         </section>
-
-        <TaskCenterOtherSection @open-detail="onOpenDetail" />
       </template>
+
+      <!-- 后台向量化不属于章节任务：没有任务时也显示（本地嵌入关闭时不渲染） -->
+      <TaskCenterEmbeddingSection />
+      <TaskCenterOtherSection v-if="!isEmpty" @open-detail="onOpenDetail" />
     </div>
   </div>
 </template>

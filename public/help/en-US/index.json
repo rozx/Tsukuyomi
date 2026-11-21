@@ -184,7 +184,7 @@
     "file": "toolbar-guide.md",
     "path": "help/en-US",
     "category": "User guides",
-    "description": "Desktop system bar and icon rail; compact tablet and mobile bars; task center, sync, message history, and side panels",
+    "description": "Desktop system bar and left icon rail; compact tablet and mobile bars; task center (including background embeddings), sync, Tsukuyomi assistant, and message history",
     "categoryId": "guides",
     "sectionAliases": {
       "系统栏与导航": "toolbar-guide-section-1",
@@ -268,7 +268,7 @@
     "file": "local-embedding.md",
     "path": "help/en-US",
     "category": "User guides",
-    "description": "Install and manage local embeddings, memory search, chapter search, and troubleshooting",
+    "description": "Install and manage local embeddings, memory search, chapter search, background embeddings in the task center, and troubleshooting",
     "categoryId": "guides",
     "sectionAliases": {
       "本地嵌入local-embedding": "local-embedding-section-1",

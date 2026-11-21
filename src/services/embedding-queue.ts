@@ -87,6 +87,8 @@ export interface EmbeddingQueueProgress {
   etaMs: number | null;
   running: boolean;
   paused: boolean;
+  /** 用户（或设置开关）主动暂停；与同步闸门分开，界面上的暂停 / 继续按钮反映这个状态 */
+  userPaused: boolean;
   /** 同步 / 恢复闸门正在挂起队列，此时手动恢复无效 */
   syncGated: boolean;
   breakdown: {
@@ -377,7 +379,7 @@ export class EmbeddingQueue {
    * - shouldPause=false 时解除闸门;若用户通过 UI / 设置主动 pause 过则保持暂停
    *
    * 闸门与用户暂停分开记录,避免同步期间的 pause/resume 解除闸门,也避免 sync 结束后把
-   * 用户手动点击的暂停一起抹掉(BatchEmbeddingsPanel / MemoryPanel 暴露了手动 pause/resume 按钮)。
+   * 用户手动点击的暂停一起抹掉(任务中心后台向量化区 / MemoryPanel 暴露了手动 pause/resume 按钮)。
    */
   static applySyncGate(shouldPause: boolean): void {
     if (this.syncGateActive === shouldPause) return;
@@ -427,6 +429,7 @@ export class EmbeddingQueue {
       etaMs: this.estimateEtaMs(),
       running: this.processing,
       paused: this.paused,
+      userPaused: this.userPaused,
       syncGated: this.syncGateActive,
       breakdown,
       currentTask: this.currentTask,

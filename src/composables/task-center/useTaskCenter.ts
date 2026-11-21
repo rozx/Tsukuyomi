@@ -12,6 +12,7 @@ import { useTranslationTodos } from 'src/composables/translation-progress/useTra
 import { useNowClock } from 'src/composables/translation-progress/useNowClock';
 import { formatTaskDuration } from 'src/utils';
 import { getChapterDisplayTitle } from 'src/utils/novel-utils';
+import { createEmbeddingBackground } from './useEmbeddingBackground';
 import {
   computeChipState,
   isOtherActivity,
@@ -135,11 +136,28 @@ export function createTaskCenter() {
   );
   const otherActiveCount = computed(() => otherTasks.value.filter(isRunningTask).length);
 
+  // ---------- 后台向量化 ----------
+  // 固定面板是否真的显示在屏幕上：由渲染它的桌面 / 平板任务中心上报。手机没有固定面板，
+  // 保存的固定状态在手机上不代表可见
+  const pinnedPanelShown = ref(false);
+  const setPinnedPanelShown = (shown: boolean) => {
+    pinnedPanelShown.value = shown;
+  };
+  const embeddingCollapsed = computed(() => ui.taskCenterEmbeddingCollapsed);
+  const toggleEmbeddingCollapsed = () =>
+    ui.setTaskCenterEmbeddingCollapsed(!ui.taskCenterEmbeddingCollapsed);
+  /** 任务中心可见（popup / 手机抽屉打开，或固定面板显示）且该区展开时才刷新本书统计 */
+  const embeddingStatsVisible = computed(
+    () => (isOpen.value || pinnedPanelShown.value) && !ui.taskCenterEmbeddingCollapsed,
+  );
+  const embedding = createEmbeddingBackground({ visible: embeddingStatsVisible });
+
   // ---------- chip ----------
   const chip = computed(() =>
     computeChipState({
       items: queue.items,
       otherActive: otherActiveCount.value,
+      backgroundActive: embedding.active.value,
       paused: queue.meta.paused,
       acknowledgedAt: acknowledgedAt.value,
     }),
@@ -327,6 +345,12 @@ export function createTaskCenter() {
     setSize,
     otherCollapsed,
     toggleOtherCollapsed,
+    // 后台向量化
+    embedding,
+    embeddingCollapsed,
+    toggleEmbeddingCollapsed,
+    embeddingStatsVisible,
+    setPinnedPanelShown,
   };
 }
 

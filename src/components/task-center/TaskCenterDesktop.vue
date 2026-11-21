@@ -15,7 +15,7 @@ import {
   displayPanelBox,
   PINNED_MINI_SIZE,
 } from 'src/composables/task-center/pinned-panel-geometry';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watchEffect } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Popover from 'primevue/popover';
 import { injectTaskCenter } from 'src/composables/task-center/useTaskCenter';
@@ -133,7 +133,11 @@ onMounted(() => {
   });
 });
 
+// 固定面板展开时告诉任务中心它在屏幕上（后台向量化区据此决定是否刷新本书统计）
+watchEffect(() => center.setPinnedPanelShown(center.pinned.value && !center.collapsed.value));
+
 onUnmounted(() => {
+  center.setPinnedPanelShown(false);
   window.removeEventListener('resize', onWindowResize);
   moveDrag.cancel();
   resizeDrag.cancel();
