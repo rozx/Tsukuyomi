@@ -270,6 +270,46 @@ describe('runChapterTask', () => {
     expect(new Set(persisted.at(-1)?.completedParagraphIds)).toEqual(new Set(['a', 'b', 'c']));
   });
 
+  it('润色某块的完成记录落盘失败后，后续块仍记入完成并落盘，最后一次成功时任务完成', async () => {
+    const polish = vi.fn((_paragraphs, _model, options) => {
+      options.onProgress?.({ total: 3, current: 1, currentParagraphs: ['a'] });
+      options.onProgress?.({ total: 3, current: 2, currentParagraphs: ['b'] });
+      options.onProgress?.({ total: 3, current: 3, currentParagraphs: ['c'] });
+      return Promise.resolve({ text: '', actions: [] });
+    });
+    const paragraphs = [para('a', '一', '1'), para('b', '二', '2'), para('c', '三', '3')];
+    const { deps, persisted } = setup(paragraphs, { polish });
+    let calls = 0;
+    deps.persistItem = vi.fn((patch: Partial<TaskQueueItem>) => {
+      calls += 1;
+      // 第 1 次是开始时的落盘；第 2 次（a 块完成）失败
+      if (calls === 2) return Promise.reject(new Error('IndexedDB 写入失败'));
+      persisted.push(patch);
+      return Promise.resolve();
+    });
+    const result = await runChapterTask(item({ kind: 'polish', mode: undefined }), deps, signal);
+    expect(result.targetCount).toBe(3);
+    expect(new Set(persisted.at(-1)?.completedParagraphIds)).toEqual(new Set(['a', 'b', 'c']));
+  });
+
+  it('润色最后一次完成记录落盘失败时任务失败', async () => {
+    const polish = vi.fn((_paragraphs, _model, options) => {
+      options.onProgress?.({ total: 2, current: 1, currentParagraphs: ['a'] });
+      options.onProgress?.({ total: 2, current: 2, currentParagraphs: ['b'] });
+      return Promise.resolve({ text: '', actions: [] });
+    });
+    const paragraphs = [para('a', '一', '1'), para('b', '二', '2')];
+    const { deps } = setup(paragraphs, { polish });
+    let calls = 0;
+    deps.persistItem = vi.fn(() => {
+      calls += 1;
+      return calls === 3 ? Promise.reject(new Error('IndexedDB 写入失败')) : Promise.resolve();
+    });
+    await expect(
+      runChapterTask(item({ kind: 'polish', mode: undefined }), deps, signal),
+    ).rejects.toThrow('IndexedDB 写入失败');
+  });
+
   it('润色中断后恢复：只处理剩余段落', async () => {
     const polish = vi.fn(() => Promise.resolve({ text: '', actions: [] }));
     const paragraphs = [para('a', '一', '1'), para('b', '二', '2'), para('c', '三', '3')];

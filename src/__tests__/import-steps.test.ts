@@ -65,6 +65,12 @@ describe('每一步底部的主按钮', () => {
     });
   });
 
+  it('整理：必填问题还没回答时「生成导入方案」不可点（与导入方案页一致）', () => {
+    expect(
+      importStepAction({ ...idle, section: 'draft', chapterCount: 3, awaitingAnswer: true }),
+    ).toEqual({ kind: 'preview', disabled: true });
+  });
+
   it('整理：中途暂停或还有待执行的调用时，即使已有章节也先继续整理', () => {
     expect(
       importStepAction({ ...idle, section: 'draft', chapterCount: 3, resumable: true }),

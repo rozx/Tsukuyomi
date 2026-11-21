@@ -64,8 +64,9 @@ useOverlayCloseStack({
 
     <div class="mobile-shell-tabbar"><MobileTabBar /></div>
 
-    <!-- AI 助手底部抽屉常驻 DOM，useRightPanel 内部状态不会被 sheet 关闭时清掉 —— 只有
-         MobileBottomSheet 的 transition 控制可见性。 -->
+    <!-- 普通路由的月詠抽屉在抽屉开合时保持挂载，useRightPanel 的状态不随抽屉关闭清掉（只有
+         MobileBottomSheet 的 transition 控制可见性）。导入路由按 add-ai-importer 的设计换成导入
+         抽屉、任一时刻只挂一个聊天控制器，因此进入导入页时普通月詠会被卸载。 -->
     <MobileChatSheet v-if="!isImportRoute" v-model:visible="isChatOpen" />
     <ImportChatSheet v-else v-model:visible="isChatOpen" />
   </div>

@@ -103,6 +103,20 @@ describe('useImportFlow', () => {
     expect(ctx.section.value).toBe('plan');
   });
 
+  it('整理一步：月詠问了必填问题还没回答时，「生成导入方案」不可点', async () => {
+    const { flow, ctx, store } = await mount();
+    store.sources = [{ id: 's', status: 'extracted', purpose: 'content-root' } as never];
+    store.task = {
+      ...store.task!,
+      state: 'waiting_user',
+      pendingQuestion: { id: 'q', question: '选哪一个？', required: true } as never,
+      draft: { ...store.task!.draft, chapters: [{ id: 'c', status: 'ready' } as never] },
+    };
+    ctx.section.value = 'draft';
+    await nextTick();
+    expect(flow.action.value).toEqual({ kind: 'preview', disabled: true });
+  });
+
   it('整理一步中途暂停：主按钮是继续整理，还有待执行调用时是继续执行', async () => {
     const { flow, ctx, store } = await mount();
     store.sources = [{ id: 's', status: 'extracted', purpose: 'content-root' } as never];

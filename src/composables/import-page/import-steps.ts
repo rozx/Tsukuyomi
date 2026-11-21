@@ -54,11 +54,13 @@ export function importStepAction(input: {
   chapterCount: number;
   /** 中途暂停或还有待执行的工具调用：整理还没做完，先继续而不是生成方案 */
   resumable?: boolean;
+  /** 月詠问了必填问题还没回答：与导入方案页一致，先回答才能生成方案 */
+  awaitingAnswer?: boolean;
 }): ImportStepAction | null {
   if (input.section !== 'sources' && input.section !== 'draft') return null;
   if (input.running) return { kind: 'pause', disabled: false };
   if (input.section === 'draft' && input.chapterCount > 0 && !input.resumable) {
-    return { kind: 'preview', disabled: false };
+    return { kind: 'preview', disabled: Boolean(input.awaitingAnswer) };
   }
   return { kind: 'continue', disabled: input.sourceCount === 0 || !input.canContinue };
 }

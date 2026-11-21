@@ -2,6 +2,7 @@ import './setup';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPinia, setActivePinia } from 'pinia';
 import { getDB } from 'src/utils/indexed-db';
+import { mutateTaskQueue } from 'src/services/chapter-task/task-queue-repository';
 import type { TaskQueueItem } from 'src/models/task-queue';
 import {
   configureTaskQueue,
@@ -610,6 +611,24 @@ describe('任务队列 store · 评审修复', () => {
     expect(calls).toHaveLength(0);
     expect(store.items.every((item) => item.status === 'queued')).toBe(true);
     expect(store.meta.paused).toBe(true);
+  });
+
+  it('运行中已落盘停止请求、这次运行又以「书籍被占用」结束：落为已取消，不会带着停止请求卡在排队里', async () => {
+    const runner: TaskQueueRunner = async (item) => {
+      // 另一标签页的停止请求已写入存储，本执行者还没收到广播、没有中止
+      await mutateTaskQueue((snapshot) => {
+        const current = snapshot.items.find((entry) => entry.id === item.id)!;
+        return { put: [{ ...current, cancelRequested: true }], result: null };
+      });
+      throw new CodedLocalizedError('TARGET_BUSY', 'bookUi.execution.busyUnknown');
+    };
+    const store = await startStore(runner, 1);
+    const { added } = await store.enqueue([req('c1', { origin: 'manual' })], { position: 'back' });
+    await settle(12);
+    const item = store.items.find((entry) => entry.id === added[0]);
+    expect(item?.status).toBe('cancelled');
+    expect(item?.cancelRequested).toBe(false);
+    expect(item?.waitingReason).toBeUndefined();
   });
 
   it('批量结束项超过历史保留上限时，汇总仍按整轮结果统计，汇总后再裁剪历史', async () => {

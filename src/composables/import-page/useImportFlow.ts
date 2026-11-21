@@ -2,6 +2,7 @@ import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { MessageKey } from 'src/i18n/types';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
+import { awaitingImportAnswer } from 'src/services/import/import-question-service';
 import { injectImportPage, type ImportSection } from './useImportPage';
 import {
   STEP_SECTION,
@@ -92,6 +93,7 @@ export function useImportFlow() {
       sourceCount: store.sources.length,
       chapterCount: chapters.value.length,
       resumable: store.task?.state === 'paused' || Boolean(remainingCalls.value),
+      awaitingAnswer: Boolean(store.task && awaitingImportAnswer(store.task)),
     }),
   );
 

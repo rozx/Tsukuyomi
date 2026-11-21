@@ -3,7 +3,13 @@ import './setup';
 import { createApp, defineComponent, h, nextTick, type App } from 'vue';
 import { createPinia, setActivePinia } from 'pinia';
 import { createI18n } from 'vue-i18n';
-import { createMemoryHistory, createRouter, type Router } from 'vue-router';
+import {
+  createMemoryHistory,
+  createRouter,
+  createWebHistory,
+  type Router,
+  type RouterHistory,
+} from 'vue-router';
 import messages from '../i18n';
 import { provideBooksPage } from '../composables/books-page/useBooksPage';
 import { provideIndexPage } from '../composables/index-page/useIndexPage';
@@ -38,11 +44,15 @@ async function settle() {
   }
 }
 
-async function mount<T>(path: string, setup: () => T): Promise<{ ctx: T; router: Router }> {
+async function mount<T>(
+  path: string,
+  setup: () => T,
+  history: RouterHistory = createMemoryHistory(),
+): Promise<{ ctx: T; router: Router }> {
   const pinia = createPinia();
   setActivePinia(pinia);
   const router = createRouter({
-    history: createMemoryHistory(),
+    history,
     routes: [
       { path: '/', component: { render: () => null } },
       { path: '/books', component: { render: () => null } },
@@ -111,6 +121,43 @@ describe('导入工作台：离开导入页（手机任务列表的返回）', (
     Object.defineProperty(router.options.history, 'state', { get: () => ({ back: '/books' }) });
     ctx.leave();
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/books'));
+  });
+
+  it('从书库进入、打开任务再返回任务列表后，离开导入页回到书库而不是刚关闭的任务', async () => {
+    window.history.replaceState(null, '', '/');
+    const { ctx, router } = await mount<ImportPageContext>(
+      '/books',
+      provideImportPage,
+      createWebHistory(),
+    );
+    await router.push('/import');
+    await settle();
+    await ctx.createTask();
+    await settle();
+    expect(router.currentRoute.value.path).toMatch(/^\/import\/.+/);
+
+    await ctx.closeTask();
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/import'));
+    ctx.leave();
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/books'));
+  });
+
+  it('直接打开某个导入任务后返回任务列表，离开导入页时回到首页', async () => {
+    const { ctx, router } = await mount<ImportPageContext>('/import', provideImportPage);
+    await ctx.createTask();
+    await settle();
+    const taskPath = router.currentRoute.value.path;
+    // 模拟直接打开任务页：没有上一页
+    app?.unmount();
+    app = undefined;
+    useImportWorkspaceStore().dispose();
+    const direct = await mount<ImportPageContext>(taskPath, provideImportPage);
+    await direct.ctx.closeTask();
+    await settle();
+    expect(direct.router.currentRoute.value.path).toBe('/import');
+    direct.ctx.leave();
+    await settle();
+    expect(direct.router.currentRoute.value.path).toBe('/');
   });
 
   it('直接打开导入页（没有上一页）时回到首页', async () => {

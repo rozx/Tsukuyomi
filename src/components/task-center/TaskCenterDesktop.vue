@@ -218,7 +218,9 @@ const onPopoverHide = () => {
 <style scoped>
 .tc-pinned {
   position: fixed;
-  z-index: 1100;
+  /* 低于 PrimeVue 弹层（Popover / 菜单从 1000 起）：固定在右上角时，
+     同步、消息等顶部弹层与输入下拉仍显示在面板之上 */
+  z-index: 990;
   display: flex;
   flex-direction: column;
   border-radius: 12px;

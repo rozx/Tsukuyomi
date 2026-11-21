@@ -83,10 +83,18 @@ function createImportPage() {
     return STEP_SECTION[current];
   });
 
-  /** 平板 / 手机：从任务内返回任务列表（桌面任务列表常驻左侧，不需要） */
+  /**
+   * 平板 / 手机：从任务内返回任务列表（桌面任务列表常驻左侧，不需要）。
+   * 从列表打开的任务退回列表那条历史；直接打开的任务页用 replace。都不追加历史，
+   * 否则列表上的返回（leave）会退回刚关闭的任务，而不是进入导入页前的页面。
+   */
   async function closeTask(): Promise<void> {
     section.value = 'tasks';
-    await router.push('/import');
+    if (router.options.history.state.back === '/import') {
+      router.back();
+      return;
+    }
+    await router.replace('/import');
   }
 
   /** 手机：离开导入页——有上一页（应用内）时返回，直接打开导入页时回到首页 */

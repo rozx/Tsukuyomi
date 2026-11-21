@@ -193,17 +193,16 @@ export async function runChapterTask(
     throw new CodedLocalizedError('CHAPTER_MISSING', 'bookUi.chapterTask.chapterChanged');
 
   const model = deps.getModel(item.kind, book);
-  if (!model)
-    throw new CodedLocalizedError('NO_MODEL', `bookUi.chapterTask.${item.kind}NoModel`);
+  if (!model) throw new CodedLocalizedError('NO_MODEL', `bookUi.chapterTask.${item.kind}NoModel`);
 
   const languages = captureExecutionLanguages(deps.uiLocale, book.targetLanguage ?? 'zh-CN');
   const paragraphs = (await deps.loadChapterParagraphs(item.chapterId)) ?? [];
 
-  const { runIds, snapshot, completed: carried } = resolveRunTargets(
-    item,
-    paragraphs,
-    languages.targetLanguage,
-  );
+  const {
+    runIds,
+    snapshot,
+    completed: carried,
+  } = resolveRunTargets(item, paragraphs, languages.targetLanguage);
   const completed = new Set(carried);
   const aiTaskIds = [...item.aiTaskIds];
   const persist = () =>
@@ -271,7 +270,9 @@ export async function runChapterTask(
     message: chunkMessage,
   });
   publishProgress(
-    item.kind === 'translation' ? paragraphProgress() : { current: 0, total: 0, message: chunkMessage },
+    item.kind === 'translation'
+      ? paragraphProgress()
+      : { current: 0, total: 0, message: chunkMessage },
   );
 
   /** 落盘有变化的结果，成功后再记完成并持久化 */
@@ -293,14 +294,22 @@ export async function runChapterTask(
     deps.onInFlight(new Set(inFlight));
   };
 
-  // 润色 / 校对：按块边界记完成。块完成的持久化串行执行，保证顺序与落盘一致
+  // 润色 / 校对：按块边界记完成。块完成的持久化串行执行，保证顺序与落盘一致。
+  // 某次落盘失败不能让链条断掉（否则后续块既不记完成也不落盘，恢复后重复调用 AI）：
+  // 记下失败继续往后走；每次落盘写的是完整的完成集合，后续一次成功即补上之前的块，失败随之消除
   let currentChunk: string[] = [];
   let chunkCompletion: Promise<void> = Promise.resolve();
+  let chunkPersistFailure: { error: unknown } | null = null;
   const completeChunk = (ids: readonly string[]) => {
     if (ids.length === 0) return chunkCompletion;
     chunkCompletion = chunkCompletion.then(async () => {
       for (const id of ids) if (runSet.has(id)) completed.add(id);
-      await persist();
+      try {
+        await persist();
+        chunkPersistFailure = null;
+      } catch (error) {
+        chunkPersistFailure = { error };
+      }
     });
     return chunkCompletion;
   };
@@ -376,6 +385,9 @@ export async function runChapterTask(
           });
     await completeChunk(currentChunk);
     currentChunk = [];
+    // 最后一次落盘仍失败：断点没有记全，按失败处理（与之前一致）
+    const failure = chunkPersistFailure as { error: unknown } | null;
+    if (failure) throw failure.error;
     actions = result.actions ?? [];
   }
 

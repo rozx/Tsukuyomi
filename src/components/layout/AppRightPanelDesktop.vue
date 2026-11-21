@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * 桌面右侧助手面板：可拖宽的外壳 + 对话面板（导入路由下为 ImportChatPanel）。
- * 只在面板打开时由 MainLayoutDesktop 挂载；关闭后右侧不占宽度，入口在顶部系统条。
+ * 由 MainLayoutDesktop 在面板第一次打开时挂载，之后收起只隐藏不卸载（回复进行中的状态随之保留）；
+ * 关闭后右侧不占宽度，入口在顶部系统条。
  */
 import { useUiStore } from 'src/stores/ui';
 import { usePanelResize } from 'src/composables/chat/usePanelResize';

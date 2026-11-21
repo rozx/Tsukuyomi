@@ -689,12 +689,15 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
-     * 设置章节任务队列「最大同时进行任务」（钳制到 1–5 后保存）
+     * 设置是否显示月詠桌宠（仅桌面端）
      */
     async setShowDeskPet(show: boolean): Promise<void> {
       await this.updateSettings({ showDeskPet: show });
     },
 
+    /**
+     * 设置章节任务队列「最大同时进行任务」（钳制到 1–5 后保存）
+     */
     async setTaskQueueMaxConcurrent(limit: number): Promise<void> {
       await this.updateSettings({ taskQueueMaxConcurrent: pickTaskQueueMaxConcurrent(limit) });
     },

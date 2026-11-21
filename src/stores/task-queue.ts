@@ -549,7 +549,9 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
       const current = snapshot.items.find((entry) => entry.id === item.id);
       if (!current) return { result: null };
       let next: TaskQueueItem;
-      if (outcome.status === 'wait') {
+      // 书籍被占用时回到排队等待；但这次运行期间已落盘停止请求（含其他标签页的停止 / 全部停止、
+      // 章节被删除）时直接落为已取消——带着 cancelRequested 回到排队会被调度永远跳过
+      if (outcome.status === 'wait' && !current.cancelRequested) {
         next = { ...current, status: 'queued', waitingReason: 'book-busy' };
       } else {
         const error =
@@ -562,7 +564,7 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
             : undefined;
         next = {
           ...current,
-          status: outcome.status,
+          status: outcome.status === 'wait' ? 'cancelled' : outcome.status,
           endedAt: now,
           cancelRequested: false,
           waitingReason: undefined,
@@ -578,8 +580,11 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
         result: next,
       };
     });
-    if (outcome.status === 'wait' || !finished) return;
-    notifyOutcome(finished, outcome);
+    if (!finished || finished.status === 'queued') return;
+    notifyOutcome(
+      finished,
+      outcome.status === 'wait' ? { status: 'cancelled', error: undefined } : outcome,
+    );
   }
 
   function notifyOutcome(
