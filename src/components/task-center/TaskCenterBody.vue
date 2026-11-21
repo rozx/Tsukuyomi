@@ -7,10 +7,7 @@
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
-import {
-  injectTaskCenter,
-  type TaskCenterRow,
-} from 'src/composables/task-center/useTaskCenter';
+import { injectTaskCenter, type TaskCenterRow } from 'src/composables/task-center/useTaskCenter';
 import TaskCenterQueueRow from './TaskCenterQueueRow.vue';
 import TaskCenterOtherSection from './TaskCenterOtherSection.vue';
 
@@ -46,22 +43,28 @@ const pausedText = computed(() => {
 </script>
 
 <template>
-  <div class="tc-body" :class="`tc-body--${mode}`">
+  <!-- 与同步、消息弹层共用 header 弹层外壳（hp-*，见主题 CSS） -->
+  <div class="tc-body" :class="[`tc-body--${mode}`, { 'hp-panel': mode === 'popover' }]">
     <header
-      class="tc-head"
+      class="hp-head tc-head"
       :class="{ 'tc-head--drag': mode === 'pinned' }"
       @pointerdown="mode === 'pinned' && emit('dragStart', $event)"
     >
       <i v-if="mode === 'pinned'" class="pi pi-arrows-alt tc-head-grip" aria-hidden="true" />
-      <span v-if="mode !== 'sheet'" class="tc-head-title">{{ t('taskQueueUi.title') }}</span>
-      <span class="tc-head-meta">
-        {{ t('taskQueueUi.concurrency', { running: groups.running.length, max: center.maxConcurrent.value }) }}
+      <span v-if="mode !== 'sheet'" class="hp-title">{{ t('taskQueueUi.title') }}</span>
+      <span class="hp-meta">
+        {{
+          t('taskQueueUi.concurrency', {
+            running: groups.running.length,
+            max: center.maxConcurrent.value,
+          })
+        }}
       </span>
-      <span class="tc-head-spacer" />
+      <span class="hp-spacer" />
       <button
         v-if="queue.meta.paused"
         type="button"
-        class="tc-head-btn"
+        class="hp-icon-btn"
         :title="t('taskQueueUi.resume')"
         :aria-label="t('taskQueueUi.resume')"
         @pointerdown.stop
@@ -72,7 +75,7 @@ const pausedText = computed(() => {
       <button
         v-else
         type="button"
-        class="tc-head-btn"
+        class="hp-icon-btn"
         :title="t('taskQueueUi.pause')"
         :aria-label="t('taskQueueUi.pause')"
         @pointerdown.stop
@@ -82,7 +85,7 @@ const pausedText = computed(() => {
       </button>
       <button
         type="button"
-        class="tc-head-btn"
+        class="hp-icon-btn"
         :disabled="groups.running.length === 0"
         :title="t('taskQueueUi.stopAll')"
         :aria-label="t('taskQueueUi.stopAll')"
@@ -94,7 +97,7 @@ const pausedText = computed(() => {
       <button
         v-if="mode === 'popover'"
         type="button"
-        class="tc-head-btn"
+        class="hp-icon-btn"
         :title="t('taskQueueUi.pin')"
         :aria-label="t('taskQueueUi.pin')"
         @click="emit('pin')"
@@ -104,7 +107,7 @@ const pausedText = computed(() => {
       <template v-if="mode === 'pinned'">
         <button
           type="button"
-          class="tc-head-btn"
+          class="hp-icon-btn"
           :title="t('taskQueueUi.collapse')"
           :aria-label="t('taskQueueUi.collapse')"
           @pointerdown.stop
@@ -114,7 +117,7 @@ const pausedText = computed(() => {
         </button>
         <button
           type="button"
-          class="tc-head-btn tc-head-btn--active"
+          class="hp-icon-btn hp-icon-btn--active"
           :title="t('taskQueueUi.unpin')"
           :aria-label="t('taskQueueUi.unpin')"
           @pointerdown.stop
@@ -137,7 +140,9 @@ const pausedText = computed(() => {
 
       <template v-else>
         <section v-if="groups.running.length > 0">
-          <div class="tc-section">{{ t('taskQueueUi.sectionRunning', { count: groups.running.length }) }}</div>
+          <div class="tc-section">
+            {{ t('taskQueueUi.sectionRunning', { count: groups.running.length }) }}
+          </div>
           <TaskCenterQueueRow
             v-for="row in groups.running"
             :key="row.id"
@@ -196,21 +201,8 @@ const pausedText = computed(() => {
   color: var(--moon-opacity-90);
 }
 
-.tc-body--popover {
-  max-height: min(640px, 80dvh);
-}
-
 .tc-body--pinned {
   max-height: min(560px, 70dvh);
-}
-
-.tc-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--white-opacity-8);
-  flex-shrink: 0;
 }
 
 .tc-head--drag {
@@ -221,53 +213,6 @@ const pausedText = computed(() => {
 .tc-head-grip {
   font-size: 11px;
   color: var(--moon-opacity-50);
-}
-
-.tc-head-title {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.tc-head-meta {
-  font-size: 11px;
-  color: var(--moon-opacity-50);
-}
-
-.tc-head-spacer {
-  flex: 1;
-}
-
-.tc-head-btn {
-  width: 26px;
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  /* 按钮系统：文字 / 图标按钮 */
-  color: var(--btn-text-color);
-  cursor: pointer;
-}
-
-.tc-head-btn:hover:not(:disabled) {
-  background: var(--btn-text-hover-bg);
-  color: var(--btn-text-hover-color);
-}
-
-.tc-head-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.tc-head-btn--active {
-  color: var(--btn-primary-color);
-  background: var(--btn-primary-bg);
-}
-
-.tc-head-btn i {
-  font-size: 12px;
 }
 
 .tc-banner {

@@ -551,6 +551,96 @@ const CUSTOM_CSS = `
 }
 
 /*
+ * 顶部系统栏弹层（任务 / 同步 / 消息）的统一外壳。
+ * Popover 加 class header-popover；内容用 hp-panel 包住，依次是 hp-head（标题 + 说明 + 图标按钮）、
+ * hp-scroll（可滚动正文）、可选的 hp-foot（底部操作）。三个弹层同宽、同标题栏、同内边距。
+ */
+.header-popover.p-popover {
+  width: min(420px, 94vw);
+}
+.header-popover .p-popover-content {
+  padding: 0;
+}
+.hp-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(600px, calc(100dvh - 96px));
+  color: var(--moon-opacity-90);
+}
+.hp-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 46px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--white-opacity-8);
+  flex-shrink: 0;
+}
+.hp-title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.hp-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--moon-opacity-50);
+}
+.hp-spacer {
+  flex: 1;
+}
+.hp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--btn-text-color);
+  cursor: pointer;
+}
+.hp-icon-btn i {
+  font-size: 12px;
+}
+.hp-icon-btn:hover:not(:disabled) {
+  background: var(--btn-text-hover-bg);
+  color: var(--btn-text-hover-color);
+}
+.hp-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.hp-icon-btn--active {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-color);
+}
+.hp-icon-btn--danger:hover:not(:disabled) {
+  background: var(--btn-danger-bg);
+  color: var(--btn-danger-color);
+}
+.hp-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+.hp-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--white-opacity-8);
+  flex-shrink: 0;
+}
+
+/*
  * 从按钮弹出的 Popover（useAnchoredPopover）：箭头按 --anchored-arrow-x 对准按钮中心。
  * 两个伪元素都以 left 为中心（各自用负 margin 居中），未设置变量时沿用 PrimeVue 的算法。
  */

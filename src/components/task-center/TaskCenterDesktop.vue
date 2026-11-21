@@ -5,6 +5,7 @@
  * - 固定：悬浮面板，点外部不关闭，可拖动标题区移动（位置限制在视口内并持久化），
  *   可收起成迷你进度条；导航与断点切换后保持（挂在 MainLayout dispatcher 上）
  */
+import { useAnchoredPopover } from 'src/composables/useAnchoredPopover';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import Popover from 'primevue/popover';
 import { injectTaskCenter } from 'src/composables/task-center/useTaskCenter';
@@ -54,7 +55,10 @@ const onDragMove = (event: PointerEvent) => {
     return;
   }
   dragged = true;
-  livePosition.value = clamp({ x: event.clientX - dragOffset.dx, y: event.clientY - dragOffset.dy });
+  livePosition.value = clamp({
+    x: event.clientX - dragOffset.dx,
+    y: event.clientY - dragOffset.dy,
+  });
 };
 const onDragEnd = () => {
   if (!dragOffset) return;
@@ -104,7 +108,9 @@ onMounted(() => {
       center.setCollapsed(!center.collapsed.value);
       return;
     }
-    if (event) popoverRef.value?.toggle(event);
+    if (!event) return;
+    anchored.prepare(event);
+    popoverRef.value?.toggle(event);
   });
 });
 
@@ -113,14 +119,21 @@ onUnmounted(() => {
   onDragEnd();
   center.registerOpener(null);
 });
+
+// 弹层箭头对准 chip（PrimeVue 默认会偏到 chip 左侧）
+const anchored = useAnchoredPopover({ containerClass: 'tc-popover', max: 600 });
+const onPopoverShow = () => {
+  center.setOpen(true);
+  anchored.centerArrow();
+};
 </script>
 
 <template>
   <Popover
     ref="popoverRef"
-    class="tc-popover"
+    class="anchored-popover header-popover tc-popover"
     :dismissable="true"
-    @show="center.setOpen(true)"
+    @show="onPopoverShow"
     @hide="center.setOpen(false)"
   >
     <TaskCenterBody mode="popover" @pin="pin" />
@@ -169,16 +182,5 @@ onUnmounted(() => {
 
 .tc-pinned--collapsed {
   width: 280px !important;
-}
-</style>
-
-<style>
-.tc-popover.p-popover {
-  width: min(420px, 94vw);
-  padding: 0;
-}
-
-.tc-popover .p-popover-content {
-  padding: 0;
 }
 </style>
