@@ -2,9 +2,9 @@
 /**
  * Tablet book-details layout — reuses BookDetailsDesktop for the dual-pane
  * reader (catalog sidebar + chapter content), swaps in ChapterToolbarTablet
- * inside BookDetailsDesktop when isTablet, and adds a right-edge vertical
- * rail that toggles the two independent TabletChatPanel / TabletProgressPanel
- * overlays (mounted in MainLayoutTablet).
+ * inside BookDetailsDesktop when isTablet. The catalog toggle is rendered into
+ * the tablet top utility strip (TabletSysbarToggle); the assistant button and
+ * the task center (translation progress, embeddings) live on that strip too.
  *
  * The 2-column grid for 原文 / 译文 is applied here via :deep() so we don't
  * fork ParagraphCard / ChapterContentPanel (~2,700 LoC of highlighted-text /
@@ -15,11 +15,8 @@ import { useI18n } from 'vue-i18n';
 import { resolveAppLocale } from 'src/models/locale';
 import { languageName } from 'src/i18n/translate';
 import BookDetailsDesktop from './BookDetailsDesktop.vue';
-import TabletSideRail from 'src/components/layout/TabletSideRail.vue';
-import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
-import BatchEmbeddingsButton from 'src/components/novel/BatchEmbeddingsButton.vue';
+import TabletSysbarToggle from 'src/components/layout/TabletSysbarToggle.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
-import { useTabletRightRail } from 'src/composables/useTabletRightRail';
 
 const { t, locale } = useI18n();
 const ctx = injectBookDetailsPage();
@@ -28,7 +25,6 @@ const columnsHeader = computed(() => {
   const language = languageName(resolveAppLocale(locale.value), target);
   return t('readerUi.sourceTranslationHeader', { language });
 });
-const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
 </script>
 
 <template>
@@ -47,64 +43,17 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
       @click="ctx.toggleTabletSidebar"
     />
 
-    <TabletSideRail>
-      <button
-        type="button"
-        class="tsr-btn rail-base-btn"
-        :class="{ 'tsr-btn--active': ctx.isTabletSidebarOpen.value }"
-        :title="
-          ctx.isTabletSidebarOpen.value
-            ? t('readerUi.collapseCatalog')
-            : t('readerUi.expandCatalog')
-        "
-        :aria-label="
-          ctx.isTabletSidebarOpen.value
-            ? t('readerUi.collapseCatalog')
-            : t('readerUi.expandCatalog')
-        "
-        :aria-pressed="ctx.isTabletSidebarOpen.value"
-        @click="ctx.toggleTabletSidebar"
-      >
-        <i
-          class="pi"
-          :class="ctx.isTabletSidebarOpen.value ? 'pi-angle-double-left' : 'pi-bars'"
-          aria-hidden="true"
-        />
-      </button>
-
-      <div class="tsr-sep" />
-
-      <button
-        type="button"
-        class="tsr-btn rail-base-btn"
-        :class="{ 'tsr-btn--active': isChatActive }"
-        title="月詠"
-        @click="() => toggleRail('chat')"
-      >
-        <i class="pi pi-sparkles" aria-hidden="true" />
-      </button>
-
-      <button
-        type="button"
-        class="tsr-btn rail-base-btn"
-        :class="{ 'tsr-btn--active': isProgressActive }"
-        :title="t('readerUi.progress')"
-        @click="() => toggleRail('progress')"
-      >
-        <i class="pi pi-objects-column" aria-hidden="true" />
-        <NotificationBadge v-if="ctx.activeTranslationTaskCount.value > 0">
-          {{ ctx.activeTranslationTaskCount.value }}
-        </NotificationBadge>
-      </button>
-      <BatchEmbeddingsButton class="tsr-btn rail-base-btn" />
-    </TabletSideRail>
+    <!-- 目录开关：渲染到平板顶部信息条最左侧 -->
+    <TabletSysbarToggle
+      :open="ctx.isTabletSidebarOpen.value"
+      :collapse-label="t('readerUi.collapseCatalog')"
+      :expand-label="t('readerUi.expandCatalog')"
+      @toggle="ctx.toggleTabletSidebar"
+    />
   </div>
 </template>
 
 <style scoped>
-/* 侧轨按钮基础样式与 RightPanelRail 共用，见 rail-base.css */
-@import 'src/components/layout/rail-base.css';
-
 .book-details-tablet {
   position: relative;
   width: 100%;
@@ -245,18 +194,13 @@ const { isChatActive, isProgressActive, toggleRail } = useTabletRightRail();
   margin: 0.35rem 0.35rem 0;
 }
 
-/* "目录" 头部 + 新卷/新章节 —— 收紧行高和按钮 padding */
+/* "目录" 头部 —— 收紧行高 */
 .book-details-tablet :deep(.sidebar-title-wrapper) {
   padding: 0.35rem 0.75rem 0.25rem;
 }
 
 .book-details-tablet :deep(.sidebar-title) {
   font-size: 0.8rem;
-}
-
-.book-details-tablet :deep(.sidebar-actions .p-button) {
-  padding: 0.25rem 0.45rem;
-  font-size: 0.72rem;
 }
 
 /* 双栏阅读：原文 / 译文 side-by-side */

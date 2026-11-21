@@ -114,7 +114,7 @@ const translation = computed(() => {
 
 .ist-chapters-label {
   font-size: 0.74rem;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
 }
 
 .ist-partial {
@@ -150,13 +150,13 @@ const translation = computed(() => {
 .ist-label {
   font-size: 0.7rem;
   line-height: 1.25;
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
   /* 英文标签较长，窄栏四列时换行而不是溢出 */
   overflow-wrap: break-word;
 }
 
 .ist-cell--zero .ist-value {
-  color: rgba(226, 232, 240, 0.3);
+  color: rgba(247, 244, 236, 0.3);
 }
 
 /* 窄容器（手机、平板窄栏）：章节数横排在上，段落数在下 */
@@ -212,6 +212,6 @@ const translation = computed(() => {
 .ist-translation-detail {
   margin-top: 0.15rem;
   font-size: 0.74rem;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
 }
 </style>

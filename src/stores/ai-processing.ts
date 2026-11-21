@@ -63,6 +63,12 @@ export interface AIProcessingTask {
    * How to apply: 在 TranslationProgress 面板及相关列表过滤时跳过该类任务。
    */
   isSingleParagraph?: boolean;
+  /**
+   * 关联的章节任务队列项 ID。
+   * 带此字段的记录由任务队列负责生命周期与通知：刷新时不被改写为「已中断」，
+   * 全局错误 / 取消 toast 也不处理它们。
+   */
+  queueItemId?: string;
   startTime: number;
   endTime?: number;
   abortController?: AbortController; // 用于取消请求（不持久化）
@@ -164,6 +170,7 @@ function buildSerializableTask(raw: AIProcessingTask): SerializableTask {
     'chapterId',
     'chapterTitle',
     'isSingleParagraph',
+    'queueItemId',
     'endTime',
   ];
   const optional: Record<string, unknown> = {};
@@ -261,18 +268,6 @@ async function deleteThinkingProcessesFromDB(ids: string[]): Promise<void> {
     await tx.done;
   } catch (error) {
     console.error('Failed to delete thinking processes from DB:', error);
-  }
-}
-
-/**
- * 清空所有思考过程
- */
-async function clearAllThinkingProcessesFromDB(): Promise<void> {
-  try {
-    const db = await getDB();
-    await db.clear('thinking-processes');
-  } catch (error) {
-    console.error('Failed to clear thinking processes from DB:', error);
   }
 }
 
@@ -503,23 +498,6 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
       ).length;
     },
 
-    /**
-     * 已复核的任务列表（包括已复核、错误、已取消，按开始时间倒序，最新的在最前面）
-     */
-    reviewedTasksList(state): AIProcessingTask[] {
-      return state.activeTasks
-        .filter(
-          (task) => task.status === 'end' || task.status === 'error' || task.status === 'cancelled',
-        )
-        .sort((a, b) => b.startTime - a.startTime);
-    },
-
-    /**
-     * 所有任务列表（包括进行中和已完成的）
-     */
-    allTasksList(state): AIProcessingTask[] {
-      return [...state.activeTasks].sort((a, b) => b.startTime - a.startTime);
-    },
   },
 
   actions: {
@@ -544,8 +522,13 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
           // 将已加载的任务添加到 activeTasks（不包含 abortController）
           this.activeTasks = tasks.map((task) => {
             // 检查是否为异常中断的任务（状态为 thinking 或 processing）
-            // 这通常发生在应用刷新、关闭或崩溃后重新加载时
-            if (task.status === 'thinking' || task.status === 'processing') {
+            // 这通常发生在应用刷新、关闭或崩溃后重新加载时。
+            // 队列任务（带 queueItemId）除外：它可能正由另一个标签页运行，
+            // 由持有执行者锁的标签页统一对账，这里不改状态、不删待办。
+            if (
+              (task.status === 'thinking' || task.status === 'processing') &&
+              !task.queueItemId
+            ) {
               const interruptedTask = {
                 ...task,
                 status: 'error' as const,
@@ -794,46 +777,6 @@ export const useAIProcessingStore = defineStore('aiProcessing', {
         clearTaskThrottle(id);
         await deleteThinkingProcessFromDB(id);
       }
-    },
-
-    /**
-     * 清空所有已复核/已结束的任务（从内存和 IndexedDB 中删除）
-     */
-    async clearReviewedTasks(): Promise<void> {
-      const reviewedTaskIds = this.activeTasks
-        .filter(
-          (task) => task.status === 'end' || task.status === 'error' || task.status === 'cancelled',
-        )
-        .map((task) => task.id);
-
-      // 清理所有已完成任务的节流信息，避免内存泄漏
-      for (const id of reviewedTaskIds) {
-        clearTaskThrottle(id);
-      }
-
-      // 从内存中移除
-      this.activeTasks = this.activeTasks.filter(
-        (task) => task.status === 'thinking' || task.status === 'processing',
-      );
-
-      // 从 IndexedDB 中删除
-      for (const id of reviewedTaskIds) {
-        await deleteThinkingProcessFromDB(id);
-      }
-    },
-
-    /**
-     * 清空所有任务（从内存和 IndexedDB 中删除）
-     */
-    async clearAllTasks(): Promise<void> {
-      // 清理所有任务的节流信息，避免内存泄漏
-      const allTaskIds = this.activeTasks.map((task) => task.id);
-      for (const id of allTaskIds) {
-        clearTaskThrottle(id);
-      }
-
-      this.activeTasks = [];
-      await clearAllThinkingProcessesFromDB();
     },
 
     /**

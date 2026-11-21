@@ -1,5 +1,6 @@
 import { restoreEntityAction } from 'src/services/ai/tools/entity-action-restore';
 import { useToastWithHistory } from 'src/composables/useToastHistory';
+import type { ToastMessageWithHistoryOptions } from 'src/composables/useToastHistory';
 import { useBooksStore } from 'src/stores/books';
 import { TerminologyService } from 'src/services/terminology-service';
 import { CharacterSettingService } from 'src/services/character-setting-service';
@@ -147,37 +148,50 @@ function buildActionToastMessages(
 }
 
 /**
+ * 把 AI 工具产生的 ActionInfo 转成一条 toast 消息（不显示，也不依赖组件上下文）。
+ * 页面（useActionInfoToast）和任务队列共用；返回 null 表示该类动作不需要提示。
+ */
+export function buildActionInfoToastMessage(
+  action: ActionInfo,
+  fallback: { bookId?: string | undefined; targetLanguage?: AppLocale | undefined; uiLocale: AppLocale },
+  options: {
+    severity?: 'info' | 'success' | 'warn' | 'error';
+    life?: number;
+    withRevert?: boolean;
+  } = {},
+): ToastMessageWithHistoryOptions | null {
+  if (shouldSkipActionToast(action)) return null;
+  const toastable = action as ToastableAction;
+  const { severity = 'info', life = 3000, withRevert = false } = options;
+  const languages: ToastLanguages = {
+    locale: action.execution?.languages.uiLocale ?? fallback.uiLocale,
+    language: action.execution?.languages.targetLanguage ?? fallback.targetLanguage ?? 'zh-CN',
+  };
+  const { summary, detail } = buildActionToastMessages(toastable, languages);
+  const bookId = action.execution?.bookId ?? fallback.bookId;
+  const onRevert =
+    withRevert && bookId
+      ? (() => {
+          const operationId = v4();
+          return async () => {
+            if (toastable.type === 'create') {
+              await revertCreate(bookId, toastable);
+            } else if (toastable.previousData) {
+              await restorePreviousEntity(bookId, toastable, useBooksStore(), operationId);
+            }
+          };
+        })()
+      : undefined;
+  return { severity, summary, detail, life, ...(onRevert ? { onRevert } : {}) };
+}
+
+/**
  * 处理 AI 工具调用产生的 ActionInfo，并显示相应的 toast 通知
  * @param book 书籍对象
- * @param action ActionInfo 对象
- * @param options 可选配置
- * @param options.severity toast 严重级别，默认为 'info'
- * @param options.life toast 显示时长（毫秒），默认为 3000
- * @param options.withRevert 是否包含撤销功能，默认为 false
  */
 export function useActionInfoToast(book: Ref<Novel | undefined>) {
   const toast = useToastWithHistory();
-  const booksStore = useBooksStore();
   const settingsStore = useSettingsStore();
-
-  // toast 写入历史后是自由文本：按执行快照的界面语言生成，之后不随语言切换重译
-  const toastLanguages = (action: ActionInfo): ToastLanguages => ({
-    locale: action.execution?.languages.uiLocale ?? settingsStore.uiLocale,
-    language: action.execution?.languages.targetLanguage ?? book.value?.targetLanguage ?? 'zh-CN',
-  });
-
-  const buildRevertHandler = (action: ToastableAction) => {
-    const bookId = action.execution?.bookId ?? book.value?.id;
-    const operationId = v4();
-    return async () => {
-      if (!bookId) return;
-      if (action.type === 'create') {
-        await revertCreate(bookId, action);
-      } else if (action.previousData) {
-        await restorePreviousEntity(bookId, action, booksStore, operationId);
-      }
-    };
-  };
 
   const handleActionInfoToast = (
     action: ActionInfo,
@@ -187,20 +201,16 @@ export function useActionInfoToast(book: Ref<Novel | undefined>) {
       withRevert?: boolean;
     } = {},
   ): void => {
-    if (shouldSkipActionToast(action)) return;
-    const toastable = action as ToastableAction;
-
-    const { severity = 'info', life = 3000, withRevert = false } = options;
-    const { summary, detail } = buildActionToastMessages(toastable, toastLanguages(action));
-    const onRevert = withRevert ? buildRevertHandler(toastable) : undefined;
-
-    toast.add({
-      severity,
-      summary,
-      detail,
-      life,
-      ...(onRevert ? { onRevert } : {}),
-    });
+    const message = buildActionInfoToastMessage(
+      action,
+      {
+        bookId: book.value?.id,
+        targetLanguage: book.value?.targetLanguage,
+        uiLocale: settingsStore.uiLocale,
+      },
+      options,
+    );
+    if (message) toast.add(message);
   };
 
   return {

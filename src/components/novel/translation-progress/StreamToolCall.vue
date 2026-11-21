@@ -59,7 +59,7 @@ const togglePopover = (event: Event) => {
   align-items: baseline;
   gap: 6px;
   padding: 3px 0;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   overflow: hidden;
 }
 
@@ -77,14 +77,14 @@ const togglePopover = (event: Event) => {
 
 .tool-arrow {
   color: var(--moon-opacity-40);
-  font-size: 0.5625rem;
+  font-size: 0.625rem;
   flex-shrink: 0;
 }
 
 .tool-name {
   font-family: var(--font-mono);
   font-weight: 500;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   flex-shrink: 0;
 }
 
@@ -110,12 +110,12 @@ const togglePopover = (event: Event) => {
 
 .tool-separator {
   color: var(--moon-opacity-30);
-  font-size: 0.6875rem;
+  font-size: 0.75rem;
   flex-shrink: 0;
 }
 
 .tool-result {
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   color: var(--moon-opacity-50);
   white-space: nowrap;
   overflow: hidden;

@@ -9,10 +9,12 @@ import messages from '../i18n';
  * syncState 从 'ok'/'changes' 变为 'syncing' 换了一个按钮），原锚点按钮
  * 会被卸载，getBoundingClientRect 全为 0，弹层就跳到屏幕左上角。
  *
- * 因此这里断言：同步 chip 与 AI 思考 chip 在状态切换前后是同一个元素且仍在文档中。
+ * 因此这里断言：同步 chip 与任务中心 chip 在状态切换前后是同一个元素且仍在文档中。
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { createApp, nextTick, type App } from 'vue';
+import { createApp, defineComponent, h, nextTick, type App } from 'vue';
+import { createMemoryHistory, createRouter } from 'vue-router';
+import { provideTaskCenter } from 'src/composables/task-center/useTaskCenter';
 import { useSettingsStore } from 'src/stores/settings';
 import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-processing';
 import { SyncType, type SyncConfig } from 'src/models/sync';
@@ -30,9 +32,6 @@ const { stub } = vi.hoisted(() => {
 
 vi.mock('src/components/sync/SyncStatusPanel.vue', () => ({
   default: stub('SyncStatusPanel'),
-}));
-vi.mock('src/components/ai/ThinkingProcessPanel.vue', () => ({
-  default: stub('ThinkingProcessPanel'),
 }));
 vi.mock('src/components/dialogs/ToastHistoryDialog.vue', () => ({
   default: stub('ToastHistoryDialog'),
@@ -66,8 +65,21 @@ let host: HTMLElement | null = null;
 const mountSysBar = () => {
   host = document.createElement('div');
   document.body.appendChild(host);
-  app = createApp(TabletSysBar);
-  app.use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
+  // 任务中心 chip 需要 MainLayout dispatcher 提供的共享状态
+  app = createApp(
+    defineComponent({
+      setup() {
+        provideTaskCenter();
+        return () => h(TabletSysBar);
+      },
+    }),
+  );
+  // 月詠按钮按路由判断导入页
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/', component: { render: () => null } }],
+  });
+  app.use(router).use(createI18n({ legacy: false, locale: 'zh-CN', messages }));
   app.mount(host);
   return host;
 };
@@ -101,16 +113,16 @@ describe('TabletSysBar 弹层锚点稳定性', () => {
     expect(before!.isConnected).toBe(true);
   });
 
-  it('AI 思考 chip 在 thinking 变化时保持同一个按钮元素', async () => {
+  it('任务中心 chip 在 AI 活动状态变化时保持同一个按钮元素', async () => {
     const aiProcessing = useAIProcessingStore();
 
     const el = mountSysBar();
     await nextTick();
 
-    const before = el.querySelector('[data-testid="tst-thinking-chip"]');
+    const before = el.querySelector('[data-testid="task-center-chip"]');
     expect(before).not.toBeNull();
 
-    // 模拟 AI 任务启动：thinking false → true
+    // 模拟其他 AI 活动开始：chip 从空闲变为活动指示
     aiProcessing.activeTasks.push({
       id: 'task-1',
       type: 'translation',
@@ -120,7 +132,7 @@ describe('TabletSysBar 弹层锚点稳定性', () => {
     } as AIProcessingTask);
     await nextTick();
 
-    const after = el.querySelector('[data-testid="tst-thinking-chip"]');
+    const after = el.querySelector('[data-testid="task-center-chip"]');
     expect(after).not.toBeNull();
     expect(after).toBe(before);
     expect(before!.isConnected).toBe(true);

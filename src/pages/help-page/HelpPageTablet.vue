@@ -262,10 +262,10 @@ watch(
   align-items: center;
   gap: 6px;
   padding: 7px 12px;
-  background: var(--white-opacity-4);
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 8px;
-  color: var(--moon-50-opacity-85);
+  background: transparent;
+  border: 1px solid var(--btn-ghost-border);
+  border-radius: var(--btn-radius);
+  color: var(--btn-ghost-color);
   font-family: inherit;
   font-size: 12px;
   font-weight: 500;
@@ -275,14 +275,15 @@ watch(
 }
 
 .ht-toolbar-btn:hover {
-  background: var(--white-opacity-8);
-  color: var(--moon-50-opacity-100);
+  background: var(--btn-ghost-hover-bg);
+  color: var(--btn-ghost-hover-color);
+  border-color: var(--btn-ghost-hover-border);
 }
 
 .ht-toolbar-btn--active {
-  background: var(--tsukuyomi-opacity-18);
-  border-color: var(--tsukuyomi-opacity-32); /* token: tsukuyomi-500 @ 32% */
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
+  background: var(--btn-primary-bg);
+  border-color: var(--btn-primary-border);
+  color: var(--btn-primary-color);
 }
 
 .ht-toolbar-btn i {

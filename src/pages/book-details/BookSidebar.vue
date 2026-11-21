@@ -7,12 +7,12 @@ import { useI18n } from 'vue-i18n';
  * 为本组件 scoped；BookDetailsTablet 仍通过 :deep() 复用这些类名做平板适配。
  */
 import { computed } from 'vue';
-import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import VolumesList from 'src/components/novel/VolumesList.vue';
 import VolumesListTablet from 'src/components/novel/VolumesListTablet.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import BookSidebarSettingsMenu from './BookSidebarSettingsMenu.vue';
+import ChapterBatchActions from 'src/components/novel/chapter-batch/ChapterBatchActions.vue';
 
 const { t } = useI18n();
 
@@ -41,7 +41,35 @@ const catalogHeaderTag = computed<'span' | 'h2'>(() => (isDesktop.value ? 'span'
 const catalogHeaderClass = computed(() =>
   isDesktop.value ? 'sidebar-eyebrow sidebar-eyebrow--inline' : 'sidebar-title',
 );
-const catalogHeaderText = computed(() => t('readerUi.catalog'));
+const batch = ctx.chapterBatch;
+const selecting = computed(() => batch.selection.active.value);
+// 多选时标题换成已选数量，按钮换成「选未翻译」与退出
+const catalogHeaderText = computed(() =>
+  selecting.value
+    ? t('taskQueueUi.batch.selectedCount', { count: batch.selection.count.value })
+    : t('readerUi.catalog'),
+);
+const catalogActions = computed(() =>
+  selecting.value
+    ? [{ icon: 'pi-times', label: t('taskQueueUi.batch.exit'), run: () => batch.selection.exit() }]
+    : [
+        {
+          icon: 'pi-list-check',
+          label: t('taskQueueUi.batch.multiSelect'),
+          run: () => ctx.chapterBatch.selection.enter(),
+        },
+        {
+          icon: 'pi-folder-plus',
+          label: t('readerUi.addVolume'),
+          run: () => (ctx.showAddVolumeDialog.value = true),
+        },
+        {
+          icon: 'pi-file-plus',
+          label: t('readerUi.addChapter'),
+          run: () => ctx.openAddChapterDialog(),
+        },
+      ],
+);
 </script>
 
 <template>
@@ -90,28 +118,37 @@ const catalogHeaderText = computed(() => t('readerUi.catalog'));
       <!-- 设置快捷入口（手机端在设置页已有二级导航） -->
       <BookSidebarSettingsMenu v-if="isDesktop" />
 
-      <!-- 目录工具 -->
+      <!-- 目录工具：普通模式与多选模式共用同一行结构和样式，只替换文字与按钮 -->
       <div class="sidebar-section-header sidebar-title-wrapper">
         <component :is="catalogHeaderTag" :class="catalogHeaderClass">{{
           catalogHeaderText
         }}</component>
         <div class="sidebar-actions">
-          <Button
-            icon="pi pi-plus"
-            :label="t('readerUi.newVolume')"
-            class="p-button-text p-button-sm"
-            size="small"
-            :title="t('readerUi.addVolume')"
-            @click="ctx.showAddVolumeDialog.value = true"
-          />
-          <Button
-            icon="pi pi-plus-circle"
-            :label="t('readerUi.newChapter')"
-            class="p-button-text p-button-sm"
-            size="small"
-            :title="t('readerUi.addChapter')"
-            @click="ctx.openAddChapterDialog"
-          />
+          <button
+            v-if="selecting"
+            type="button"
+            class="sidebar-icon-btn sidebar-icon-btn--text"
+            :disabled="batch.untranslatedLoading.value"
+            @click="batch.selectUntranslated()"
+          >
+            <i
+              v-if="batch.untranslatedLoading.value"
+              class="pi pi-spinner pi-spin"
+              aria-hidden="true"
+            />
+            {{ t('taskQueueUi.batch.selectUntranslated') }}
+          </button>
+          <button
+            v-for="action in catalogActions"
+            :key="action.icon"
+            type="button"
+            class="sidebar-icon-btn"
+            :title="action.label"
+            :aria-label="action.label"
+            @click="action.run"
+          >
+            <i class="pi" :class="action.icon" aria-hidden="true" />
+          </button>
         </div>
       </div>
 
@@ -161,6 +198,7 @@ const catalogHeaderText = computed(() => t('readerUi.catalog'));
         @drag-leave="ctx.onDragLeave"
         @move-chapter="ctx.onMoveChapter"
       />
+      <ChapterBatchActions v-if="selecting" />
     </div>
   </aside>
 </template>
@@ -373,8 +411,45 @@ const catalogHeaderText = computed(() => t('readerUi.catalog'));
   margin-left: auto;
 }
 
-.sidebar-actions .p-button {
-  white-space: nowrap;
+.sidebar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--btn-radius);
+  background: transparent;
+  /* 按钮系统：文字 / 图标按钮 */
+  color: var(--btn-text-color);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.sidebar-icon-btn:hover {
+  background: var(--btn-text-hover-bg);
+  color: var(--btn-text-hover-color);
+}
+
+.sidebar-icon-btn--text {
+  width: auto;
+  gap: 0.35rem;
+  padding: 0 0.55rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+}
+
+.sidebar-icon-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.sidebar-icon-btn:focus-visible {
+  outline: 2px solid var(--primary-opacity-50);
+  outline-offset: 1px;
 }
 
 /* 小屏切换显示/隐藏辅助类 */

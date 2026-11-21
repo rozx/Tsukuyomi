@@ -27,7 +27,7 @@ const libraryMetaText = computed(() => {
     : base;
 });
 
-// 添加书籍 picker（底部抽屉）：展开手动 / 从网站 / 从 JSON 三个入口
+// 添加书籍 picker（底部抽屉）：手动 / AI 导入 / 从网站 / 从 JSON（手机底部栏没有导入入口，靠这里进入）
 const showAddPicker = ref(false);
 const openAddPicker = () => {
   showAddPicker.value = true;
@@ -46,6 +46,10 @@ const pickImportFromWeb = () => {
 const pickImportFromJson = () => {
   closeAddPicker();
   ctx.importBookFromJson();
+};
+const pickAiImport = () => {
+  closeAddPicker();
+  ctx.openAiImport();
 };
 </script>
 
@@ -205,6 +209,19 @@ const pickImportFromJson = () => {
         </div>
         <i class="pi pi-chevron-right ml-add-picker-chev" aria-hidden="true" />
       </button>
+      <button
+        v-if="ctx.canAiImport"
+        type="button"
+        class="ml-add-picker-option"
+        @click="pickAiImport"
+      >
+        <i class="pi pi-sparkles ml-add-picker-option-icon" aria-hidden="true" />
+        <div class="ml-add-picker-option-main">
+          <div class="ml-add-picker-option-name">{{ i18nT('libraryUi.aiImport') }}</div>
+          <div class="ml-add-picker-option-meta">{{ i18nT('libraryUi.aiImportDescription') }}</div>
+        </div>
+        <i class="pi pi-chevron-right ml-add-picker-chev" aria-hidden="true" />
+      </button>
       <button type="button" class="ml-add-picker-option" @click="pickImportFromWeb">
         <i class="pi pi-globe ml-add-picker-option-icon" aria-hidden="true" />
         <div class="ml-add-picker-option-main">
@@ -341,10 +358,10 @@ const pickImportFromJson = () => {
 .ml-icon-btn {
   width: 40px;
   height: 40px;
-  border-radius: 10px;
-  background: var(--white-opacity-4);
-  border: 1px solid var(--white-opacity-10);
-  color: var(--moon-50-opacity-75);
+  border-radius: var(--btn-radius);
+  background: transparent;
+  border: 1px solid var(--btn-ghost-border);
+  color: var(--btn-ghost-color);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -354,8 +371,9 @@ const pickImportFromJson = () => {
 }
 
 .ml-icon-btn:hover {
-  background: var(--white-opacity-8);
-  color: var(--moon-50-opacity-100);
+  background: var(--btn-ghost-hover-bg);
+  color: var(--btn-ghost-hover-color);
+  border-color: var(--btn-ghost-hover-border);
 }
 
 .ml-icon-btn i {
@@ -372,8 +390,9 @@ const pickImportFromJson = () => {
   width: auto;
   padding: 0 10px;
   gap: 6px;
-  border-color: var(--primary-opacity-50);
-  color: var(--primary-200);
+  border-color: var(--btn-primary-border);
+  color: var(--btn-primary-color);
+  background: var(--btn-primary-bg);
 }
 
 .ml-check-all-count {

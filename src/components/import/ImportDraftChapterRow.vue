@@ -170,7 +170,7 @@ const toggleSelected = (selected: boolean) => update({ selected });
 }
 
 .idcr--selected {
-  background: rgba(99, 102, 241, 0.14);
+  background: rgba(109, 136, 168, 0.14);
 }
 
 .idcr-number {
@@ -179,7 +179,7 @@ const toggleSelected = (selected: boolean) => update({ selected });
   text-align: right;
   font-size: 0.72rem;
   font-variant-numeric: tabular-nums;
-  color: rgba(226, 232, 240, 0.45);
+  color: rgba(247, 244, 236, 0.45);
 }
 
 .idcr-title {
@@ -208,7 +208,7 @@ const toggleSelected = (selected: boolean) => update({ selected });
   border-radius: 6px;
   font-size: 0.66rem;
   line-height: 1.6;
-  color: rgba(226, 232, 240, 0.65);
+  color: rgba(247, 244, 236, 0.65);
   background: rgba(255, 255, 255, 0.07);
 }
 
@@ -225,12 +225,12 @@ const toggleSelected = (selected: boolean) => update({ selected });
   display: grid;
   place-items: center;
   border-radius: 8px;
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
 }
 
 .idcr-icon:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.06);
-  color: rgba(226, 232, 240, 0.95);
+  color: rgba(247, 244, 236, 0.95);
 }
 
 .idcr-icon:disabled {
@@ -238,7 +238,7 @@ const toggleSelected = (selected: boolean) => update({ selected });
 }
 
 .idcr-icon--preview {
-  color: rgb(165, 180, 252);
+  color: var(--tsukuyomi-300);
 }
 
 .idcr-icon--delete:hover:not(:disabled) {

@@ -82,7 +82,7 @@ const loadMore = () => void ctx.showSource(props.source.id, nextOffset.value);
   display: grid;
   place-items: center;
   border-radius: 8px;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
 }
 
 .isv-close:hover {
@@ -94,7 +94,7 @@ const loadMore = () => void ctx.showSource(props.source.id, nextOffset.value);
   padding: 0.6rem 0.75rem;
   border-radius: 10px;
   font-size: 0.78rem;
-  color: rgba(226, 232, 240, 0.7);
+  color: rgba(247, 244, 236, 0.7);
   background: rgba(0, 0, 0, 0.18);
 }
 

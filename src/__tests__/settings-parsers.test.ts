@@ -299,6 +299,15 @@ describe('parseAppSettings', () => {
     expect(result?.taskDefaultModels).toBeUndefined();
   });
 
+  it('月詠桌宠开关：缺省视为开启，关闭后导入导出保留', async () => {
+    const { isDeskPetEnabled } = await import('src/models/settings');
+    expect(isDeskPetEnabled(parseAppSettings({}))).toBe(true);
+    const off = parseAppSettings({ showDeskPet: false });
+    expect(off?.showDeskPet).toBe(false);
+    expect(isDeskPetEnabled(off)).toBe(false);
+    expect(parseAppSettings({ showDeskPet: 'x' })?.showDeskPet).toBeUndefined();
+  });
+
   it('scraperConcurrencyLimit 在合法范围内保留原值', () => {
     const result = parseAppSettings({ scraperConcurrencyLimit: 5 });
     expect(result?.scraperConcurrencyLimit).toBe(5);

@@ -5,28 +5,9 @@
 
 ## Requirements
 
-### Requirement: 平板翻译进度面板
-
-`TranslationProgressTablet` MUST 复用 `TranslationProgressDesktop` 的子组件组合（`TaskSwitcher` + `TaskStatusBar` + `TaskTodos` + `TaskStream` + `TaskActionBar` + `TaskEmptyState`），因为这些子组件已在 `AppRightPanel` 的固定宽度容器内稳定工作。MUST NOT 为平板创建新的 `Task*` 子组件副本。
-
-#### Scenario: 复用桌面组合
-
-- **WHEN** 设备变体为 `tablet` 且用户打开翻译进度面板
-- **THEN** `AppRightPanelTablet` MUST 在 `activeRightTab === 'progress'` 时挂载 `TranslationProgressTablet`，后者 MUST 渲染 `TaskSwitcher / TaskStatusBar / TaskTodos / TaskStream / TaskActionBar / TaskEmptyState` 组合，数据 MUST 通过 `useTranslationProgressPanel()` 读取，MUST NOT 新增 store 字段
-
-#### Scenario: 任务操作绑定现有 action
-
-- **WHEN** 用户在平板翻译进度面板点击停止 / 清除 / 切换 chapter 过滤器
-- **THEN** 点击 MUST 调用 `useTranslationProgressPanel()` 暴露的 `stopTask` / `clearCompletedTasks` / `toggleChapterFilter` 等现有 action，MUST NOT 引入新的 store 方法
-
-#### Scenario: 面板适配平板宽度
-
-- **WHEN** `AppRightPanelTablet` 以覆盖层形式展示翻译进度
-- **THEN** `TranslationProgressTablet` 样式 MUST 保证内部滚动与截断在 `min(92vw, ui.rightPanelWidth)` 约束的面板内正确呈现（MAY 通过 container padding 微调）
-
 ### Requirement: 平板右侧面板与新壳层协同
 
-`AppRightPanelTablet` MUST 与 `MainLayoutTablet` 的 `TabletNavRail` + `TabletSysBar` 协同：作为绝对定位覆盖层从右侧滑入，宽度 MUST 匹配 `useUiStore().rightPanelWidth`（上限 92vw），并接入 `useOverlayCloseStack`。
+`AppRightPanelTablet` MUST 与 `MainLayoutTablet` 的 `TabletNavRail` + `TabletSysBar` 协同：作为绝对定位覆盖层从右侧滑入，宽度 MUST 匹配 `useUiStore().rightPanelWidth`（上限 92vw），并接入 `useOverlayCloseStack`。右侧面板只承载 AI 助手；翻译进度由顶部信息条的任务中心提供。
 
 #### Scenario: 覆盖层滑入动画
 
@@ -41,7 +22,12 @@
 #### Scenario: 不与 AI 助手 / 进度 sheet 重复
 
 - **WHEN** 平板壳层已挂载 `AppRightPanelTablet`
-- **THEN** `MainLayoutTablet` MUST NOT 同时挂载 `MobileChatSheet` 或 `MobileProgressSheet`；这两张 sheet MUST 仅在 `MainLayoutMobile` 中使用
+- **THEN** `MainLayoutTablet` MUST NOT 同时挂载 `MobileChatSheet` 或任务中心的手机底部抽屉；这些 sheet MUST 仅在 `MainLayoutMobile` 中使用
+
+#### Scenario: 右侧面板不再提供翻译进度
+
+- **WHEN** 平板用户打开右侧面板
+- **THEN** 面板 MUST 只显示 AI 助手，MUST NOT 提供翻译进度页签
 
 ### Requirement: 平板不重复 Mobile 底部抽屉
 

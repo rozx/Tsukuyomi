@@ -15,10 +15,7 @@ defineProps<{
 </script>
 
 <template>
-  <StreamChunkSeparator
-    v-if="part.type === 'chunk-separator'"
-    :chunk-info="part.chunkInfo || ''"
-  />
+  <StreamChunkSeparator v-if="part.type === 'chunk-separator'" :chunk-info="part.chunkInfo || ''" />
   <StreamStateTransition
     v-else-if="part.type === 'state-transition'"
     :from-status="part.fromStatus || ''"
@@ -36,9 +33,9 @@ defineProps<{
 
 <style scoped>
 .thinking-text {
-  font-size: 0.75rem;
-  color: rgba(253, 253, 255, 0.45);
-  line-height: 1.6;
+  font-size: 0.8125rem;
+  color: rgba(253, 253, 255, 0.55);
+  line-height: 1.65;
   margin: 4px 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -47,7 +44,7 @@ defineProps<{
 
 /* 输出内容与思考过程同处一条时间线，仅靠字体区分：正体、更大、更亮 */
 .output-text {
-  font-size: 0.85rem;
+  font-size: 0.9375rem;
   color: rgba(253, 253, 255, 0.92);
   line-height: 1.75;
   font-weight: 450;

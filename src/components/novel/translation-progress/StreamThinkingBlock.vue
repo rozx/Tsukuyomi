@@ -135,15 +135,17 @@ const cursorIsOutput = computed(
   display: flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  /* 横向铺满面板（抵消面板左右内边距），底色与面板一致 */
+  width: calc(100% + 28px);
+  margin: 0 -14px;
   border: none;
-  background: var(--stream-label-bg, rgba(22, 22, 27, 0.92));
-  backdrop-filter: blur(6px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--stream-label-bg, #1d2027);
   cursor: pointer;
   font-family: inherit;
   color: var(--moon-opacity-60);
-  font-size: 0.6875rem;
-  padding: 8px 0 6px;
+  font-size: 0.75rem;
+  padding: 8px 14px 7px;
   transition: color 0.15s;
 }
 

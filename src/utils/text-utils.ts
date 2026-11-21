@@ -21,6 +21,22 @@ export function isEmptyParagraph(text: string | null | undefined): boolean {
 }
 
 /**
+ * 按行去掉 Markdown 标记（标题、列表、引用符号与强调符号），丢弃空行。
+ * 用于把流式回复 / 思考文字压成预览行（导入页月詠预览、月詠桌宠气泡）。
+ */
+export function plainTextLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) =>
+      line
+        .replace(/[*_`~]/g, '')
+        .replace(/^\s*(#{1,6}\s+|[-+>]\s+|\d+\.\s+)/, '')
+        .trim(),
+    )
+    .filter(Boolean);
+}
+
+/**
  * 去除原文中多余的空行——**减一行**，保留原始相对间距。
  *
  * 规则：

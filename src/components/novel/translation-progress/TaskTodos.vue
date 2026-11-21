@@ -55,7 +55,7 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
 
 <style scoped>
 .todos-section {
-  padding: 0 16px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--white-opacity-5);
   flex: 0 0 auto;
   display: flex;
@@ -200,7 +200,7 @@ const allDone = computed(() => props.todos.length > 0 && incompleteTodos.value.l
 }
 
 .todo-text {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--moon-opacity-70);
   line-height: 1.45;
   overflow-wrap: anywhere;

@@ -11,6 +11,7 @@ import { injectAIPage } from 'src/composables/ai-page/useAIPage';
 import type { AIModel } from 'src/services/ai/types/ai-model';
 import { isPortrait } from 'src/utils/device-orientation';
 import AIRoutingPickerDialog from './AIRoutingPickerDialog.vue';
+import PageHeader from 'src/components/layout/PageHeader.vue';
 const { t } = useI18n();
 
 const ctx = injectAIPage();
@@ -42,21 +43,14 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
   <div class="ai-tablet" :class="{ 'ai-tablet--routing-open': isRoutingOpen }">
     <div v-if="isRoutingOpen" class="ait-scrim" aria-hidden="true" @click="toggleRouting" />
 
-    <header class="ait-head">
-      <div class="ait-head-text">
-        <div class="ait-eyebrow">{{ t('aiUi.models') }}</div>
-        <h1 class="ait-title">{{ t('aiUi.management') }}</h1>
-        <p class="ait-subtitle">
-          {{
-            t('aiUi.managementSummary', {
-              total: ctx.aiModels.value.length,
-              enabled: ctx.aiModels.value.filter((model) => model.enabled).length,
-            })
-          }}
-        </p>
-      </div>
-      <div class="ait-head-actions">
-        <InputGroup class="ait-search">
+    <PageHeader
+      :eyebrow="ctx.pageHeader.value.eyebrow"
+      :title="ctx.pageHeader.value.title"
+      :description="ctx.pageHeader.value.description"
+      :stats="ctx.pageHeader.value.stats"
+    >
+      <template #toolbar>
+        <InputGroup class="ui-search ui-search--sm ait-search">
           <InputGroupAddon>
             <i class="pi pi-search" />
           </InputGroupAddon>
@@ -89,8 +83,8 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
           :aria-label="t('aiUi.routing')"
           @click="toggleRouting"
         />
-      </div>
-    </header>
+      </template>
+    </PageHeader>
 
     <div class="ait-body">
       <!-- Models list -->
@@ -279,55 +273,15 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
   z-index: 15;
 }
 
-.ait-head {
-  padding: 22px 32px 16px;
-  border-bottom: 1px solid var(--white-opacity-6);
-  display: flex;
-  align-items: flex-end;
-  gap: 20px;
-  flex-shrink: 0;
-}
-
-.ait-head-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.ait-eyebrow {
-  font-size: 10px;
-  letter-spacing: 0.22em;
-  color: var(--tsukuyomi-300-opacity-75); /* token: tsukuyomi-300 @ 75% */
-  text-transform: uppercase;
-  font-weight: 500;
-  margin-bottom: 4px;
-}
-
-.ait-title {
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: 26px;
-  font-weight: 600;
-  color: var(--moon-50-opacity-100);
-  letter-spacing: -0.015em;
-  line-height: 1.1;
-  margin: 0;
-}
-
-.ait-subtitle {
-  font-size: 12px;
-  color: var(--moon-50-opacity-55);
-  margin: 6px 0 0;
-}
-
-.ait-head-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
+/* 工具栏（PageHeader #toolbar）：搜索在左，按钮靠右 */
 .ait-search {
-  width: 280px;
+  flex: 0 1 28rem;
   min-width: 0;
+}
+
+.ait-add-btn,
+.ait-add-btn-compact {
+  margin-left: auto;
 }
 
 /* 横屏只显示带文字的 Add 按钮；路由切换按钮在横屏隐藏（侧栏常驻） */
@@ -513,8 +467,13 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
   padding-top: 12px;
   border-top: 1px solid var(--white-opacity-5);
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* minmax(0, 1fr)：不换行的长值（API Key）不能把列撑出卡片，交给省略号截断 */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+}
+
+.ait-param {
+  min-width: 0;
 }
 
 .ait-param-full {
@@ -673,25 +632,9 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
     display: block;
   }
 
-  /* 头部：标题与操作栏上下堆叠，避免挤压 */
-  .ait-head {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 12px;
-    padding: 18px 20px 14px;
-  }
-
-  .ait-title {
-    font-size: 22px;
-  }
-
-  .ait-head-actions {
-    gap: 8px;
-  }
-
+  /* 工具栏：搜索占满剩余宽度 */
   .ait-search {
     flex: 1;
-    width: auto;
   }
 
   /* 压缩圆形 Add 按钮替换长按钮 + 路由切换按钮 */
@@ -717,7 +660,7 @@ const visibleGroupModels = (group: { models: AIModel[] }): AIModel[] =>
 
   /* 参数 4 列 grid 在窄宽度下挤，改成 2 列 */
   .ait-params {
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .ait-param-full {

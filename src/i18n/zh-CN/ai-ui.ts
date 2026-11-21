@@ -2,7 +2,6 @@ export default {
   aiUi: {
     models: 'AI 模型',
     workbench: 'AI 模型工作台',
-    management: 'AI 模型管理',
     pageHint: '管理模型连接与默认任务',
     add: '添加',
     addModel: '添加 AI 模型',
@@ -52,9 +51,8 @@ export default {
     searchPlaceholder: '搜索模型名称、提供商、模型类型或默认任务...',
     tabletSearch: '搜索模型、提供商或任务…',
     clearSearch: '清除搜索',
-    pageSummary: '在桌面工具页里统一维护模型清单、默认任务和任务路由。',
+    pageSummary: '统一维护模型清单、默认任务和任务路由。',
     filteredSummary: '当前筛出 {count} 个模型，仍可继续编辑、复制或调整任务路由。',
-    managementSummary: '管理可用的 AI 翻译模型配置 · 共 {total} 个模型，{enabled} 个已启用',
     byokHint: '使用自己的 API Key，密钥保存在本设备；开启 Gist 同步时会随模型上传',
     byokIndexed: 'BYOK · 密钥保存在本设备 IndexedDB · 开启 Gist 同步时会随模型上传',
     byokLocal: 'BYOK · 密钥保存在本设备 IndexedDB',

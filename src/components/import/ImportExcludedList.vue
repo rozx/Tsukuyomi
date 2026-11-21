@@ -34,7 +34,7 @@ const label = computed(() => t('importUi.excluded.label', { count: props.entries
 <style scoped>
 .iel-toggle {
   font-size: 0.75rem;
-  color: rgb(165, 180, 252);
+  color: var(--tsukuyomi-300);
   display: flex;
   align-items: center;
   gap: 0.3rem;
@@ -64,7 +64,7 @@ const label = computed(() => t('importUi.excluded.label', { count: props.entries
 }
 
 .iel-text {
-  color: rgba(226, 232, 240, 0.65);
+  color: rgba(247, 244, 236, 0.65);
   white-space: pre-wrap;
   word-break: break-word;
 }

@@ -5,7 +5,7 @@
  * 消息与工具记录读自任务事件，发送与停止调用导入 Agent。不调用普通聊天的
  * `useChatSession`，不改写 `currentSessionId`，也不把导入目标写进全局当前书籍。
  */
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useBooksStore } from 'src/stores/books';
@@ -22,6 +22,11 @@ import { importRepairPrefill } from 'src/services/import/import-recipe-repair';
 
 type PanelControl = { toggle: (event: Event) => void; hide: () => void };
 
+/** 各任务的输入草稿（模块级，面板重新挂载后保留） */
+const inputDrafts = reactive<Record<string, string>>({});
+/** 已预填过修复说明的任务 */
+const prefilledTasks = new Set<string>();
+
 export function useImportChatPanel() {
   const store = useImportWorkspaceStore();
   const aiModels = useAIModelsStore();
@@ -29,7 +34,16 @@ export function useImportChatPanel() {
   const { renderMarkdown } = useMarkdownRenderer();
 
   const messagesContainerRef = ref<HTMLElement | null>(null);
-  const inputMessage = ref('');
+  // 输入草稿按任务保存在模块级：手机对话抽屉关闭时面板会卸载，重新打开后草稿仍在；切换任务各自保留
+  const inputMessage = computed({
+    get: () => (store.selectedTaskId ? (inputDrafts[store.selectedTaskId] ?? '') : ''),
+    set: (value: string) => {
+      const id = store.selectedTaskId;
+      if (!id) return;
+      if (value) inputDrafts[id] = value;
+      else delete inputDrafts[id];
+    },
+  });
   const showTodoList = ref(false);
 
   const messages = computed<ChatSessionMessage[]>(() =>
@@ -58,19 +72,17 @@ export function useImportChatPanel() {
   watch(
     () => store.selectedTaskId,
     () => {
-      inputMessage.value = '';
       thinking.clearThinkingState();
     },
   );
-  // 修复任务首次打开时预填失效说明，由用户决定是否发送；每个任务只预填一次
-  let prefilledFor: string | undefined;
+  // 修复任务首次打开时预填失效说明，由用户决定是否发送；每个任务只预填一次（跨面板重新挂载）
   watch(
     () => [store.task, store.events.length] as const,
     ([task, count]) => {
-      if (!task || prefilledFor === task.id || inputMessage.value) return;
+      if (!task || prefilledTasks.has(task.id) || inputMessage.value) return;
       const text = importRepairPrefill(task, count, useSettingsStore().uiLocale);
       if (!text) return;
-      prefilledFor = task.id;
+      prefilledTasks.add(task.id);
       inputMessage.value = text;
     },
     { immediate: true },

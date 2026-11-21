@@ -996,6 +996,21 @@ describe('EmbeddingQueue - applySyncGate', () => {
     expect(EmbeddingQueue.getProgress().syncGated).toBe(false);
   });
 
+  test('进度单独报告用户暂停：与同步闸门互不覆盖', () => {
+    expect(EmbeddingQueue.getProgress().userPaused).toBe(false);
+    EmbeddingQueue.applySyncGate(true);
+    expect(EmbeddingQueue.getProgress()).toMatchObject({ paused: true, userPaused: false });
+
+    EmbeddingQueue.pause();
+    expect(EmbeddingQueue.getProgress()).toMatchObject({ syncGated: true, userPaused: true });
+
+    EmbeddingQueue.resume();
+    expect(EmbeddingQueue.getProgress()).toMatchObject({ paused: true, userPaused: false });
+
+    EmbeddingQueue.applySyncGate(false);
+    expect(EmbeddingQueue.getProgress()).toMatchObject({ paused: false, userPaused: false });
+  });
+
   test('gate 重复释放幂等', () => {
     EmbeddingQueue.applySyncGate(true);
     expect(EmbeddingQueue.isPaused()).toBe(true);

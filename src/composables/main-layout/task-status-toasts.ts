@@ -76,3 +76,24 @@ export function taskCancelToasts(
   for (const task of others) toasts.push(cancelToast(cancelDetail(task, locale), locale));
   return toasts;
 }
+
+/**
+ * 对比上一轮快照，找出刚变为 error / cancelled 的任务，并更新快照。
+ * 只在已见过的任务发生状态变化时提示；带 queueItemId 的任务由任务队列自己提示，这里跳过。
+ */
+export function collectTaskStatusTransitions(
+  previous: Map<string, AIProcessingTask>,
+  tasks: readonly AIProcessingTask[],
+): { errorTasks: AIProcessingTask[]; cancelledTasks: AIProcessingTask[] } {
+  const errorTasks: AIProcessingTask[] = [];
+  const cancelledTasks: AIProcessingTask[] = [];
+  for (const task of tasks) {
+    const oldTask = previous.get(task.id);
+    if (oldTask && oldTask.status !== task.status && !task.queueItemId) {
+      if (task.status === 'error') errorTasks.push(task);
+      else if (task.status === 'cancelled') cancelledTasks.push(task);
+    }
+    previous.set(task.id, { ...task });
+  }
+  return { errorTasks, cancelledTasks };
+}

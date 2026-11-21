@@ -39,6 +39,14 @@ A manual choice persists across restarts and is included in settings sync. A syn
 
 A new book takes the interface language as its target when actually created. Change an existing target under **Book details → Settings → Translation settings**. Running AI tasks retain their startup languages; new executions use the changed settings.
 
+### Task queue {#settings-guide-task-queue}
+
+**Max concurrent tasks** sets how many chapter translation, polishing, and proofreading tasks run at once (1–5, default 2), shared across all books. Raising it starts queued tasks right away; lowering it does not interrupt running tasks. Single-paragraph tasks and assistant chats do not use these slots. See [Task queue and task center](/help/book-details-translation#book-details-translation-section-9).
+
+### Desk companion {#settings-guide-desk-pet}
+
+**Show Tsukuyomi desk companion** (on by default, desktop only): while the task center or assistant panel is closed, Tsukuyomi in the bottom-right corner shows translation and assistant progress; click it to open the assistant panel. Turning it off hides the companion and its bubble right away. See [System bar and navigation · Desk companion](/help/toolbar-guide#toolbar-guide-desk-pet).
+
 ## 1) 🤖 AI models {#settings-guide-section-4}
 
 Configure default task models.
@@ -301,11 +309,11 @@ Local vectors support semantic memory search and `query_chapter`. See [Local emb
 - Character budget: default **2000** per injection.
 - Inspect score distributions and test retrieval in the panel.
 
-### Local vector index dialog {#settings-guide-section-34}
+### Embedding progress and model status {#settings-guide-section-34}
 
-- Chapter/memory counts per book: embedded, total, and stale.
-- Batch recomputation, individual book rebuild, and test queries showing the most similar chapters.
-- Queue progress with pause/resume. Sync temporarily suspends the queue and resumes afterward without overriding a user's manual pause.
+- The "Embedding model" group on this page shows the backend (WebGPU or "WASM (slow)") and the model / chapter model version.
+- Per-book chapter and memory vector progress is in the "Background · Embeddings" section of the task center ("Tasks") in the top bar. On book details it shows "Embedded X / Y" and offers "Backfill missing"; its "⋯" menu has "Rebuild this book's chapter embeddings", "Test vector search", and "Embedding settings" (which returns to this page).
+- The section header pauses or resumes the embedding queue. Sync temporarily suspends the queue (showing "Syncing, will resume after") and resumes afterward without overriding a user's manual pause.
 
 ---
 

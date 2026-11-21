@@ -3,32 +3,29 @@
  * 消息历史面板 —— 桌面走 PrimeVue Popover，手机走 MobileBottomSheet。
  * 两种形态共享同一个 `ToastHistoryBody`。
  */
-import { computed, ref, watch } from 'vue';
+import { watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Popover from 'primevue/popover';
 import { useToastHistory } from 'src/composables/useToastHistory';
-import { useUiStore } from 'src/stores/ui';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import ToastHistoryBody from './ToastHistoryBody.vue';
+import { useHeaderPopover } from 'src/composables/useHeaderPopover';
 
 const { t } = useI18n();
 
-const uiStore = useUiStore();
-const isPhone = computed(() => uiStore.deviceType === 'phone');
-
 const { markAsRead } = useToastHistory();
 
-const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
-const mobileVisible = ref(false);
-
-const popoverStyle = computed(() => ({
-  width: 'min(500px, 94vw)',
-  maxHeight: 'min(600px, 82dvh)',
-}));
+// 桌面 Popover（箭头对准 chip，宽高由 header 弹层外壳统一）/ 手机底部抽屉
+const { isPhone, popoverRef, mobileVisible, toggle, centerArrow } =
+  useHeaderPopover('toast-history-overlay');
 
 // 面板被打开时（两种形态都适用）标记消息为已读
 const handleShown = () => {
   void markAsRead();
+};
+const handlePopoverShown = () => {
+  centerArrow();
+  handleShown();
 };
 
 // 无论 mobileVisible 以何种方式变为 true（toggle()、v-model、父级 ref 驱动），
@@ -37,15 +34,7 @@ watch(mobileVisible, (visible, wasVisible) => {
   if (visible && !wasVisible) handleShown();
 });
 
-defineExpose({
-  toggle: (event: Event) => {
-    if (isPhone.value) {
-      mobileVisible.value = !mobileVisible.value;
-    } else {
-      popoverRef.value?.toggle(event);
-    }
-  },
-});
+defineExpose({ toggle });
 </script>
 
 <template>
@@ -54,9 +43,8 @@ defineExpose({
     ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
-    :style="popoverStyle"
-    class="toast-history-overlay"
-    @show="handleShown"
+    class="anchored-popover header-popover toast-history-overlay"
+    @show="handlePopoverShown"
   >
     <ToastHistoryBody />
   </Popover>
@@ -71,9 +59,3 @@ defineExpose({
     <ToastHistoryBody />
   </MobileBottomSheet>
 </template>
-
-<style scoped>
-.toast-history-overlay :deep(.p-popover-content) {
-  padding: 1rem;
-}
-</style>

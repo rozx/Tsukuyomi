@@ -11,6 +11,7 @@ import type { AppLocale } from '../models/locale';
 import ImportPageDesktop from '../pages/import-page/ImportPageDesktop.vue';
 import ImportPageTablet from '../pages/import-page/ImportPageTablet.vue';
 import ImportPageMobile from '../pages/import-page/ImportPageMobile.vue';
+import ImportChatSheet from '../components/import/ImportChatSheet.vue';
 import { provideImportPage } from '../composables/import-page/useImportPage';
 import type { ImportPageContext } from '../composables/import-page/useImportPage';
 import { useImportWorkspaceStore } from '../stores/import-workspace';
@@ -99,7 +100,11 @@ async function mountVariant(variant: Component, locale: AppLocale, taskId: strin
   const Host = defineComponent({
     setup() {
       ctx = provideImportPage();
-      return () => h(variant);
+      // 手机的导入对话在布局挂载的抽屉里：一并挂上（打开），让对话文字也参与检查
+      return () =>
+        variant === ImportPageMobile
+          ? [h(variant), h(ImportChatSheet, { visible: true })]
+          : h(variant);
     },
   });
   app = createApp(Host);

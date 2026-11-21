@@ -126,3 +126,58 @@ describe('首次进入设置页（没有保存过分区）', () => {
     );
   });
 });
+
+describe('其他入口用 ?tab= 指定设置分区', () => {
+  async function mountSettings(path: string) {
+    const { createApp, defineComponent, nextTick } = await import('vue');
+    const { createMemoryHistory, createRouter } = await import('vue-router');
+    const { createAppI18n } = await import('src/i18n/vue');
+    const { provideSettingsPage } = await import('src/composables/settings-page/useSettingsPage');
+    const store = useSettingsStore();
+    await store.loadSettings();
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:any(.*)*', component: { render: () => null } }],
+    });
+    await router.push(path);
+    let ctx!: ReturnType<typeof provideSettingsPage>;
+    const app = createApp(
+      defineComponent({
+        setup() {
+          ctx = provideSettingsPage();
+          return () => null;
+        },
+      }),
+    );
+    app.use(router).use(createAppI18n('zh-CN')).mount(document.createElement('div'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await nextTick();
+    return { ctx, store, router, app, nextTick };
+  }
+
+  it('带 ?tab=embedding 打开设置页时落在「本地嵌入」', async () => {
+    const { ctx, app } = await mountSettings('/settings?tab=embedding');
+    expect(labelFor(false, ctx.activeTab.value)).toBe('本地嵌入');
+    app.unmount();
+  });
+
+  it('设置页已打开时再收到 ?tab=embedding 也会切过去', async () => {
+    const { ctx, router, app, nextTick } = await mountSettings('/settings');
+    expect(labelFor(false, ctx.activeTab.value)).toBe('通用设置');
+    await router.push('/settings?tab=embedding');
+    await nextTick();
+    expect(labelFor(false, ctx.activeTab.value)).toBe('本地嵌入');
+    app.unmount();
+  });
+
+  it('同步改了保存的分区时，已打开的设置页不跳标签', async () => {
+    const { ctx, store, app, nextTick } = await mountSettings('/settings');
+    const { EMBEDDING_SETTINGS_TAB } = await import('src/models/settings');
+    store.$patch((state) => {
+      state.settings.lastOpenedSettingsTab = EMBEDDING_SETTINGS_TAB;
+    });
+    await nextTick();
+    expect(labelFor(false, ctx.activeTab.value)).toBe('通用设置');
+    app.unmount();
+  });
+});

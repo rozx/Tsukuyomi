@@ -342,58 +342,6 @@ describe('useChapterTranslation', () => {
     expect(polishingParagraphIds.value.size).toBe(0);
   });
 
-  it('应该能够取消翻译', () => {
-    const paragraph1 = createTestParagraph('para-1', '段落1', false);
-    const chapter = createTestChapter('chapter-1', [paragraph1]);
-    const novel = createTestNovel([chapter]);
-
-    book.value = novel;
-    selectedChapter.value = chapter;
-    selectedChapterWithContent.value = chapter;
-    selectedChapterParagraphs = computed(() => chapter.content || []);
-
-    const { cancelTranslation, isTranslatingChapter } = useChapterTranslation(
-      book,
-      selectedChapter,
-      selectedChapterWithContent,
-      selectedChapterParagraphs,
-      updateSelectedChapterWithContent,
-      handleActionInfoToast,
-      countUniqueActions,
-      saveState,
-    );
-
-    // 取消翻译应该不抛出错误
-    expect(() => cancelTranslation()).not.toThrow();
-    expect(isTranslatingChapter.value).toBe(false);
-  });
-
-  it('应该能够取消润色', () => {
-    const paragraph1 = createTestParagraph('para-1', '段落1', true);
-    const chapter = createTestChapter('chapter-1', [paragraph1]);
-    const novel = createTestNovel([chapter]);
-
-    book.value = novel;
-    selectedChapter.value = chapter;
-    selectedChapterWithContent.value = chapter;
-    selectedChapterParagraphs = computed(() => chapter.content || []);
-
-    const { cancelPolish, isPolishingChapter } = useChapterTranslation(
-      book,
-      selectedChapter,
-      selectedChapterWithContent,
-      selectedChapterParagraphs,
-      updateSelectedChapterWithContent,
-      handleActionInfoToast,
-      countUniqueActions,
-      saveState,
-    );
-
-    // 取消润色应该不抛出错误
-    expect(() => cancelPolish()).not.toThrow();
-    expect(isPolishingChapter.value).toBe(false);
-  });
-
   it('应该创建翻译按钮菜单项', () => {
     const paragraph1 = createTestParagraph('para-1', '段落1', true);
     const chapter = createTestChapter('chapter-1', [paragraph1]);

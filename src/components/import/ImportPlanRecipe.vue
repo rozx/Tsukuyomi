@@ -86,13 +86,13 @@ const issues = computed(() => change.value?.issues?.slice(0, 5) ?? []);
 }
 
 .ipr-facts dt {
-  color: rgba(148, 163, 184, 0.85);
+  color: var(--moon-50-opacity-55);
 }
 
 .ipr-facts dd {
   margin: 0;
   min-width: 0;
-  color: rgba(226, 232, 240, 0.9);
+  color: rgba(247, 244, 236, 0.9);
 }
 
 .ipr-url {
@@ -109,6 +109,6 @@ const issues = computed(() => change.value?.issues?.slice(0, 5) ?? []);
   margin: 0;
   padding-left: 1.1rem;
   font-size: 0.74rem;
-  color: rgba(226, 232, 240, 0.8);
+  color: rgba(247, 244, 236, 0.8);
 }
 </style>

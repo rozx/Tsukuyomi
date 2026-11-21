@@ -4,7 +4,7 @@
  * 所有修改都经 ImportDraftService 的具名操作提交到同一草稿，月詠随后读取即可看到；
  * 基于旧版本的修改会被拒绝并重新载入，不会覆盖较新的内容。
  */
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Button from 'primevue/button';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
@@ -16,6 +16,16 @@ import { useDraftLock } from './import-draft';
 import { draftOverview } from 'src/composables/import-page/import-workspace-overview';
 import { draftChapterWindows } from 'src/composables/import-page/import-draft-windows';
 
+/** structureFirst：手机引导流程里卷章结构排在最前，书籍信息折叠为一行摘要 */
+const props = withDefaults(defineProps<{ structureFirst?: boolean }>(), {
+  structureFirst: false,
+});
+const basicsOpen = ref(false);
+const basicsSummary = computed(() =>
+  [draft.value?.metadata.title?.value, draft.value?.metadata.author?.value]
+    .filter(Boolean)
+    .join(' · '),
+);
 const store = useImportWorkspaceStore();
 const ctx = injectImportPage();
 const { t } = useI18n();
@@ -97,24 +107,43 @@ const addVolume = () =>
 </script>
 
 <template>
-  <section v-if="draft" class="idp" :aria-label="t('importUi.draft.region')">
+  <section
+    v-if="draft"
+    class="idp"
+    :class="{ 'idp--structure-first': props.structureFirst }"
+    :aria-label="t('importUi.draft.region')"
+  >
     <div v-if="needsChoice" class="ipl-banner ipl-banner--warn" role="status">
       <i class="pi pi-exclamation-triangle" aria-hidden="true" />
       <span>{{ t('importUi.draft.needsChoice') }}</span>
     </div>
 
-    <section class="ipl-card">
+    <section class="ipl-card idp-basics">
       <div class="ipl-card-head">
         <h3 class="ipl-card-title">
           <i class="pi pi-id-card" aria-hidden="true" />{{ t('importUi.draft.basics') }}
         </h3>
+        <button
+          v-if="props.structureFirst"
+          type="button"
+          class="idp-basics-toggle"
+          :aria-expanded="basicsOpen"
+          @click="basicsOpen = !basicsOpen"
+        >
+          <span class="idp-basics-summary">{{ basicsSummary }}</span>
+          <i
+            class="pi"
+            :class="basicsOpen ? 'pi-chevron-up' : 'pi-chevron-down'"
+            aria-hidden="true"
+          />
+        </button>
       </div>
-      <ImportDraftMetadata />
+      <ImportDraftMetadata v-if="!props.structureFirst || basicsOpen" />
     </section>
 
     <ImportMetadataCandidates />
 
-    <section class="ipl-card">
+    <section class="ipl-card idp-structure">
       <div class="ipl-card-head">
         <h3 class="ipl-card-title">
           <i class="pi pi-sitemap" aria-hidden="true" />{{ t('importUi.draft.structure') }}
@@ -207,13 +236,37 @@ const addVolume = () =>
   gap: 0.85rem;
 }
 
+/* 手机引导流程：卷章结构排最前 */
+.idp--structure-first .idp-structure {
+  order: -1;
+}
+
+.idp-basics-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: 60%;
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  color: var(--moon-50-opacity-60);
+}
+
+.idp-basics-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .idp-stats {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem 0.9rem;
   font-size: 0.74rem;
-  color: rgba(226, 232, 240, 0.7);
+  color: rgba(247, 244, 236, 0.7);
 }
 
 .idp-toolbar {
@@ -231,11 +284,11 @@ const addVolume = () =>
   padding: 1.25rem 0.5rem;
   font-size: 0.78rem;
   text-align: center;
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
 }
 
 .idp-empty i {
   font-size: 1.4rem;
-  color: rgba(165, 180, 252, 0.6);
+  color: rgba(163, 183, 207, 0.6);
 }
 </style>

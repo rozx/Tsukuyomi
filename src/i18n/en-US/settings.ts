@@ -12,6 +12,18 @@ export default {
       importExport: 'Import / export',
       about: 'About',
     },
+    deskPet: {
+      title: 'Desk companion',
+      show: 'Show Tsukuyomi desk companion',
+      showHint: 'Desktop only. While the task center or assistant panel is closed, Tsukuyomi in the bottom-right corner shows translation and assistant progress.',
+      saveFailed: "Couldn't save the desk companion setting",
+    },
+    taskQueue: {
+      title: 'Task queue',
+      maxConcurrent: 'Max concurrent tasks',
+      maxConcurrentHint: 'Shared across all books (1–5). Raising it starts queued chapter tasks right away; lowering it does not interrupt running tasks.',
+      saveFailed: "Couldn't save task queue settings",
+    },
     general: {
       title: 'General settings',
       language: 'Interface language',

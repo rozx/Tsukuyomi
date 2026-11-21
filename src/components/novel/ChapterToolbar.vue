@@ -44,7 +44,6 @@ const props = defineProps<{
   isTranslatingChapter: boolean;
   isPolishingChapter: boolean;
   isSearchVisible: boolean;
-  isSmallScreen: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -110,9 +109,6 @@ const searchBtnIcon = computed(() =>
 const searchBtnTitle = computed(() =>
   props.isSearchVisible ? t('readerUi.closeSearchShortcut') : t('readerUi.searchShortcut'),
 );
-const progressBtnActive = computed(
-  () => uiStore.rightPanelOpen && uiStore.activeRightTab === 'progress',
-);
 const translationBtnLoading = computed(
   () => props.isTranslatingChapter || props.isPolishingChapter,
 );
@@ -123,7 +119,7 @@ const translationBtnDisabled = computed(
     !props.selectedChapterParagraphs.length,
 );
 const editModeBtnClass = (value: EditMode) =>
-  value === props.editMode ? '!bg-primary/20 !text-primary' : 'text-moon/70 hover:text-moon';
+  value === props.editMode ? '!bg-tsukuyomi-500/20 !text-tsukuyomi-300' : 'text-moon/70 hover:text-moon';
 </script>
 
 <template>
@@ -227,7 +223,7 @@ const editModeBtnClass = (value: EditMode) =>
             text
             size="small"
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
-            :class="{ '!bg-primary/20 !text-primary': isSearchVisible }"
+            :class="{ '!bg-tsukuyomi-500/20 !text-tsukuyomi-300': isSearchVisible }"
             :title="searchBtnTitle"
             @click="emit('toggleSearch')"
           />
@@ -278,23 +274,6 @@ const editModeBtnClass = (value: EditMode) =>
             class="!w-8 !h-8 text-moon/70 hover:text-moon"
             :title="t('readerUi.shortcuts')"
             @click="handleToggleKeyboardShortcuts"
-          />
-
-          <Button
-            icon="pi pi-objects-column"
-            rounded
-            text
-            size="small"
-            class="!w-8 !h-8 text-moon/70 hover:text-moon"
-            :class="{ '!bg-primary/20 !text-primary': progressBtnActive }"
-            :title="t('readerUi.progress')"
-            :disabled="isSmallScreen"
-            @click="
-              () => {
-                uiStore.openRightPanel();
-                uiStore.setActiveRightTab('progress');
-              }
-            "
           />
 
           <Button

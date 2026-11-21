@@ -5,43 +5,23 @@
  *
  * 调用方（AppHeader / MobileSysBar）仍然通过 `ref.value.toggle(event)` 开关面板。
  */
-import { computed, provide, ref } from 'vue';
+import { provide } from 'vue';
 import Popover from 'primevue/popover';
-import { useUiStore } from 'src/stores/ui';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import SyncStatusBody from './SyncStatusBody.vue';
 import { SyncPanelCloseKey } from './sync-panel-injection';
+import { useHeaderPopover } from 'src/composables/useHeaderPopover';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
 
-const uiStore = useUiStore();
-const isPhone = computed(() => uiStore.deviceType === 'phone');
-
-const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
-const mobileVisible = ref(false);
-
-const closePanel = () => {
-  if (isPhone.value) {
-    mobileVisible.value = false;
-  } else {
-    popoverRef.value?.hide();
-  }
-};
+const { isPhone, popoverRef, mobileVisible, toggle, close, centerArrow } =
+  useHeaderPopover('sync-popover');
 
 // 供子组件（SyncStatusBody）在弹出确认对话框前关闭本面板
-provide(SyncPanelCloseKey, closePanel);
+provide(SyncPanelCloseKey, close);
 
-defineExpose({
-  toggle: (event: Event) => {
-    if (isPhone.value) {
-      mobileVisible.value = !mobileVisible.value;
-    } else {
-      popoverRef.value?.toggle(event);
-    }
-  },
-  close: closePanel,
-});
+defineExpose({ toggle, close });
 </script>
 
 <template>
@@ -51,7 +31,8 @@ defineExpose({
     ref="popoverRef"
     :dismissable="true"
     :show-close-icon="false"
-    class="sync-popover"
+    class="anchored-popover header-popover sync-popover"
+    @show="centerArrow"
   >
     <SyncStatusBody />
   </Popover>
@@ -66,9 +47,3 @@ defineExpose({
     <SyncStatusBody />
   </MobileBottomSheet>
 </template>
-
-<style>
-.sync-popover.p-popover {
-  width: 300px;
-}
-</style>

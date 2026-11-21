@@ -84,10 +84,9 @@ export default {
       chapterDescription:
         'Generate multiple vectors per chapter so the AI can find related chapters by plot, event, and character semantics',
       chapterAuto:
-        'Chapter embeddings run automatically in the background and are recomputed 60 seconds after paragraphs or translations change; there are no settings. To view, backfill, or rebuild progress, use the',
-      vectorIndex: 'Vector index',
-      chapterAutoSuffix:
-        'panel on the book details page (in the side rail on desktop and tablet, or the top system bar on narrow screens).',
+        'Chapter embeddings run automatically in the background and are recomputed 60 seconds after paragraphs or translations change; there are no settings. To view progress, backfill, or rebuild, open the task center on the top bar and use its',
+      backgroundSection: 'Background · Embeddings',
+      chapterAutoSuffix: 'section (backfill and rebuild need the book to be open).',
     },
     sites: {
       title: 'Site mappings',
@@ -266,7 +265,7 @@ export default {
       preparingBadge: 'Preparing to restart and update',
       unavailableNow: 'Cannot update right now',
       restartPending: 'Preparing to restart for an update. Try again later',
-      pendingWork: 'Some actions or saves have not finished. Try again later',
+      pendingWork: 'Some actions or saves have not finished. Try again later. If translation tasks are running, pause the task queue or stop all tasks in the task center first',
       interrupted: 'New work started during preparation. Try again later',
     },
     backup: {

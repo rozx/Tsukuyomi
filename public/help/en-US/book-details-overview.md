@@ -4,7 +4,7 @@ Book details (`/books/:id`) is the workspace for translation, terms, characters,
 
 Interface and book target are independent. Choose Simplified Chinese, Traditional Chinese, or English in book translation settings. Paragraph/title display follows the target with source fallback; missing term/character/alias translations stay blank. Legacy books/results are Simplified Chinese. Each language is retained separately, and target changes do not start translation. Source may contain any language.
 
-> Since v0.12.1, desktop has a narrower sidebar and collapsible Settings group. Breadcrumbs replace redundant Back/Contents headings. Progress moved to the global right panel and is accessible across pages.
+> Since v0.12.1, desktop has a narrower sidebar and collapsible Settings group. Breadcrumbs replace redundant Back/Contents headings. Chapter task progress is shown in the task center in the top bar and is accessible across pages.
 >
 > Chapter summaries were removed in v0.12. `query_chapter` retrieves relevant source passages using [Local embeddings](/help/local-embedding).
 
@@ -78,7 +78,7 @@ Settings views show a context label with icon, name, and Translation/Terms/Chara
 
 Same sidebar/workspace structure, with:
 
-- Collapsible sidebar, initially open, controlled by the upper-right toolbar button.
+- Collapsible contents: the "Collapse contents" / "Expand contents" button at the far left of the top system bar opens or closes the volume and chapter contents. In portrait, the contents opens as an overlay and closes when you tap outside; in landscape, it takes part in the layout. There is no vertical toolbar on the right, so content extends to the right edge; Tsukuyomi opens from the top system bar.
 - Compact chapter toolbar with secondary actions in an overflow menu.
 - Touch-friendly single-column contents cards.
 - Settings expansion shared with desktop across breakpoint changes.
@@ -101,7 +101,7 @@ Two full-screen views:
 >
 > Translation settings are in the reader gear sheet's Book settings tab. Check updates opens `/books/:id/settings/update` full-screen from the book overview.
 >
-> Narrow layouts have no right rail. A desktop browser resized to this layout can open Vector index from the top bar when local embeddings are enabled. Physical mobile devices still disable embeddings; keyword/recency memory selection remains, while `query_chapter` is unavailable.
+> A desktop browser resized to this layout can still view and backfill vectors in the task center's "Background · Embeddings" section when local embeddings are enabled. Physical mobile devices still disable embeddings; keyword/recency memory selection remains, while `query_chapter` is unavailable.
 
 ---
 
@@ -175,9 +175,10 @@ See [AI translation](/help/book-details-translation) and [Local embeddings](/hel
 
 ## ℹ️ Global system bar {#book-details-overview-section-18}
 
-- [System bar](/help/toolbar-guide) provides thinking, sync, and notification controls across pages.
-- Translation progress in the right panel shows task progress and activates for a new task.
-- Vector index appears only on book routes with embeddings enabled.
+- [System bar](/help/toolbar-guide) provides the task center, sync, and notification controls across pages.
+- The **task center** ("Tasks") shows the translation/polishing/proofreading queue and progress for all books. A new task only makes it flash; it does not open by itself. See [Task queue and task center](/help/book-details-translation#book-details-translation-section-9).
+- **Select** in the chapter list adds several chapters to the queue at once. See [Batch start](/help/book-details-translation#book-details-translation-batch).
+- When local embeddings are effectively enabled, the task center's **"Background · Embeddings"** section shows this book's chapter and memory vector progress on book details, with "Backfill missing" and, in the "⋯" menu, rebuild and test search. It works in desktop, tablet, and narrow layouts.
 
 ---
 

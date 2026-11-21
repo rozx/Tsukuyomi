@@ -31,27 +31,25 @@ describe('ui store mobile workspace mode', () => {
     const store = useUiStore();
     store.loadState();
 
-    store.setBookWorkspaceMode('progress');
+    store.setBookWorkspaceMode('catalog');
     store.setDeviceType('phone');
     store.setDeviceType('tablet');
     store.setDeviceType('desktop');
 
-    expect(store.bookWorkspaceMode).toBe('progress');
+    expect(store.bookWorkspaceMode).toBe('catalog');
   });
 
-  it('应持久化并恢复右侧面板激活的 Tab', () => {
+  it('旧版本保存的 activeRightTab=progress 加载后回退为 chat，且不改变右侧面板开合', () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ sideMenuOpen: true, rightPanelOpen: true, activeRightTab: 'progress' }),
+    );
+
     const store = useUiStore();
     store.loadState();
 
     expect(store.activeRightTab).toBe('chat');
-
-    store.setActiveRightTab('progress');
-
-    setActivePinia(createPinia());
-    const restored = useUiStore();
-    restored.loadState();
-
-    expect(restored.activeRightTab).toBe('progress');
+    expect(store.rightPanelOpen).toBe(true);
   });
 
   it('localStorage 中没有 activeRightTab 时应回退到默认 chat', () => {
@@ -64,5 +62,12 @@ describe('ui store mobile workspace mode', () => {
     store.loadState();
 
     expect(store.activeRightTab).toBe('chat');
+  });
+
+  it('旧版本保存的工作区模式 progress 加载后回退为默认值', () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ bookWorkspaceMode: 'progress' }));
+    const store = useUiStore();
+    store.loadState();
+    expect(store.bookWorkspaceMode).not.toBe('progress');
   });
 });

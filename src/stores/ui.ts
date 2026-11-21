@@ -19,10 +19,89 @@ function detectInitialDeviceType(): DeviceType {
   return getDeviceTypeByWidth(window.innerWidth);
 }
 
-type ActiveRightTab = 'chat' | 'progress';
+type ActiveRightTab = 'chat';
 
+/**
+ * 持久化的右侧页签只接受 chat：翻译进度已移到 header 任务中心，
+ * 旧版本保存的 progress 加载时回退为 chat（右侧面板的开合状态保持不变）。
+ */
 function isActiveRightTab(value: unknown): value is ActiveRightTab {
-  return value === 'chat' || value === 'progress';
+  return value === 'chat';
+}
+
+/** 旧版本保存的工作区模式（如已移除的 progress）加载时回退为默认值 */
+function isBookWorkspaceMode(value: unknown): value is BookWorkspaceMode {
+  return value === 'content' || value === 'catalog' || value === 'settings';
+}
+
+/** 任务中心固定面板的位置（视口坐标，单位 px） */
+export interface TaskCenterPosition {
+  x: number;
+  y: number;
+}
+
+function parseTaskCenterPosition(value: unknown): TaskCenterPosition | null {
+  if (!value || typeof value !== 'object') return null;
+  const { x, y } = value as { x?: unknown; y?: unknown };
+  if (typeof x !== 'number' || typeof y !== 'number') return null;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+/** 任务中心固定面板的尺寸（单位 px）；为空时用默认尺寸 */
+export interface TaskCenterSize {
+  width: number;
+  height: number;
+}
+
+function parseTaskCenterSize(value: unknown): TaskCenterSize | null {
+  if (!value || typeof value !== 'object') return null;
+  const { width, height } = value as { width?: unknown; height?: unknown };
+  if (typeof width !== 'number' || typeof height !== 'number') return null;
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  return { width, height };
+}
+
+/** 跨刷新保留的任务中心界面状态 */
+interface TaskCenterUiState {
+  taskCenterPinned: boolean;
+  taskCenterCollapsed: boolean;
+  taskCenterPosition: TaskCenterPosition | null;
+  taskCenterSize: TaskCenterSize | null;
+  taskCenterExpandedId: string | null;
+  taskCenterOtherCollapsed: boolean;
+  /** 后台向量化区是否折叠（默认折叠，只占一行区头） */
+  taskCenterEmbeddingCollapsed: boolean;
+  /** 桌面端月詠桌宠的气泡是否展开（默认收起，只显示最新一段） */
+  deskPetBubbleExpanded: boolean;
+}
+
+const DEFAULT_TASK_CENTER_UI_STATE: TaskCenterUiState = {
+  taskCenterPinned: false,
+  taskCenterCollapsed: false,
+  taskCenterPosition: null,
+  taskCenterSize: null,
+  taskCenterExpandedId: null,
+  taskCenterOtherCollapsed: false,
+  taskCenterEmbeddingCollapsed: true,
+  deskPetBubbleExpanded: false,
+};
+
+function parseTaskCenterUiState(state: Record<string, unknown>): TaskCenterUiState {
+  const pinned = state.taskCenterPinned === true;
+  return {
+    taskCenterPinned: pinned,
+    taskCenterCollapsed: pinned && state.taskCenterCollapsed === true,
+    taskCenterPosition: parseTaskCenterPosition(state.taskCenterPosition),
+    taskCenterSize: parseTaskCenterSize(state.taskCenterSize),
+    taskCenterExpandedId:
+      typeof state.taskCenterExpandedId === 'string' ? state.taskCenterExpandedId : null,
+    taskCenterOtherCollapsed: state.taskCenterOtherCollapsed === true,
+    taskCenterEmbeddingCollapsed: state.taskCenterEmbeddingCollapsed !== false,
+    deskPetBubbleExpanded: state.deskPetBubbleExpanded === true,
+  };
 }
 
 /**
@@ -35,7 +114,7 @@ function loadUiStateFromStorage(): {
   bookWorkspaceMode: BookWorkspaceMode;
   bookSettingsMenuExpanded: boolean;
   activeRightTab: ActiveRightTab;
-} {
+} & TaskCenterUiState {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
@@ -44,9 +123,12 @@ function loadUiStateFromStorage(): {
         sideMenuOpen: state.sideMenuOpen ?? true,
         rightPanelOpen: state.rightPanelOpen ?? false,
         rightPanelWidth: state.rightPanelWidth ?? 384, // 默认 384px (w-96)
-        bookWorkspaceMode: state.bookWorkspaceMode ?? DEFAULT_BOOK_WORKSPACE_MODE,
+        bookWorkspaceMode: isBookWorkspaceMode(state.bookWorkspaceMode)
+          ? state.bookWorkspaceMode
+          : DEFAULT_BOOK_WORKSPACE_MODE,
         bookSettingsMenuExpanded: state.bookSettingsMenuExpanded ?? true,
         activeRightTab: isActiveRightTab(state.activeRightTab) ? state.activeRightTab : 'chat',
+        ...parseTaskCenterUiState(state),
       };
     }
   } catch (error) {
@@ -59,20 +141,23 @@ function loadUiStateFromStorage(): {
     bookWorkspaceMode: DEFAULT_BOOK_WORKSPACE_MODE,
     bookSettingsMenuExpanded: true,
     activeRightTab: 'chat',
+    ...DEFAULT_TASK_CENTER_UI_STATE,
   };
 }
 
 /**
  * 保存 UI 状态到 localStorage
  */
-function saveUiStateToStorage(state: {
-  sideMenuOpen: boolean;
-  rightPanelOpen: boolean;
-  rightPanelWidth: number;
-  bookWorkspaceMode: BookWorkspaceMode;
-  bookSettingsMenuExpanded: boolean;
-  activeRightTab: ActiveRightTab;
-}): void {
+function saveUiStateToStorage(
+  state: {
+    sideMenuOpen: boolean;
+    rightPanelOpen: boolean;
+    rightPanelWidth: number;
+    bookWorkspaceMode: BookWorkspaceMode;
+    bookSettingsMenuExpanded: boolean;
+    activeRightTab: ActiveRightTab;
+  } & TaskCenterUiState,
+): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
@@ -91,8 +176,7 @@ export const useUiStore = defineStore('ui', {
     isLoaded: boolean;
     assistantInputMessage: string | null; // 要复制到助手输入框的消息
     activeRightTab: ActiveRightTab; // 右侧面板当前激活的 Tab
-    batchEmbeddingsPanelOpen: boolean; // 向量面板跨布局共享，不持久化
-  } => ({
+  } & TaskCenterUiState => ({
     sideMenuOpen: true,
     rightPanelOpen: false,
     rightPanelWidth: 384, // 默认 384px (w-96)
@@ -102,7 +186,7 @@ export const useUiStore = defineStore('ui', {
     isLoaded: false,
     assistantInputMessage: null,
     activeRightTab: 'chat',
-    batchEmbeddingsPanelOpen: false,
+    ...DEFAULT_TASK_CENTER_UI_STATE,
   }),
 
   actions: {
@@ -126,6 +210,14 @@ export const useUiStore = defineStore('ui', {
       this.bookWorkspaceMode = state.bookWorkspaceMode;
       this.bookSettingsMenuExpanded = state.bookSettingsMenuExpanded;
       this.activeRightTab = state.activeRightTab;
+      this.taskCenterPinned = state.taskCenterPinned;
+      this.taskCenterCollapsed = state.taskCenterCollapsed;
+      this.taskCenterPosition = state.taskCenterPosition;
+      this.taskCenterSize = state.taskCenterSize;
+      this.taskCenterExpandedId = state.taskCenterExpandedId;
+      this.taskCenterOtherCollapsed = state.taskCenterOtherCollapsed;
+      this.taskCenterEmbeddingCollapsed = state.taskCenterEmbeddingCollapsed;
+      this.deskPetBubbleExpanded = state.deskPetBubbleExpanded;
       this.isLoaded = true;
     },
 
@@ -169,6 +261,14 @@ export const useUiStore = defineStore('ui', {
         bookWorkspaceMode: this.bookWorkspaceMode,
         bookSettingsMenuExpanded: this.bookSettingsMenuExpanded,
         activeRightTab: this.activeRightTab,
+        taskCenterPinned: this.taskCenterPinned,
+        taskCenterCollapsed: this.taskCenterCollapsed,
+        taskCenterPosition: this.taskCenterPosition,
+        taskCenterSize: this.taskCenterSize,
+        taskCenterExpandedId: this.taskCenterExpandedId,
+        taskCenterOtherCollapsed: this.taskCenterOtherCollapsed,
+        taskCenterEmbeddingCollapsed: this.taskCenterEmbeddingCollapsed,
+        deskPetBubbleExpanded: this.deskPetBubbleExpanded,
       });
     },
     /**
@@ -180,6 +280,43 @@ export const useUiStore = defineStore('ui', {
     },
     setActiveRightTab(tab: ActiveRightTab) {
       this.activeRightTab = tab;
+      this.saveState();
+    },
+    /** 固定 / 取消固定任务中心；取消固定时一并退出收起状态 */
+    setTaskCenterPinned(pinned: boolean) {
+      this.taskCenterPinned = pinned;
+      if (!pinned) this.taskCenterCollapsed = false;
+      this.saveState();
+    },
+    /** 固定面板收起为迷你进度条 / 展开 */
+    setTaskCenterCollapsed(collapsed: boolean) {
+      this.taskCenterCollapsed = this.taskCenterPinned && collapsed;
+      this.saveState();
+    },
+    setTaskCenterPosition(position: TaskCenterPosition | null) {
+      this.taskCenterPosition = position ? { x: position.x, y: position.y } : null;
+      this.saveState();
+    },
+    /** 固定面板尺寸（用户拖动缩放后保存） */
+    setTaskCenterSize(size: TaskCenterSize | null) {
+      this.taskCenterSize = size ? { width: size.width, height: size.height } : null;
+      this.saveState();
+    },
+    /** 任务中心当前打开详情的任务（队列项或 AI 任务 ID），同一时间最多一个 */
+    setTaskCenterExpandedId(id: string | null) {
+      this.taskCenterExpandedId = id;
+      this.saveState();
+    },
+    setTaskCenterOtherCollapsed(collapsed: boolean) {
+      this.taskCenterOtherCollapsed = collapsed;
+      this.saveState();
+    },
+    setTaskCenterEmbeddingCollapsed(collapsed: boolean) {
+      this.taskCenterEmbeddingCollapsed = collapsed;
+      this.saveState();
+    },
+    setDeskPetBubbleExpanded(expanded: boolean) {
+      this.deskPetBubbleExpanded = expanded;
       this.saveState();
     },
   },

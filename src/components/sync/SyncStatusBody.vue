@@ -34,6 +34,16 @@ const uiStore = useUiStore();
 const toast = useToastWithHistory();
 
 const isPhone = computed(() => uiStore.deviceType === 'phone');
+/** 桌面：hp 外壳的标题 / 滚动正文 / 底部；手机：抽屉内的普通纵向排列 */
+const layout = computed(() =>
+  isPhone.value
+    ? {
+        root: 'flex flex-col space-y-4',
+        scroll: 'space-y-3 max-w-full min-w-0',
+        foot: 'flex flex-col gap-3 pt-2 border-t border-white/10',
+      }
+    : { root: 'hp-panel', scroll: 'hp-scroll space-y-3 min-w-0', foot: 'hp-foot' },
+);
 
 // 驱动相对时间显示的定时刷新
 const nowMs = ref(Date.now());
@@ -222,13 +232,16 @@ const onSyncButtonClick = () => {
 </script>
 
 <template>
-  <div class="flex flex-col space-y-4">
-    <div v-if="!isPhone" class="flex items-center justify-between pb-3 border-b border-white/10">
-      <h3 class="text-lg font-semibold text-moon/90">{{ t('syncUi.panel.title') }}</h3>
-      <i :class="[syncStatus.icon, syncStatus.color]" />
+  <!-- 桌面用 header 弹层外壳（hp-*，与任务、消息弹层一致）；手机抽屉自带标题 -->
+  <div :class="layout.root">
+    <div v-if="!isPhone" class="hp-head">
+      <span class="hp-title">{{ t('syncUi.panel.title') }}</span>
+      <span class="hp-meta">{{ syncStatus.label }}</span>
+      <span class="hp-spacer" />
+      <i :class="[syncStatus.icon, syncStatus.color]" aria-hidden="true" />
     </div>
 
-    <div class="space-y-3 max-w-full min-w-0">
+    <div :class="layout.scroll">
       <div v-if="isPhone" class="flex items-center justify-between pb-2 border-b border-white/10">
         <span class="text-xs text-moon/60">{{ t('syncUi.panel.currentStatus') }}</span>
         <span class="flex items-center gap-2 text-xs text-moon/90">
@@ -294,7 +307,7 @@ const onSyncButtonClick = () => {
       </div>
     </div>
 
-    <div class="flex flex-col gap-3 pt-2 border-t border-white/10">
+    <div :class="layout.foot">
       <ForceSyncToggle :disabled="syncButtonDisabled" />
       <Button
         :label="syncButtonLabel"

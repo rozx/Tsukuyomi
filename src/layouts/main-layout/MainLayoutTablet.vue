@@ -1,28 +1,28 @@
 <script setup lang="ts">
 /**
  * Tablet shell — slim left icon rail + top utility strip + main route outlet,
- * with TWO independent right-edge slide-in panels for the AI 助手 / 翻译进度
- * surfaces. Each panel owns its own appbar + close button and stays mounted
- * in the DOM so its internal state (useRightPanel / TranslationProgress) isn't
- * reset when the other opens — same pattern as MainLayoutMobile with its
- * MobileChatSheet + MobileProgressSheet.
+ * with a right-edge slide-in panel for the AI 助手. The panel stays mounted in
+ * the DOM so its internal state (useRightPanel) isn't reset when it closes —
+ * same pattern as MainLayoutMobile's MobileChatSheet. Translation progress lives
+ * in the task center on the top utility strip.
  *
  * Active tab state is shared with MobileTabBar / BookDetailsTablet rail via
  * useMainNavActive() and the uiStore.activeRightTab state.
  */
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import TabletSysBar from 'src/components/layout/TabletSysBar.vue';
 import TabletNavRail from 'src/components/layout/TabletNavRail.vue';
 import TabletChatPanel from 'src/components/layout/TabletChatPanel.vue';
 import ImportChatPanel from 'src/components/import/ImportChatPanel.vue';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
-import TabletProgressPanel from 'src/components/layout/TabletProgressPanel.vue';
 import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
+import { usePortrait } from 'src/composables/usePortrait';
 
 const ui = useUiStore();
 // 导入路由的对话常驻停靠在右侧（不是侧滑浮层），其他路由的聊天槽位挂普通月詠
 const isImportRoute = useImportRouteScope();
+const portrait = usePortrait();
 const importDockStyle = computed(() => ({
   width: `clamp(18rem, 38vw, ${ui.rightPanelWidth}px)`,
 }));
@@ -31,16 +31,22 @@ const rightPanelOverlayStyle = computed(() => ({
   width: `min(92vw, ${ui.rightPanelWidth}px)`,
 }));
 
+// 右侧滑入的对话面板：普通路由是月詠；导入路由只在竖屏使用（横屏对话常驻停靠），显示导入对话
+const overlayChat = computed(() => !isImportRoute.value || portrait.value);
 const isChatOpen = computed(
-  () => ui.rightPanelOpen && ui.activeRightTab === 'chat' && !isImportRoute.value,
+  () => ui.rightPanelOpen && ui.activeRightTab === 'chat' && overlayChat.value,
 );
-const isProgressOpen = computed(() => ui.rightPanelOpen && ui.activeRightTab === 'progress');
+
+// 进出导入路由时收起面板：另一种对话不应在切换页面时自己滑出来
+watch(isImportRoute, () => {
+  if (ui.rightPanelOpen && ui.activeRightTab === 'chat') ui.closeRightPanel();
+});
 
 const closeRightPanel = () => ui.closeRightPanel();
 
 // 只有右侧面板进入关闭栈；左侧图标导航栏是常驻的，不可折叠。
 useOverlayCloseStack({
-  isOpen: computed(() => isChatOpen.value || isProgressOpen.value),
+  isOpen: isChatOpen,
   enabled: computed(() => true),
   onClose: closeRightPanel,
 });
@@ -54,11 +60,7 @@ useOverlayCloseStack({
       <TabletNavRail />
 
       <main class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60 relative">
-        <div
-          v-if="isChatOpen || isProgressOpen"
-          class="layout-overlay-mask z-40"
-          @click="closeRightPanel"
-        />
+        <div v-if="isChatOpen" class="layout-overlay-mask z-40" @click="closeRightPanel" />
 
         <!-- 页面由 MainLayout 渲染并 Teleport 到这里，断点切换时不重新挂载 -->
         <div id="route-outlet-tablet" class="route-outlet" />
@@ -68,28 +70,26 @@ useOverlayCloseStack({
         <div class="overlay-clip">
           <!-- AI 助手 面板——独立挂载，仅当 activeRightTab === 'chat' 时 slide-in -->
           <div
-            v-if="!isImportRoute"
+            v-if="overlayChat"
             class="overlay-right-panel z-50"
             :class="{ 'overlay-right-panel-open': isChatOpen }"
             :style="rightPanelOverlayStyle"
             :inert="!isChatOpen"
           >
-            <TabletChatPanel />
-          </div>
-
-          <!-- 翻译进度 面板——独立挂载，仅当 activeRightTab === 'progress' 时 slide-in -->
-          <div
-            class="overlay-right-panel z-50"
-            :class="{ 'overlay-right-panel-open': isProgressOpen }"
-            :style="rightPanelOverlayStyle"
-            :inert="!isProgressOpen"
-          >
-            <TabletProgressPanel />
+            <div v-if="isImportRoute" class="import-chat-skin h-full">
+              <ImportChatPanel />
+            </div>
+            <TabletChatPanel v-else />
           </div>
         </div>
       </main>
 
-      <aside v-if="isImportRoute" class="tablet-import-chat" :style="importDockStyle">
+      <!-- 竖屏宽度不够停靠：导入页的对话改为右侧滑入面板（任务顶部的月詠预览打开） -->
+      <aside
+        v-if="isImportRoute && !portrait"
+        class="tablet-import-chat import-chat-skin"
+        :style="importDockStyle"
+      >
         <ImportChatPanel />
       </aside>
     </div>
@@ -101,10 +101,13 @@ useOverlayCloseStack({
   display: contents;
 }
 
-/* 与 TabletChatPanel 相同的面板底色与左边框，常驻停靠 */
 .tablet-import-chat {
   flex-shrink: 0;
   min-height: 0;
+}
+
+/* 导入对话的面板底色与左边框（与 TabletChatPanel 相同），停靠与竖屏滑入共用 */
+.import-chat-skin {
   background: rgba(14, 16, 20, 0.96);
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(18px);

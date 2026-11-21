@@ -8,7 +8,11 @@ import { getLanguageTranslation } from '../services/localization/selection';
 import type { AppLocale } from '../models/locale';
 import type { Paragraph } from '../models/novel';
 import type { AIServiceConfig, TextGenerationRequest } from '../services/ai/types/ai-service';
-import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
+import {
+  chapterTranslationFixture,
+  translationChapter,
+  waitForQueueItem,
+} from './chapter-translation-fixture';
 
 let dispose: (() => void) | undefined;
 afterEach(() => {
@@ -96,13 +100,13 @@ describe('已是目标语言的段落原样提交', () => {
     const model = scriptModel((id) =>
       id === '11111111' ? 'Already English.' : 'This is Japanese.',
     );
-    await service.translateAllParagraphs();
+    await waitForQueueItem(service.translateAllParagraphs());
     const [kept, translated] = await saved();
     expect(getLanguageTranslation(kept!, 'en-US')?.translation).toBe('Already English.');
     expect(getLanguageTranslation(translated!, 'en-US')?.translation).toBe('This is Japanese.');
     // 两段都计为已处理：继续翻译不再调用模型
     model.reset();
-    await service.continueTranslation();
+    await waitForQueueItem(service.continueTranslation());
     expect(model.seen).toHaveLength(1);
   });
 
@@ -121,7 +125,7 @@ describe('已是目标语言的段落原样提交', () => {
       },
     ]);
     const model = scriptModel(() => '這是簡體中文的句子。');
-    await service.continueTranslation();
+    await waitForQueueItem(service.continueTranslation());
     expect(model.seen).toEqual([['11111111']]);
     const [paragraph] = await saved();
     expect(getLanguageTranslation(paragraph!, 'zh-TW')?.translation).toBe('這是簡體中文的句子。');
@@ -134,7 +138,7 @@ describe('已是目标语言的段落原样提交', () => {
       { id: '11111111', text: '這是繁體中文。', translations: [], selectedTranslationId: '' },
     ]);
     const model = scriptModel(() => '这是繁体中文。');
-    await service.continueTranslation();
+    await waitForQueueItem(service.continueTranslation());
     expect(model.seen).toEqual([['11111111']]);
     expect(getLanguageTranslation((await saved())[0]!, 'zh-CN')?.translation).toBe(
       '这是繁体中文。',
@@ -151,7 +155,7 @@ describe('已是目标语言的段落原样提交', () => {
       },
     ]);
     scriptModel(() => 'Chapter 3: He ran.');
-    await service.translateAllParagraphs();
+    await waitForQueueItem(service.translateAllParagraphs());
     expect(getLanguageTranslation((await saved())[0]!, 'en-US')?.translation).toBe(
       'Chapter 3: He ran.',
     );

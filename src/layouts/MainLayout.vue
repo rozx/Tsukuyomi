@@ -10,7 +10,7 @@
  * 页面（RouterView）也只在这里渲染一次，经 Teleport 放进当前变体的 `#route-outlet-<variant>`。
  * 断点切换只移动页面 DOM，页面组件不会随外壳一起重新挂载，页面状态得以保留。
  */
-import { computed, watch } from 'vue';
+import { computed } from 'vue';
 import { RouterView } from 'vue-router';
 import { useDeviceVariant } from 'src/composables/useDeviceVariant';
 import { useMainLayoutShell } from 'src/composables/main-layout/useMainLayoutShell';
@@ -21,19 +21,16 @@ import AskUserDialog from 'src/components/dialogs/AskUserDialog.vue';
 import QuickStartGuideDialog from 'src/components/dialogs/QuickStartGuideDialog.vue';
 import Toast from 'primevue/toast';
 import ConfirmDialog from 'primevue/confirmdialog';
-import BatchEmbeddingsPanel from 'src/components/novel/BatchEmbeddingsPanel.vue';
-import { useBatchEmbeddingsPanel } from 'src/composables/useBatchEmbeddingsPanel';
+import BatchEmbeddingsTestQueryDialog from 'src/components/dialogs/BatchEmbeddingsTestQueryDialog.vue';
+import TaskCenter from 'src/components/task-center/TaskCenter.vue';
+import { provideTaskCenter } from 'src/composables/task-center/useTaskCenter';
 
 const { variant } = useDeviceVariant();
 const { handleToastClose, quickStartGuideVisible, dismissQuickStartGuide } = useMainLayoutShell();
-const {
-  bookId,
-  isAvailable: embeddingsAvailable,
-  visible: embeddingsVisible,
-} = useBatchEmbeddingsPanel();
-watch([bookId, embeddingsAvailable], () => {
-  embeddingsVisible.value = false;
-});
+// 任务中心共享状态：chip（各布局变体的系统条）、弹出层、固定面板与手机抽屉共用一份
+const taskCenter = provideTaskCenter();
+// 向量测试查询由任务中心「后台 · 向量化」区的「⋯」菜单打开，跨变体只挂一份
+const embedding = taskCenter.embedding;
 
 const variantComponent = computed(() => {
   switch (variant.value) {
@@ -61,9 +58,10 @@ const variantComponent = computed(() => {
   <ConfirmDialog group="force-sync" />
   <AskUserDialog />
   <QuickStartGuideDialog :visible="quickStartGuideVisible" @dismiss="dismissQuickStartGuide" />
-  <BatchEmbeddingsPanel
-    v-if="embeddingsAvailable"
-    :key="bookId"
-    v-model:visible="embeddingsVisible"
+  <TaskCenter />
+  <BatchEmbeddingsTestQueryDialog
+    v-if="embedding.bookId.value"
+    v-model:visible="embedding.testQueryVisible.value"
+    :book-id="embedding.bookId.value"
   />
 </template>

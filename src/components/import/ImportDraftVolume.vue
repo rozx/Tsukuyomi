@@ -222,8 +222,8 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
   border-radius: 6px;
   font-size: 0.68rem;
   font-weight: 600;
-  color: rgb(199, 210, 254);
-  background: rgba(99, 102, 241, 0.18);
+  color: var(--tsukuyomi-200);
+  background: rgba(109, 136, 168, 0.18);
 }
 
 .idv-title {
@@ -245,14 +245,14 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
   border-radius: 6px;
   font-size: 0.66rem;
   line-height: 1.6;
-  color: rgba(226, 232, 240, 0.65);
+  color: rgba(247, 244, 236, 0.65);
   background: rgba(255, 255, 255, 0.07);
 }
 
 .idv-count {
   flex-shrink: 0;
   font-size: 0.72rem;
-  color: rgba(226, 232, 240, 0.5);
+  color: rgba(247, 244, 236, 0.5);
 }
 
 .idv-chapters {
@@ -267,7 +267,7 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
   margin: 0;
   padding: 0.75rem;
   font-size: 0.75rem;
-  color: rgba(226, 232, 240, 0.5);
+  color: rgba(247, 244, 236, 0.5);
 }
 
 .idv-icon {
@@ -277,7 +277,7 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
 }
 
 .idv-icon:hover:not(:disabled) {
@@ -295,7 +295,7 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
   gap: 0.4rem;
   padding: 0.55rem;
   font-size: 0.74rem;
-  color: rgb(165, 180, 252);
+  color: var(--tsukuyomi-300);
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -318,6 +318,6 @@ const openVolumeMenu = (event: MouseEvent, chapter: ImportDraftChapter) => {
 .idv-menu-title {
   padding: 0.35rem 0.75rem 0.15rem;
   font-size: 0.7rem;
-  color: rgba(226, 232, 240, 0.5);
+  color: rgba(247, 244, 236, 0.5);
 }
 </style>

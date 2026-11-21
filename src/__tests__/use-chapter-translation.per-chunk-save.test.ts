@@ -5,7 +5,12 @@ import { BookService } from '../services/book-service';
 import { ChapterContentService } from '../services/chapter-content-service';
 import { BookExecutionGuard } from '../services/book-execution-guard';
 import { deferred, webLocksFixture } from './web-locks-fixture';
-import { chapterTranslationFixture, translationChapter } from './chapter-translation-fixture';
+import {
+  chapterTranslationFixture,
+  translationChapter,
+  waitForQueueItem,
+} from './chapter-translation-fixture';
+import { useTaskQueueStore } from '../stores/task-queue';
 
 let dispose: (() => void) | undefined;
 afterEach(() => {
@@ -25,7 +30,7 @@ const load = () => ChapterContentService.loadChapterContent('chapter-a');
 const result = { text: '', actions: [] };
 
 describe('useChapterTranslation - 整章翻译按批落盘', () => {
-  it('独占提交时，所有正文 AI 入口在读取执行快照前拒绝启动', async () => {
+  it('独占提交时，单段入口拒绝启动，整章任务在队列中等待书籍空闲而不失败', async () => {
     vi.stubGlobal('navigator', { locks: webLocksFixture() });
     const { service } = await setup();
     const started = deferred();
@@ -38,14 +43,15 @@ describe('useChapterTranslation - 整章翻译按批落盘', () => {
     const model = vi.spyOn(TranslationService, 'translate').mockResolvedValue(result);
     try {
       await service.translateAllParagraphs();
-      await service.continueTranslation();
       await service.retranslateParagraph('11111111');
       await service.polishParagraph('11111111');
       await service.proofreadParagraph('11111111');
-      await service.polishAllParagraphs();
-      await service.proofreadAllParagraphs();
+      for (let i = 0; i < 10; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
       expect(model).not.toHaveBeenCalled();
       expect(await load()).toHaveLength(2);
+      const waiting = useTaskQueueStore().items.find((item) => item.kind === 'translation');
+      expect(waiting?.status).toBe('queued');
+      expect(waiting?.waitingReason).toBe('book-busy');
     } finally {
       finish.resolve();
       await commit;
@@ -70,10 +76,10 @@ describe('useChapterTranslation - 整章翻译按批落盘', () => {
         return result;
       },
     );
-    const running = service.translateAllParagraphs();
+    const running = waitForQueueItem(service.translateAllParagraphs());
     await saving.promise;
     try {
-      service.cancelTranslation();
+      await service.cancelTranslation();
       await expect(BookExecutionGuard.commit('fixture-book', async () => {})).rejects.toThrow(
         'TARGET_BUSY',
       );
@@ -100,7 +106,7 @@ describe('useChapterTranslation - 整章翻译按批落盘', () => {
         return result;
       },
     );
-    await service.translateAllParagraphs();
+    await waitForQueueItem(service.translateAllParagraphs());
     expect(firstPersisted).toBe(true);
     const content = await load();
     expect(content?.[0]?.translations[0]?.translation).toBe('First result');
@@ -119,7 +125,7 @@ describe('useChapterTranslation - 整章翻译按批落盘', () => {
         throw new Error('请求已取消');
       },
     );
-    await service.translateAllParagraphs();
+    await waitForQueueItem(service.translateAllParagraphs());
     expect(persistedBeforeAbort).toBe(true);
     expect((await load())?.[0]?.translations[0]?.translation).toBe('First result');
   });

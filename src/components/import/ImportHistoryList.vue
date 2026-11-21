@@ -143,7 +143,7 @@ const requestRevert = (entry: ImportOperation) => {
 .ihl-state {
   flex-shrink: 0;
   font-size: 0.9rem;
-  color: rgba(226, 232, 240, 0.45);
+  color: rgba(247, 244, 236, 0.45);
 }
 
 .ihl-state--applied {
@@ -165,6 +165,6 @@ const requestRevert = (entry: ImportOperation) => {
 
 .ihl-meta {
   font-size: 0.7rem;
-  color: rgba(226, 232, 240, 0.5);
+  color: rgba(247, 244, 236, 0.5);
 }
 </style>

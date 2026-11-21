@@ -12,6 +12,7 @@ import MemoryPanel from 'src/components/novel/MemoryPanel.vue';
 import { injectBookDetailsPage } from 'src/composables/book-details/useBookDetailsPage';
 import type { Chapter, Volume } from 'src/models/novel';
 import BookMobileChapterTree from './BookMobileChapterTree.vue';
+import ChapterBatchActions from 'src/components/novel/chapter-batch/ChapterBatchActions.vue';
 
 const { t } = useI18n();
 
@@ -27,6 +28,8 @@ const isTermsTab = computed(() => ctx.mobileActiveTab.value === 'terms');
 const isCharactersTab = computed(() => ctx.mobileActiveTab.value === 'characters');
 const isMemoryTab = computed(() => ctx.mobileActiveTab.value === 'memory');
 const activeChapterId = computed(() => ctx.continueReadingChapter.value?.id ?? null);
+const batch = ctx.chapterBatch;
+const selecting = computed(() => batch.selection.active.value);
 const onChapterAction = (payload: { chapter: Chapter; volumeId: string; index: number }) =>
   emit('chapter-action', payload);
 </script>
@@ -34,12 +37,35 @@ const onChapterAction = (payload: { chapter: Chapter; volumeId: string; index: n
 <template>
   <div class="mbd-tab-content">
     <template v-if="isChaptersTab">
-      <div class="mbd-chapter-actions">
+      <!-- 普通模式与多选模式共用同一行与按钮样式 -->
+      <div v-if="selecting" class="mbd-chapter-actions">
+        <span class="mbd-chapter-actions-label">{{
+          t('taskQueueUi.batch.selectedCount', { count: batch.selection.count.value })
+        }}</span>
+        <button
+          class="mbd-link-btn"
+          :disabled="batch.untranslatedLoading.value"
+          @click="batch.selectUntranslated()"
+        >
+          <i
+            class="pi"
+            :class="batch.untranslatedLoading.value ? 'pi-spinner pi-spin' : 'pi-filter'"
+            aria-hidden="true"
+          />{{ t('taskQueueUi.batch.selectUntranslated') }}
+        </button>
+        <button class="mbd-link-btn" @click="batch.selection.exit()">
+          <i class="pi pi-times" aria-hidden="true" />{{ t('taskQueueUi.batch.exit') }}
+        </button>
+      </div>
+      <div v-else class="mbd-chapter-actions">
+        <button class="mbd-link-btn" @click="batch.selection.enter()">
+          <i class="pi pi-list-check" aria-hidden="true" />{{ t('taskQueueUi.batch.multiSelect') }}
+        </button>
         <button class="mbd-link-btn" @click="ctx.showAddVolumeDialog.value = true">
-          <i class="pi pi-plus" aria-hidden="true" />{{ t('readerUi.newVolume') }}
+          <i class="pi pi-folder-plus" aria-hidden="true" />{{ t('readerUi.newVolume') }}
         </button>
         <button class="mbd-link-btn" @click="ctx.openAddChapterDialog">
-          <i class="pi pi-plus-circle" aria-hidden="true" />{{ t('readerUi.newChapter') }}
+          <i class="pi pi-file-plus" aria-hidden="true" />{{ t('readerUi.newChapter') }}
         </button>
       </div>
 
@@ -54,6 +80,7 @@ const onChapterAction = (payload: { chapter: Chapter; volumeId: string; index: n
           @chapter-action="onChapterAction"
         />
       </div>
+      <ChapterBatchActions v-if="selecting" class="mbd-batch-actions" />
     </template>
     <TerminologyPanel v-else-if="isTermsTab" :book="ctx.book.value || null" class="mbd-panel" />
     <CharacterSettingPanel

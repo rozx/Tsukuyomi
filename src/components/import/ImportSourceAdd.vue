@@ -132,8 +132,8 @@ const onDrop = (event: DragEvent) => {
 }
 
 .isa--dragging {
-  border-color: rgba(129, 140, 248, 0.6);
-  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(163, 183, 207, 0.6);
+  background: rgba(109, 136, 168, 0.1);
 }
 
 .isa-url {
@@ -160,12 +160,12 @@ const onDrop = (event: DragEvent) => {
 
 .isa-drop-icon {
   font-size: 1.1rem;
-  color: rgba(165, 180, 252, 0.85);
+  color: rgba(163, 183, 207, 0.85);
 }
 
 .isa-drop-text {
   font-size: 0.78rem;
-  color: rgba(226, 232, 240, 0.65);
+  color: rgba(247, 244, 236, 0.65);
 }
 
 .isa-pick {

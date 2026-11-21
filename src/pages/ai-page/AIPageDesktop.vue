@@ -10,21 +10,13 @@ import InputText from 'primevue/inputtext';
 import InputGroup from 'primevue/inputgroup';
 import InputGroupAddon from 'primevue/inputgroupaddon';
 import ProgressSpinner from 'primevue/progressspinner';
-import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
-import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
+import PageHeader from 'src/components/layout/PageHeader.vue';
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import { injectAIPage } from 'src/composables/ai-page/useAIPage';
 const { t } = useI18n();
 
 const ctx = injectAIPage();
 
-const enabledCount = computed(() => ctx.aiModels.value.filter((model) => model.enabled).length);
-const configuredRoutes = computed(() => ctx.taskRouting.value.filter((row) => row.modelId).length);
-const aiMetrics = computed(() => [
-  { label: t('aiUi.totalModels'), value: ctx.aiModels.value.length },
-  { label: t('aiUi.enabled'), value: enabledCount.value },
-  { label: t('aiUi.routing'), value: `${configuredRoutes.value}/${ctx.taskRouting.value.length}` },
-]);
 const filteredProviderGroups = computed(() =>
   ctx.providerGroups.value
     .map((group) => ({
@@ -35,12 +27,6 @@ const filteredProviderGroups = computed(() =>
     }))
     .filter((group) => group.models.length > 0),
 );
-const pageSummary = computed(() => {
-  if (ctx.searchQuery.value) {
-    return t('aiUi.filteredSummary', { count: ctx.filteredModels.value.length });
-  }
-  return t('aiUi.pageSummary');
-});
 // 模型徽章文案 / 严重度（吸收模板三元）
 const badgeValue = (model: { enabled: boolean }) =>
   model.enabled ? t('aiUi.enabled') : t('aiUi.disabled');
@@ -54,40 +40,35 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
 
 <template>
   <div class="desktop-ai-page">
-    <DesktopWorkbenchHeader
-      :eyebrow="t('aiUi.models')"
-      :title="t('aiUi.workbench')"
-      :description="pageSummary"
+    <PageHeader
+      :eyebrow="ctx.pageHeader.value.eyebrow"
+      :title="ctx.pageHeader.value.title"
+      :description="ctx.pageHeader.value.description"
+      :stats="ctx.pageHeader.value.stats"
     >
-      <template #actions>
-        <div class="ai-header-actions">
-          <InputGroup class="ai-search-group">
-            <InputGroupAddon>
-              <i class="pi pi-search text-base" />
-            </InputGroupAddon>
-            <InputText v-model="ctx.searchQuery.value" :placeholder="t('aiUi.searchPlaceholder')" />
-            <InputGroupAddon v-if="ctx.searchQuery.value">
-              <Button
-                icon="pi pi-times"
-                class="p-button-text p-button-sm"
-                :title="t('aiUi.clearSearch')"
-                @click="ctx.searchQuery.value = ''"
-              />
-            </InputGroupAddon>
-          </InputGroup>
-          <Button
-            :label="t('aiUi.addModel')"
-            icon="pi pi-plus"
-            class="p-button-primary ai-add-model-button"
-            @click="ctx.addModel"
-          />
-        </div>
+      <template #toolbar>
+        <InputGroup class="ui-search ai-search-group">
+          <InputGroupAddon>
+            <i class="pi pi-search text-base" />
+          </InputGroupAddon>
+          <InputText v-model="ctx.searchQuery.value" :placeholder="t('aiUi.searchPlaceholder')" />
+          <InputGroupAddon v-if="ctx.searchQuery.value">
+            <Button
+              icon="pi pi-times"
+              class="p-button-text p-button-sm"
+              :title="t('aiUi.clearSearch')"
+              @click="ctx.searchQuery.value = ''"
+            />
+          </InputGroupAddon>
+        </InputGroup>
+        <Button
+          :label="t('aiUi.addModel')"
+          icon="pi pi-plus"
+          class="p-button-primary ai-add-model-button"
+          @click="ctx.addModel"
+        />
       </template>
-
-      <template #metrics>
-        <DesktopWorkbenchMetrics :items="aiMetrics" />
-      </template>
-    </DesktopWorkbenchHeader>
+    </PageHeader>
 
     <div v-if="ctx.isPageLoading.value" class="ai-loading-shell">
       <DesktopWorkbenchSurface class="ai-loading-surface" tone="muted">
@@ -270,24 +251,15 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
 </template>
 
 <style scoped>
+/* 页头（PageHeader）通栏，内容区自己留边距 */
 .desktop-ai-page {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem 1.1rem 1.25rem;
-}
-
-.ai-header-actions {
-  width: min(100%, 44rem);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: stretch;
-  justify-content: end;
-  gap: 0.75rem;
 }
 
 .ai-search-group {
+  flex: 0 1 28rem;
   min-width: 0;
   max-width: none;
 }
@@ -297,7 +269,7 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
 }
 
 .ai-add-model-button {
-  min-width: 11.5rem;
+  margin-left: auto;
   justify-content: center;
   white-space: nowrap;
 }
@@ -305,6 +277,7 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
 .ai-loading-shell {
   flex: 1;
   min-height: 0;
+  padding: 1rem 1.1rem 1.25rem;
 }
 
 .ai-loading-surface,
@@ -325,6 +298,7 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
 .ai-workbench-grid {
   flex: 1;
   min-height: 0;
+  padding: 1rem 1.1rem 1.25rem;
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(20rem, 0.8fr);
   gap: 1rem;
@@ -645,19 +619,9 @@ const hasFilteredGroups = computed(() => filteredProviderGroups.value.length > 0
   }
 }
 
-@media (max-width: 1100px) {
-  .ai-header-actions {
-    width: 100%;
-    grid-template-columns: 1fr;
-  }
-
-  .ai-add-model-button {
-    width: 100%;
-  }
-}
-
 @media (max-width: 820px) {
-  .desktop-ai-page {
+  .ai-loading-shell,
+  .ai-workbench-grid {
     padding-inline: 0.85rem;
   }
 

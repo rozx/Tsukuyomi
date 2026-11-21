@@ -7,8 +7,10 @@ import Button from 'primevue/button';
 import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
-import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
+import TaskCenterChip from 'src/components/task-center/TaskCenterChip.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
+import { useAssistantToggle } from 'src/composables/layout/useAssistantToggle';
+import { usePortrait } from 'src/composables/usePortrait';
 import { APP_NAME } from 'src/constants/app';
 import { APP_DISPLAY_VERSION } from 'src/constants/build-info';
 
@@ -16,14 +18,15 @@ const {
   unreadCount,
   pendingCount,
   syncState,
-  thinking,
   toastHistoryRef,
-  thinkingPanelRef,
   syncPanelRef,
   toggleHistory,
-  toggleThinking,
   toggleSync,
 } = useSystemBar();
+
+// 月詠助手：导入页横屏对话常驻停靠（按钮只显示激活态），竖屏改为右侧滑入面板（照常开关）
+const portrait = usePortrait();
+const assistant = useAssistantToggle({ importDocked: () => !portrait.value });
 
 // 同步态徽章收敛为单个描述对象，渲染成同一个 <button>。
 // 弹层（PrimeVue Popover）以触发按钮为定位锚点，且内容尺寸变化时会重新对齐；
@@ -68,30 +71,18 @@ const syncChip = computed(() => {
 
 <template>
   <div class="tsm-sysbar-tablet">
+    <!-- 页面开关挂载点：书库页 / 书籍详情页把左侧列表、目录开关 Teleport 进来（TabletSysbarToggle）；
+         其他页面为空，display: contents 让它不占宽度 -->
+    <div id="tablet-sysbar-leading" class="tst-leading" />
+
     <div class="tst-brand">
       <span class="tst-brand-name">{{ APP_NAME.en }} {{ APP_NAME.zh }} · MOONLIT TRANSLATOR</span>
       <span class="tst-brand-version">v{{ APP_DISPLAY_VERSION }}</span>
     </div>
 
     <div class="tst-actions">
-      <!-- AI thinking：单个持久按钮（作为弹层锚点不可被 v-if 卸载），内部内容随状态切换 -->
-      <button
-        type="button"
-        class="system-bar-chip tst-chip"
-        :class="{ 'pill thinking': thinking }"
-        data-testid="tst-thinking-chip"
-        :aria-label="i18nT('libraryUi.thinkingProcess')"
-        @click="toggleThinking"
-      >
-        <template v-if="thinking">
-          <span class="tst-dot" />
-          <span>{{ i18nT('libraryUi.aiThinkingActive') }}</span>
-        </template>
-        <template v-else>
-          <i class="pi pi-sparkles" aria-hidden="true" />
-          <span class="tst-chip-label">{{ i18nT('libraryUi.thinkingProcess') }}</span>
-        </template>
-      </button>
+      <!-- 任务中心（合并原「AI 思考」入口） -->
+      <TaskCenterChip chip-class="system-bar-chip tst-chip" pill-class="pill thinking" />
 
       <!-- Sync：同上，单个持久按钮，外观由 syncChip 描述对象驱动 -->
       <button
@@ -106,6 +97,19 @@ const syncChip = computed(() => {
       </button>
 
       <div class="tst-sep" />
+
+      <!-- 月詠助手：分隔线之后、通知之前，只显示图标 -->
+      <button
+        type="button"
+        class="system-bar-chip tst-chip tst-icon-chip"
+        :class="{ active: assistant.active.value }"
+        :aria-label="i18nT('libraryUi.assistantLabel')"
+        :aria-pressed="assistant.active.value"
+        :title="i18nT('libraryUi.assistantLabel')"
+        @click="assistant.toggle"
+      >
+        <i class="pi pi-comments" aria-hidden="true" />
+      </button>
 
       <!-- Notifications -->
       <button
@@ -124,7 +128,6 @@ const syncChip = computed(() => {
     <!-- Popovers (mounted to body by PrimeVue) -->
     <ToastHistoryDialog ref="toastHistoryRef" />
     <SyncStatusPanel ref="syncPanelRef" />
-    <ThinkingProcessPanel ref="thinkingPanelRef" />
 
     <!-- Button refs used by PrimeVue popovers -->
     <Button v-show="false" />
@@ -185,10 +188,20 @@ const syncChip = computed(() => {
   white-space: nowrap;
 }
 
+.tst-leading {
+  display: contents;
+}
+
 .tst-actions {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
+}
+
+.tst-icon-chip {
+  width: 32px;
+  padding: 0;
 }
 
 .tst-chip i {

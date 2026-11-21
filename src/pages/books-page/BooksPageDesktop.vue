@@ -12,8 +12,7 @@ import InputGroupAddon from 'primevue/inputgroupaddon';
 import TieredMenu from 'primevue/tieredmenu';
 import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
-import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
-import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
+import PageHeader from 'src/components/layout/PageHeader.vue';
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import { injectBooksPage } from 'src/composables/books-page/useBooksPage';
 import type { Novel } from 'src/models/novel';
@@ -64,14 +63,15 @@ const onCoverError = (e: Event, book: Novel) => {
 
 <template>
   <div class="desktop-library-page">
-    <DesktopWorkbenchHeader
+    <PageHeader
       :eyebrow="i18nT('libraryUi.library')"
       :title="i18nT('libraryUi.libraryWorkbench')"
       :description="librarySummary"
+      :stats="libraryMetrics"
     >
-      <template #actions>
+      <template #toolbar>
         <div class="books-toolbar">
-          <InputGroup class="search-input-group">
+          <InputGroup class="ui-search search-input-group">
             <InputGroupAddon>
               <i class="pi pi-search text-base" />
             </InputGroupAddon>
@@ -123,11 +123,7 @@ const onCoverError = (e: Event, book: Novel) => {
           </div>
         </div>
       </template>
-
-      <template #metrics>
-        <DesktopWorkbenchMetrics :items="libraryMetrics" />
-      </template>
-    </DesktopWorkbenchHeader>
+    </PageHeader>
 
     <DesktopWorkbenchSurface class="library-canvas" tone="muted" :padded="false">
       <div v-if="isLoadingState" class="library-state">
@@ -293,18 +289,18 @@ const onCoverError = (e: Event, book: Novel) => {
 </template>
 
 <style scoped>
+/* 页头（PageHeader）通栏，内容区自己留边距 */
 .desktop-library-page {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding: 1rem 1.1rem 1.25rem;
 }
 
 .books-toolbar {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 28rem) auto;
+  justify-content: space-between;
   align-items: stretch;
   gap: 0.7rem;
 }
@@ -334,6 +330,7 @@ const onCoverError = (e: Event, book: Novel) => {
 .library-canvas {
   flex: 1;
   min-height: 0;
+  margin: 1rem 1.1rem 1.25rem;
   display: flex;
   flex-direction: column;
 }
@@ -616,8 +613,8 @@ const onCoverError = (e: Event, book: Novel) => {
 }
 
 @media (max-width: 820px) {
-  .desktop-library-page {
-    padding-inline: 0.85rem;
+  .library-canvas {
+    margin-inline: 0.85rem;
   }
 
   .books-toolbar-actions {

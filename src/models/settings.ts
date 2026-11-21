@@ -6,6 +6,13 @@ import type { AppLocale } from './locale';
 
 /** 「通用设置」分区的稳定序号：首次进入设置页（没有保存过分区）时打开它 */
 export const GENERAL_SETTINGS_TAB = 10;
+/** 设置页「嵌入」分区的保存索引（任务中心后台向量化区的「嵌入设置」直接打开这里） */
+export const EMBEDDING_SETTINGS_TAB = 7;
+
+/** 月詠桌宠开关：缺省视为开启 */
+export function isDeskPetEnabled(settings: Pick<AppSettings, 'showDeskPet'> | undefined): boolean {
+  return settings?.showDeskPet !== false;
+}
 
 /**
  * 任务默认模型配置
@@ -116,6 +123,11 @@ export interface AppSettings {
    */
   scraperConcurrencyLimit: number;
   /**
+   * 章节任务队列「最大同时进行任务」（翻译 / 润色 / 校对共享）
+   * 取值 1–5，默认 2；读取时一律经 pickTaskQueueMaxConcurrent 钳制
+   */
+  taskQueueMaxConcurrent?: number;
+  /**
    * 各任务的默认 AI 模型配置
    * 键为任务类型（translation、proofreading、termsTranslation、assistant）
    * 值为模型 ID 或 null（表示未设置）
@@ -197,6 +209,11 @@ export interface AppSettings {
    * 默认值：false（首次启动会自动展示）
    */
   quickStartDismissed?: boolean;
+  /**
+   * 是否在桌面端右下角显示月詠桌宠（转述翻译与助手进度）
+   * 默认值：true（缺省视为开启）
+   */
+  showDeskPet?: boolean;
   /**
    * 记忆注入相关设置
    */

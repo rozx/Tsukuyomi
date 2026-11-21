@@ -17,7 +17,15 @@ import type {
 import type { SyncConfig } from 'src/models/sync';
 import type { DesktopMcpStartConfig } from 'src/models/desktop-mcp';
 import { SyncType } from 'src/models/sync';
-import { DEFAULT_AGENT_MCP_SETTINGS, GENERAL_SETTINGS_TAB } from 'src/models/settings';
+import {
+  DEFAULT_AGENT_MCP_SETTINGS,
+  GENERAL_SETTINGS_TAB,
+  isDeskPetEnabled,
+} from 'src/models/settings';
+import {
+  TASK_QUEUE_MAX_CONCURRENT_DEFAULT,
+  pickTaskQueueMaxConcurrent,
+} from 'src/models/task-queue';
 import { generateAgentMcpToken, normalizeAgentMcpSettings } from 'src/utils/agent-mcp-settings';
 import { stripAgentMcpFromAppSettings } from 'src/utils/sync-strip';
 import { TOMBSTONE_TTL_DAYS } from 'src/models/manifest';
@@ -76,6 +84,7 @@ const DEFAULT_MEMORY_INJECTION: MemoryInjectionSettings = {
 const DEFAULT_SETTINGS: AppSettings = {
   lastEdited: new Date(0), // 使用 epoch 时间，确保远程设置优先
   scraperConcurrencyLimit: 3,
+  taskQueueMaxConcurrent: TASK_QUEUE_MAX_CONCURRENT_DEFAULT,
   taskDefaultModels: {},
   taskDefaultModelsUpdatedAt: {},
   apiKeysUpdatedAt: {},
@@ -192,6 +201,7 @@ function normalizeLoadedSettings(raw: unknown): AppSettings {
         ? ((settings as any).quickStartDismissed as boolean)
         : false,
     memoryInjection: mergedMemoryInjection,
+    taskQueueMaxConcurrent: pickTaskQueueMaxConcurrent(settings.taskQueueMaxConcurrent),
     agentMcp: normalizeAgentMcpSettings(
       (settings as { agentMcp?: Partial<AgentMcpSettings> }).agentMcp,
     ),
@@ -442,6 +452,13 @@ export const useSettingsStore = defineStore('settings', {
     },
 
     /**
+     * 章节任务队列「最大同时进行任务」（已钳制到 1–5）
+     */
+    taskQueueMaxConcurrent: (state): number => {
+      return pickTaskQueueMaxConcurrent(state.settings.taskQueueMaxConcurrent);
+    },
+
+    /**
      * 获取任务的默认模型 ID
      */
     getTaskDefaultModelId: (state) => {
@@ -449,6 +466,9 @@ export const useSettingsStore = defineStore('settings', {
         return state.settings.taskDefaultModels?.[task];
       };
     },
+
+    /** 是否显示桌面端月詠桌宠（缺省开启） */
+    deskPetEnabled: (state): boolean => isDeskPetEnabled(state.settings),
 
     /**
      * 获取最后打开的设置标签页索引
@@ -666,6 +686,20 @@ export const useSettingsStore = defineStore('settings', {
         limit = 10;
       }
       await this.updateSettings({ scraperConcurrencyLimit: limit });
+    },
+
+    /**
+     * 设置是否显示月詠桌宠（仅桌面端）
+     */
+    async setShowDeskPet(show: boolean): Promise<void> {
+      await this.updateSettings({ showDeskPet: show });
+    },
+
+    /**
+     * 设置章节任务队列「最大同时进行任务」（钳制到 1–5 后保存）
+     */
+    async setTaskQueueMaxConcurrent(limit: number): Promise<void> {
+      await this.updateSettings({ taskQueueMaxConcurrent: pickTaskQueueMaxConcurrent(limit) });
     },
 
     /**

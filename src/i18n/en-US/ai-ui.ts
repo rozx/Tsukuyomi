@@ -2,7 +2,6 @@ export default {
   aiUi: {
     models: 'AI models',
     workbench: 'AI model workbench',
-    management: 'AI model management',
     pageHint: 'Manage model connections and default tasks',
     add: 'Add',
     addModel: 'Add AI model',
@@ -55,7 +54,6 @@ export default {
     clearSearch: 'Clear search',
     pageSummary: 'Manage models, task defaults and routing in one place.',
     filteredSummary: 'Showing {count} models. Edit, duplicate or adjust task routing.',
-    managementSummary: 'Manage AI translation models · {total} models, {enabled} enabled',
     byokHint:
       'Use your own API key. Keys are stored on this device and uploaded with models when Gist sync is enabled.',
     byokIndexed:

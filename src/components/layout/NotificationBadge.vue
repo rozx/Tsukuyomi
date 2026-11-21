@@ -1,9 +1,6 @@
 <script setup lang="ts">
 /**
- * 系统栏 / 侧轨通用的右上角通知徽标。
- *
- * 把原先散落在 AppHeader / MobileSysBar / RightPanelRail / TabletSysBar /
- * TabletSideRail 五处、声明完全一致的 `.badge` 样式收敛到这里，消除重复。
+ * 系统栏通用的右上角通知徽标（AppHeader / MobileSysBar / TabletSysBar 共用）。
  * 父级用绝对定位的 relative 容器（按钮）包裹本组件，本组件只负责自身呈现。
  *
  * 内容由默认 slot 传入（如未读数、任务数），样式 / 尺寸 / 颜色保持原值不变。

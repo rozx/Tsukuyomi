@@ -60,6 +60,10 @@ Choose Delete and confirm. It is removed from its volume and cannot be undone.
 
 The dragged chapter becomes translucent; destination rows/lists highlight.
 
+## ☑️ Multi-select and batch start {#book-details-chapters-batch}
+
+Choose "Select" next to the contents heading (on mobile, at the top of the Chapters tab) to enter selection mode. Checkboxes appear before chapters and volumes, each row ends with its translation completion or queue status, and drag ordering and inline edit/delete are hidden. Selected chapters can be translated, polished, or proofread together. Press Esc or ✕ to exit. See [Batch start](/help/book-details-translation#book-details-translation-batch).
+
 ## 📂 Expand/collapse volumes {#book-details-chapters-section-10}
 
 Use the arrow beside a volume title. Expansion state is saved locally per book.

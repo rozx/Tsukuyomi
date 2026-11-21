@@ -10,6 +10,7 @@ import { computed, inject, onMounted, provide, ref, watch, type InjectionKey } f
 import { useRoute, useRouter } from 'vue-router';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { useImportDraftDeletion } from './useImportDraftDeletion';
+import { STEP_SECTION, importStepStates } from './import-steps';
 import {
   ImportPreviewService,
   type ImportChapterPreview,
@@ -69,6 +70,37 @@ function createImportPage() {
   function openTask(taskId: string): void {
     section.value = 'chat';
     void router.push(`/import/${taskId}`);
+  }
+
+  /**
+   * 打开任务时默认停在哪个分区（手机没有对话分区）：按三步流程（来源 → 整理 → 导入）停在当前步。
+   */
+  const landingSection = computed<ImportSection>(() => {
+    const { current } = importStepStates({
+      sourceCount: store.sources.length,
+      taskState: store.task?.state ?? 'draft',
+    });
+    return STEP_SECTION[current];
+  });
+
+  /**
+   * 平板 / 手机：从任务内返回任务列表（桌面任务列表常驻左侧，不需要）。
+   * 从列表打开的任务退回列表那条历史；直接打开的任务页用 replace。都不追加历史，
+   * 否则列表上的返回（leave）会退回刚关闭的任务，而不是进入导入页前的页面。
+   */
+  async function closeTask(): Promise<void> {
+    section.value = 'tasks';
+    if (router.options.history.state.back === '/import') {
+      router.back();
+      return;
+    }
+    await router.replace('/import');
+  }
+
+  /** 手机：离开导入页——有上一页（应用内）时返回，直接打开导入页时回到首页 */
+  function leave(): void {
+    if (router.options.history.state.back) router.back();
+    else void router.push('/');
   }
 
   async function createTask(): Promise<void> {
@@ -168,6 +200,7 @@ function createImportPage() {
     ready,
     routeTaskId,
     section,
+    landingSection,
     draftWindows,
     selectedChapterId,
     preview,
@@ -177,6 +210,8 @@ function createImportPage() {
     sourceText,
     sourceTextError,
     openTask,
+    closeTask,
+    leave,
     createTask,
     deleteTask,
     selectChapter,

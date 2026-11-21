@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
-import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
+import PageHeader from 'src/components/layout/PageHeader.vue';
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import {
   getSettingsPanelComponent,
@@ -36,27 +35,14 @@ const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.val
 
 <template>
   <div class="desktop-settings-page">
-    <nav class="desktop-settings-crumbs" :aria-label="t('settingsUi.page.back')">
-      <button
-        type="button"
-        class="settings-back-chip"
-        :aria-label="t('settingsUi.page.back')"
-        @click="ctx.goBack"
-      >
-        <i class="pi pi-chevron-left" aria-hidden="true" />
-        <span>{{ t('settingsUi.page.back') }}</span>
-      </button>
-    </nav>
-
-    <DesktopWorkbenchHeader
+    <PageHeader
       eyebrow="Settings"
       :title="t('settingsUi.page.workbench')"
       :description="pageSummary"
-    >
-      <template #metrics>
-        <DesktopWorkbenchMetrics :items="settingsMetrics" />
-      </template>
-    </DesktopWorkbenchHeader>
+      :stats="settingsMetrics"
+      :back-label="t('settingsUi.page.back')"
+      @back="ctx.goBack"
+    />
 
     <DesktopWorkbenchSurface class="settings-workbench" tone="muted" :padded="false">
       <aside class="settings-nav">
@@ -81,62 +67,17 @@ const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.val
 </template>
 
 <style scoped>
+/* 页头（PageHeader）通栏，内容区自己留边距 */
 .desktop-settings-page {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
-  padding: 0.85rem 1.1rem 1.25rem;
-}
-
-.desktop-settings-crumbs {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-}
-
-.settings-back-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  height: 22px;
-  padding: 0 0.55rem 0 0.45rem;
-  border-radius: 6px;
-  background: transparent;
-  border: 1px solid var(--white-opacity-8);
-  color: var(--accent-silver);
-  cursor: pointer;
-  font-family:
-    'Noto Sans SC',
-    'PingFang SC',
-    -apple-system,
-    sans-serif;
-  font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  line-height: 1;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.settings-back-chip:hover {
-  background: var(--white-opacity-4);
-  border-color: var(--tsukuyomi-200-opacity-22); /* token: tsukuyomi-200 @ 22% */
-  color: var(--moon-opacity-100);
-}
-
-.settings-back-chip:active {
-  background: var(--white-opacity-6);
-}
-
-.settings-back-chip .pi {
-  font-size: 0.68rem;
-  line-height: 1;
 }
 
 .settings-workbench {
   flex: 1;
   min-height: 0;
+  margin: 1rem 1.1rem 1.25rem;
   display: grid;
   grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr);
   align-items: stretch;
@@ -230,8 +171,8 @@ const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.val
 }
 
 @media (max-width: 820px) {
-  .desktop-settings-page {
-    padding-inline: 0.85rem;
+  .settings-workbench {
+    margin-inline: 0.85rem;
   }
 
   .settings-nav {

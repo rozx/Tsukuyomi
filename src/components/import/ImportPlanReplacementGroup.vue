@@ -173,7 +173,7 @@ const comparable = computed(() =>
   margin: 0 0 0.35rem;
   font-size: 0.72rem;
   font-weight: 600;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
 }
 
 .iprg-para {
@@ -186,6 +186,6 @@ const comparable = computed(() =>
 
 .iprg-para:empty::before {
   content: '⏎';
-  color: rgba(226, 232, 240, 0.3);
+  color: rgba(247, 244, 236, 0.3);
 }
 </style>

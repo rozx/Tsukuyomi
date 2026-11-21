@@ -649,7 +649,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
             {{ selectedTermIds.size }} / {{ terminologies.length }}
           </span>
         </div>
-        <InputGroup v-else class="search-input-group min-w-0 flex-1">
+        <InputGroup v-else class="ui-search search-input-group min-w-0 flex-1">
           <InputGroupAddon>
             <i class="pi pi-search text-base" />
           </InputGroupAddon>

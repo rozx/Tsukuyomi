@@ -21,6 +21,7 @@ import { buildNovelRevertUpdates, buildNovelUpdatesFromFormData } from 'src/util
 import { isConfirmationTextMatch } from 'src/utils/text-utils';
 import { cloneDeep } from 'lodash';
 import { localizedErrorMessage } from 'src/utils/localized-error';
+import { isNavTabEnabled } from 'src/constants/features';
 
 export type BooksPageContext = ReturnType<typeof createBooksPageContext>;
 
@@ -170,6 +171,12 @@ function createBooksPageContext() {
   });
 
   // 分割按钮菜单项
+  /** AI 导入工作台（受回退开关控制）：书库的添加入口，手机上也靠它进入导入页 */
+  const canAiImport = isNavTabEnabled('import');
+  const openAiImport = () => {
+    void router.push('/import');
+  };
+
   const addBookMenuItems = computed(() => [
     {
       label: t('libraryUi.importWeb'),
@@ -181,6 +188,9 @@ function createBooksPageContext() {
       icon: 'pi pi-file-import',
       command: () => importBookFromJson(),
     },
+    ...(canAiImport
+      ? [{ label: t('libraryUi.aiImport'), icon: 'pi pi-sparkles', command: () => openAiImport() }]
+      : []),
   ]);
 
   const filteredBooks = computed(() => {
@@ -564,6 +574,8 @@ function createBooksPageContext() {
     addBook,
     importBookFromWeb,
     importBookFromJson,
+    canAiImport,
+    openAiImport,
     handleFileSelect,
     editBook,
     deleteBook,

@@ -8,8 +8,9 @@ import { useUiStore } from 'src/stores/ui';
 import { useSystemBar } from 'src/composables/layout/useSystemBar';
 import ToastHistoryDialog from 'src/components/dialogs/ToastHistoryDialog.vue';
 import SyncStatusPanel from 'src/components/sync/SyncStatusPanel.vue';
-import ThinkingProcessPanel from 'src/components/ai/ThinkingProcessPanel.vue';
+import TaskCenterChip from 'src/components/task-center/TaskCenterChip.vue';
 import NotificationBadge from 'src/components/layout/NotificationBadge.vue';
+import { useAssistantToggle } from 'src/composables/layout/useAssistantToggle';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 
@@ -21,32 +22,16 @@ const {
   pendingCount,
   syncState,
   nextSyncTime,
-  latestThinkingStatus,
-  thinking,
   toastHistoryRef,
-  thinkingPanelRef,
   syncPanelRef,
   toggleHistory,
-  toggleThinking,
   toggleSync,
 } = useSystemBar();
 
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
-const aiTaskLabel = computed(() =>
-  latestThinkingStatus.value === 'processing'
-    ? i18nT('libraryUi.processing')
-    : i18nT('libraryUi.thinking'),
-);
-
-// 思考态徽章：thinking 时是 pill + 脉冲圆点，否则普通 chip + sparkles 图标。
-// 用一个描述对象驱动单个 <button>，避免模板里 v-if/v-else 分支。
-const thinkingChip = computed(() => ({
-  class: thinking.value ? 'system-bar-chip dsk-chip pill thinking' : 'system-bar-chip dsk-chip',
-  label: thinking.value ? `AI ${aiTaskLabel.value}` : i18nT('libraryUi.aiThinking'),
-  labelClass: thinking.value ? '' : 'dsk-chip-label',
-  showLabel: thinking.value || !isPhone.value,
-}));
+// 月詠助手：桌面导入页的对话常驻停靠，按钮在那里只显示激活态
+const assistant = useAssistantToggle({ importDocked: true });
 
 // 同步态徽章：syncing/changes/ok/pending/default 五种形态，全部收敛进一个描述对象。
 // 模板只做「图标 + 可选标签 + 可选倒计时」的纯渲染，状态判断留在 computed。
@@ -163,20 +148,12 @@ const syncSecondaryLabel = computed<string | null>(() => {
     </div>
 
     <div class="dsk-actions">
-      <!-- AI 思考过程 -->
-      <button
-        type="button"
-        class="system-bar-chip dsk-chip"
-        :class="thinkingChip.class"
-        :aria-label="i18nT('libraryUi.thinkingProcess')"
-        @click="toggleThinking"
-      >
-        <span v-if="thinking" class="dsk-dot" />
-        <i v-else class="pi pi-sparkles" aria-hidden="true" />
-        <span v-if="thinkingChip.showLabel" :class="thinkingChip.labelClass">{{
-          thinkingChip.label
-        }}</span>
-      </button>
+      <!-- 任务中心（合并原「AI 思考」入口） -->
+      <TaskCenterChip
+        chip-class="system-bar-chip dsk-chip"
+        pill-class="pill thinking"
+        :compact="isPhone"
+      />
 
       <!-- 同步状态 -->
       <button
@@ -187,13 +164,29 @@ const syncSecondaryLabel = computed<string | null>(() => {
         @click="toggleSync"
       >
         <i :class="syncChip.icon" aria-hidden="true" />
-        <span v-if="syncChip.showLabel" :class="syncChip.labelClass">{{ syncChip.label }}</span>
+        <span v-if="syncChip.showLabel" class="dsk-chip-text" :class="syncChip.labelClass">
+          {{ syncChip.label }}
+        </span>
         <span v-if="syncChip.meta && !isPhone" class="dsk-chip-meta">
           {{ syncChip.meta }}
         </span>
       </button>
 
       <div class="dsk-sep" />
+
+      <!-- 月詠助手：分隔线之后、通知之前，开关右侧停靠的助手面板 -->
+      <button
+        type="button"
+        class="system-bar-chip dsk-chip"
+        :class="{ active: assistant.active.value }"
+        :aria-label="i18nT('libraryUi.assistantLabel')"
+        :aria-pressed="assistant.active.value"
+        :title="i18nT('libraryUi.assistantLabel')"
+        @click="assistant.toggle"
+      >
+        <i class="pi pi-comments" aria-hidden="true" />
+        <span class="dsk-chip-label dsk-chip-text">{{ i18nT('libraryUi.assistant') }}</span>
+      </button>
 
       <!-- 消息历史 -->
       <button
@@ -211,7 +204,6 @@ const syncSecondaryLabel = computed<string | null>(() => {
 
     <ToastHistoryDialog ref="toastHistoryRef" />
     <SyncStatusPanel ref="syncPanelRef" />
-    <ThinkingProcessPanel ref="thinkingPanelRef" />
     <Button v-show="false" />
   </header>
 </template>
@@ -221,7 +213,8 @@ const syncSecondaryLabel = computed<string | null>(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 20px;
+  /* 左侧 14px：36px 宽的侧栏开关中心落在 32px，与下方 4rem 侧栏的图标对齐 */
+  padding: 8px 20px 8px 14px;
   background: rgba(8, 10, 13, 0.72);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -230,6 +223,8 @@ const syncSecondaryLabel = computed<string | null>(() => {
   position: relative;
   z-index: 20;
   min-height: 44px;
+  /* 窄窗口（Electron 没有最小宽度）按宽度依次收起文字，见文件末尾的容器查询 */
+  container: dsk-sysbar / inline-size;
 }
 
 .dsk-brand {
@@ -298,6 +293,7 @@ const syncSecondaryLabel = computed<string | null>(() => {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .dsk-chip i {
@@ -409,5 +405,34 @@ const syncSecondaryLabel = computed<string | null>(() => {
   height: 16px;
   background: var(--white-opacity-8);
   margin: 0 4px;
+}
+
+/* 窄窗口依次收起：品牌副标题 → 同步倒计时 → 各 chip 文字（任务中心改为只显示数字） */
+@container dsk-sysbar (max-width: 980px) {
+  .dsk-brand-desc {
+    display: none;
+  }
+}
+
+@container dsk-sysbar (max-width: 820px) {
+  .dsk-chip-meta {
+    display: none;
+  }
+}
+
+@container dsk-sysbar (max-width: 680px) {
+  .dsk-chip-text,
+  .dsk-sysbar :deep(.tc-label--wide),
+  .dsk-sysbar :deep(.tc-count) {
+    display: none;
+  }
+
+  .dsk-sysbar :deep(.tc-label--narrow) {
+    display: inline;
+  }
+
+  .dsk-chip.pill {
+    padding: 0 9px;
+  }
 }
 </style>

@@ -74,6 +74,13 @@
   font-size: 12px;
 }
 
+/* 多选模式隐藏 ⋮ 但保留它的占位，行高与右侧标签位置和普通模式一致 */
+.vt-row-more--placeholder,
+.mbd-tree-row-more--placeholder {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* 平板行尾 ⋮ 的 hover 反馈；手机端用 :active + 不同 token，保留在 BookDetailsMobile。 */
 .vt-row-more:hover {
   background: var(--white-opacity-6);

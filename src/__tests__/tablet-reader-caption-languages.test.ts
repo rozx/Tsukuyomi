@@ -24,7 +24,7 @@ describe('平板阅读列标题', () => {
     context.value = {
       book: ref({ targetLanguage: 'zh-CN' }),
       isTabletSidebarOpen: ref(true),
-      activeTranslationTaskCount: ref(0),
+      toggleTabletSidebar: () => undefined,
     };
     const i18n = createI18n({ legacy: false, locale: 'en-US', messages });
     const router = createRouter({
@@ -32,6 +32,8 @@ describe('平板阅读列标题', () => {
       routes: [{ path: '/books/:id', component: { render: () => null } }],
     });
     await router.push('/books/caption-book');
+    // 目录开关渲染进平板顶部信息条的挂载点（由 TabletSysBar 提供）
+    document.body.appendChild(document.createElement('div')).id = 'tablet-sysbar-leading';
     app = createApp({ setup: () => () => h(BookDetailsTablet) });
     app
       .use(createPinia())

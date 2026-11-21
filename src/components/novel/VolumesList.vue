@@ -11,6 +11,8 @@ import {
   canNavigateToChapter,
 } from 'src/components/novel/volumes-list-utils';
 import ChapterListItem from 'src/components/novel/ChapterListItem.vue';
+import ChapterBatchCheck from 'src/components/novel/chapter-batch/ChapterBatchCheck.vue';
+import { useChapterBatchRows } from 'src/composables/book-details/useChapterBatch';
 
 const { t } = useI18n();
 
@@ -56,7 +58,12 @@ const handleToggleVolume = (volumeId: string) => {
   emit('toggle-volume', volumeId);
 };
 
+// 多选模式：点击章节行切换勾选而不是打开章节
+const { selecting, isChecked, volumeCheckState, toggleVolumeSelection, toggleIfSelecting } =
+  useChapterBatchRows();
+
 const handleNavigateToChapter = (chapter: Chapter) => {
+  if (toggleIfSelecting(chapter.id)) return;
   if (!canNavigateToChapter(props, chapter.id)) {
     return;
   }
@@ -160,13 +167,20 @@ const hasVolumes = computed(() => props.volumes.length > 0);
             @keydown.space.prevent="handleToggleVolume(volume.id)"
           >
             <i :class="['pi volume-toggle-icon', volumeToggleIcon(volume.id)]"></i>
-            <i class="pi pi-book volume-icon"></i>
+            <ChapterBatchCheck
+              v-if="selecting"
+              :state="volumeCheckState(volume)"
+              :title="t('taskQueueUi.batch.selectVolume')"
+              @click.stop="toggleVolumeSelection(volume)"
+            />
+            <i v-else class="pi pi-book volume-icon"></i>
             <span class="volume-title">{{ getVolumeDisplayTitle(volume, book) }}</span>
             <span v-if="hasChapters(volume)" class="volume-chapter-count">
               ({{ t('readerUi.chapterCount', { count: chapterCount(volume) }) }})
             </span>
           </div>
           <div
+            v-if="!selecting"
             class="volume-actions"
             :class="{ 'volume-actions-visible': showVolumeActions(volume.id) }"
             @click.stop
@@ -209,6 +223,8 @@ const hasVolumes = computed(() => props.volumes.length > 0);
               :is-loading="isSelectedChapterLoading(chapter.id)"
               :is-drag-over="isChapterDragOver(volume.id, index)"
               :is-dragging="isChapterDragging(chapter.id)"
+              :selecting="selecting"
+              :checked="isChecked(chapter.id)"
               @navigate="handleNavigateToChapter(chapter)"
               @edit="handleEditChapter(chapter)"
               @delete="handleDeleteChapter(chapter)"

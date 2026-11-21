@@ -90,7 +90,7 @@ Terminology, character settings, memories, and chapter search give the AI contex
 
 - **Multi-vector chapter index**: with local embeddings enabled, each chapter gets a native 384-dimension multi-vector index split at paragraph boundaries of about 100 characters, plus a dedicated vector for "chapter title + first paragraph" to support title, series, and topic queries.
 - **`query_chapter` hybrid search**: the AI can search source text across chapters in natural language. Vague plot queries are locally reranked using candidate source paragraphs, while clear matches retain full chunk context. Semantic confidence is then calibrated per chapter and fused with keyword ranks via RRF; results are ranked by `0.85 × semantic + 0.15 × keyword` and weak matches are filtered out. The translate, polish, proofread, and chat assistant prompts all use this tool to pull in earlier context.
-- **Bulk management**: in book details, the **Vector index** panel shows index records, rebuilds and recomputes in bulk, and lets you test queries. See [Local embeddings](public/help/en-US/local-embedding.md).
+- **Bulk management**: the **Background · Embeddings** section of the task center shows queue progress; with a book open you can backfill missing vectors, rebuild the book's chapter embeddings, and test queries. See [Local embeddings](public/help/en-US/local-embedding.md).
 
 ### 💬 AI Chat Assistant
 
