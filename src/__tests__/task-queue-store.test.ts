@@ -163,7 +163,9 @@ describe('任务队列 store · 停止、移出、排序、重试', () => {
     await settle();
     expect(calls.every((c) => c.signal.aborted)).toBe(true);
     expect(store.meta.paused).toBe(true);
-    expect(store.items.filter((i) => i.status === 'queued').map((i) => i.chapterId)).toEqual(['c3']);
+    expect(store.items.filter((i) => i.status === 'queued').map((i) => i.chapterId)).toEqual([
+      'c3',
+    ]);
     expect(store.items.filter((i) => i.status === 'cancelled')).toHaveLength(2);
     expect(notified.filter((n) => n.summary?.includes('已停止'))).toHaveLength(1);
   });
@@ -185,7 +187,9 @@ describe('任务队列 store · 停止、移出、排序、重试', () => {
   it('拖动排序后第 3 位成为下一个被启动的项', async () => {
     const { calls, runner } = controlledRunner();
     const store = await startStore(runner, 1);
-    const { added } = await store.enqueue([req('c1'), req('c2'), req('c3'), req('c4')], { position: 'back' });
+    const { added } = await store.enqueue([req('c1'), req('c2'), req('c3'), req('c4')], {
+      position: 'back',
+    });
     await settle();
     await store.reorder(added[3]!, 0);
     calls[0]!.done.resolve();
@@ -199,7 +203,12 @@ describe('任务队列 store · 停止、移出、排序、重试', () => {
     const runner: TaskQueueRunner = async (item, _signal, ctx) => {
       calls.push(item);
       if (item.chapterId === 'c1' && fail) {
-        await ctx.persistItem({ targetParagraphIds: ['p1', 'p2'], targetLanguage: 'zh-CN', completedParagraphIds: ['p1'], aiTaskIds: [] });
+        await ctx.persistItem({
+          targetParagraphIds: ['p1', 'p2'],
+          targetLanguage: 'zh-CN',
+          completedParagraphIds: ['p1'],
+          aiTaskIds: [],
+        });
         throw new Error('模型错误');
       }
       return { appliedCount: 1, targetCount: 1, actions: [] };
@@ -226,7 +235,9 @@ describe('任务队列 store · 书籍占用与重启准备', () => {
     const runner: TaskQueueRunner = (item) => {
       calls.push(item.chapterId);
       if (item.bookId === 'busy-book' && busy) {
-        return Promise.reject(new CodedLocalizedError('TARGET_BUSY', 'bookUi.execution.busyUnknown'));
+        return Promise.reject(
+          new CodedLocalizedError('TARGET_BUSY', 'bookUi.execution.busyUnknown'),
+        );
       }
       return Promise.resolve({ appliedCount: 1, targetCount: 1, actions: [] });
     };
@@ -305,7 +316,9 @@ describe('任务队列 store · 持久化与恢复', () => {
 describe('任务队列 store · 删除联动', () => {
   it('启动时发现章节已不存在：直接移除该项，不记为失败', async () => {
     const runner: TaskQueueRunner = () =>
-      Promise.reject(new CodedLocalizedError('CHAPTER_MISSING', 'bookUi.chapterTask.chapterChanged'));
+      Promise.reject(
+        new CodedLocalizedError('CHAPTER_MISSING', 'bookUi.chapterTask.chapterChanged'),
+      );
     const store = await startStore(runner, 1);
     const { added } = await store.enqueue([req('gone')], { position: 'back' });
     const result = await store.waitForItem(added[0]!);
@@ -322,10 +335,16 @@ describe('任务队列 store · 删除联动', () => {
       title: 'B',
       createdAt: new Date(0),
       lastEdited: new Date(0),
-      volumes: [{ id: 'v', title: '', chapters: [
-        { id: 'c1', title: '', createdAt: new Date(0), lastEdited: new Date(0) },
-        { id: 'c2', title: '', createdAt: new Date(0), lastEdited: new Date(0) },
-      ] }],
+      volumes: [
+        {
+          id: 'v',
+          title: '',
+          chapters: [
+            { id: 'c1', title: '', createdAt: new Date(0), lastEdited: new Date(0) },
+            { id: 'c2', title: '', createdAt: new Date(0), lastEdited: new Date(0) },
+          ],
+        },
+      ],
     } as never);
     const { runner } = controlledRunner();
     const store = await startStore(runner, 1);
@@ -333,7 +352,12 @@ describe('任务队列 store · 删除联动', () => {
     await store.enqueue([req('c1'), req('c2')], { position: 'back' });
     const book = books.getBookById('b1')!;
     await books.updateBook('b1', {
-      volumes: [{ ...book.volumes![0]!, chapters: book.volumes![0]!.chapters!.filter((c) => c.id !== 'c2') }],
+      volumes: [
+        {
+          ...book.volumes![0]!,
+          chapters: book.volumes![0]!.chapters!.filter((c) => c.id !== 'c2'),
+        },
+      ],
     });
     await settle();
     expect(store.items.map((i) => i.chapterId)).toEqual(['c1']);
@@ -348,9 +372,13 @@ describe('任务队列 store · 删除联动', () => {
       title: 'B',
       createdAt: new Date(0),
       lastEdited: new Date(0),
-      volumes: [{ id: 'v', title: '', chapters: [
-        { id: 'c1', title: '', createdAt: new Date(0), lastEdited: new Date(0) },
-      ] }],
+      volumes: [
+        {
+          id: 'v',
+          title: '',
+          chapters: [{ id: 'c1', title: '', createdAt: new Date(0), lastEdited: new Date(0) }],
+        },
+      ],
     } as never);
     const { calls, runner } = controlledRunner();
     const store = await startStore(runner, 1);
@@ -545,5 +573,60 @@ describe('任务队列 store · 通知节制', () => {
     const { added } = await store.enqueue([req('c1', { origin: 'manual' })], { position: 'front' });
     await store.waitForItem(added[0]!);
     expect(notified.at(-1)?.summary).toBe('无需翻译');
+  });
+});
+
+describe('任务队列 store · 评审修复', () => {
+  it('取得书籍锁后先从存储刷新书籍与本章，再运行（跨标签页改了书籍设置也用最新上下文）', async () => {
+    const order: string[] = [];
+    configureTaskQueue({
+      refreshBook: (bookId: string, chapterId: string) => {
+        order.push(`refresh:${bookId}/${chapterId}`);
+        return Promise.resolve();
+      },
+    });
+    const runner: TaskQueueRunner = (item) => {
+      order.push(`run:${item.chapterId}`);
+      return Promise.resolve({ appliedCount: 1, targetCount: 1, actions: [] });
+    };
+    const store = await startStore(runner, 1);
+    const { added } = await store.enqueue([req('c1', { origin: 'manual' })], { position: 'back' });
+    await store.waitForItem(added[0]!);
+    expect(order).toEqual(['refresh:b1/c1', 'run:c1']);
+    expect(store.items[0]?.status).toBe('done');
+  });
+
+  it('调度时内存中的暂停状态已过期（另一标签页刚暂停）：启动事务里重新检查，不再启动新项', async () => {
+    const { calls, runner } = controlledRunner();
+    const store = await startStore(runner, 2);
+    await store.pause();
+    await store.enqueue([req('c1'), req('c2')], { position: 'back' });
+    await settle();
+    expect(calls).toHaveLength(0);
+    // 模拟暂停已写入存储、但本执行者手里的快照还没更新
+    store.meta = { paused: false };
+    await store.schedule();
+    await settle();
+    expect(calls).toHaveLength(0);
+    expect(store.items.every((item) => item.status === 'queued')).toBe(true);
+    expect(store.meta.paused).toBe(true);
+  });
+
+  it('批量结束项超过历史保留上限时，汇总仍按整轮结果统计，汇总后再裁剪历史', async () => {
+    configureTaskQueue({ finishedLimit: 2 });
+    const runner: TaskQueueRunner = (item) =>
+      item.chapterId === 'c1'
+        ? Promise.reject(new Error('模型错误'))
+        : Promise.resolve({ appliedCount: 1, targetCount: 1, actions: [] });
+    const store = await startStore(runner, 1);
+    const { added } = await store.enqueue([req('c1'), req('c2'), req('c3'), req('c4')], {
+      position: 'back',
+    });
+    for (const id of added) await store.waitForItem(id);
+    await settle();
+    expect(notified).toHaveLength(1);
+    expect(notified[0]?.summary).toBe('批量任务已结束');
+    expect(notified[0]?.detail).toBe('3 完成 · 1 失败 · 0 已取消');
+    expect(store.finishedItems.length).toBeLessThanOrEqual(2);
   });
 });

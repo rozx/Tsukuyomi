@@ -40,7 +40,12 @@ const setSheetVisible = (open: boolean) => {
 onMounted(() => {
   center.registerOpener(() => setSheetVisible(!sheetVisible.value));
 });
-onUnmounted(() => center.registerOpener(null));
+onUnmounted(() => {
+  center.registerOpener(null);
+  // 断点切换卸载本变体时抽屉随之消失，但不会发出关闭事件：清掉共享的打开标记，
+  // 否则桌宠、center.open() 与向量化区都会以为任务中心还在屏幕上
+  center.setOpen(false);
+});
 </script>
 
 <template>

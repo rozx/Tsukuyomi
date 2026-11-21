@@ -80,13 +80,21 @@ interface TaskQueueConfig {
   restartPending: () => boolean;
   /** 是否监听书库变化以清理被删除章节的队列项 */
   watchLibrary: boolean;
+  /**
+   * 取得书籍锁后、运行前从存储刷新书籍与本章：其他标签页可能改了目标语言等书籍设置
+   * （普通书籍编辑不经队列广播），执行者手里的 Pinia 副本与章节缓存可能已过期
+   */
+  refreshBook: (bookId: string, chapterId: string) => Promise<unknown>;
+  /** 已结束项的历史保留上限 */
+  finishedLimit: number;
   now: () => number;
 }
 
 function globalToast(message: ToastMessageWithHistoryOptions): void {
   if (typeof window === 'undefined') return;
-  const bridge = (window as unknown as { __lunaToast?: (m: ToastMessageWithHistoryOptions) => void })
-    .__lunaToast;
+  const bridge = (
+    window as unknown as { __lunaToast?: (m: ToastMessageWithHistoryOptions) => void }
+  ).__lunaToast;
   // 没有界面 toast 时（壳层未挂载）至少写入消息历史
   if (bridge) bridge(message);
   else recordToastInHistory(message);
@@ -102,6 +110,8 @@ function defaultConfig(): TaskQueueConfig {
     record: (message) => recordToastInHistory(message),
     restartPending: () => desktopRestartGuard.isRestartPending(),
     watchLibrary: true,
+    refreshBook: (bookId, chapterId) => useBooksStore().refreshBookFromStorage(bookId, chapterId),
+    finishedLimit: TASK_QUEUE_FINISHED_LIMIT,
     now: () => Date.now(),
   };
 }
@@ -371,7 +381,8 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
   async function dropMissingChapters(existing: Set<string>): Promise<void> {
     const missing = items.value.filter(
       (item) =>
-        isTaskQueueItemPending(item.status) && !existing.has(`${item.bookId}\u0000${item.chapterId}`),
+        isTaskQueueItemPending(item.status) &&
+        !existing.has(`${item.bookId}\u0000${item.chapterId}`),
     );
     if (missing.length === 0) return;
     await mutate((snapshot) => {
@@ -433,7 +444,14 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
   async function launch(itemId: string): Promise<void> {
     const started = await mutate((snapshot) => {
       const current = snapshot.items.find((item) => item.id === itemId);
-      if (!current || current.status !== 'queued' || current.cancelRequested) {
+      // 选取 picks 用的是调度开始时的快照：期间（含其他标签页）暂停或全部停止已提交时，
+      // 在把条目改为运行中的同一事务里按最新状态放弃启动
+      if (
+        !current ||
+        current.status !== 'queued' ||
+        current.cancelRequested ||
+        snapshot.meta.paused
+      ) {
         return { result: null };
       }
       const next: TaskQueueItem = {
@@ -482,9 +500,11 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
     };
     let outcome: RunOutcome;
     try {
-      const result = await BookExecutionGuard.write(item.bookId, ownerFor(item), () =>
-        config.runItem(item, controller.signal, ctx),
-      );
+      const result = await BookExecutionGuard.write(item.bookId, ownerFor(item), async () => {
+        // 取得书籍锁后再读最新的书籍与本章，执行器据此解析目标语言、模型与段落范围
+        await config.refreshBook(item.bookId, item.chapterId);
+        return config.runItem(item, controller.signal, ctx);
+      });
       outcome = controller.signal.aborted
         ? { status: 'cancelled', error: undefined }
         : { status: 'done', result };
@@ -550,9 +570,11 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
         };
       }
       const all = snapshot.items.map((entry) => (entry.id === next.id ? next : entry));
+      // 本轮批量汇总前保留它的结束项，历史裁剪不能改变汇总的完成 / 失败数（汇总后再裁剪）
+      const prunable = all.filter((entry) => !inCurrentBatch(entry));
       return {
         put: [next],
-        remove: pruneFinished(all, TASK_QUEUE_FINISHED_LIMIT),
+        remove: pruneFinished(prunable, config.finishedLimit),
         result: next,
       };
     });
@@ -586,6 +608,20 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
     maybeSummarizeBatch();
   }
 
+  /** 是否属于尚未汇总的这一轮批量 */
+  function inCurrentBatch(item: TaskQueueItem): boolean {
+    return batchSince !== null && item.origin === 'batch' && item.enqueuedAt >= batchSince;
+  }
+
+  /** 已结束项超过保留上限时裁掉最早结束的（汇总后补做本轮保留下来的部分） */
+  function pruneHistory(): void {
+    if (pruneFinished(items.value, config.finishedLimit).length === 0) return;
+    void mutate((snapshot) => ({
+      remove: pruneFinished(snapshot.items, config.finishedLimit),
+      result: null,
+    })).catch(() => undefined);
+  }
+
   /** 队列不再有待处理项时，按持久化的结果汇总这一轮批量（含刷新前已结束的项） */
   function maybeSummarizeBatch(): void {
     if (!isExecutor.value || batchSince === null) return;
@@ -599,6 +635,7 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
       else if (item.status === 'failed') stats.failed += 1;
       else if (item.status === 'cancelled') stats.cancelled += 1;
     }
+    pruneHistory();
     // 剩余批量项都被移出、一项也没结束时不提示
     if (stats.done + stats.failed + stats.cancelled === 0) return;
     config.notify(batchSummaryToast(stats, uiLocale()));

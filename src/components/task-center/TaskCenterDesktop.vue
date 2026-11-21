@@ -140,6 +140,8 @@ watchEffect(() => center.setPinnedPanelShown(center.pinned.value && !center.coll
 
 onUnmounted(() => {
   center.setPinnedPanelShown(false);
+  // 断点切换卸载本变体时弹出层随之消失，PrimeVue 不会再发出 hide：同步清掉打开标记
+  center.setOpen(false);
   window.removeEventListener('resize', onWindowResize);
   moveDrag.cancel();
   resizeDrag.cancel();
