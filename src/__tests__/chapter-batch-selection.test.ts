@@ -115,6 +115,22 @@ describe('createChapterCompletionStats', () => {
     expect(load).toHaveBeenCalledWith(['c2']);
   });
 
+  it('按段落计数判断完成：200 段译了 199 段显示四舍五入的 100%，但不算完成', () => {
+    setActivePinia(createPinia());
+    const book = ref<Novel | undefined>(novel([volume('v1', ['c1', 'c2', 'c3'])]));
+    const seed = new Map([
+      ['c1', { total: 200, translated: 199 }],
+      ['c2', { total: 200, translated: 200 }],
+      ['c3', { total: 0, translated: 0 }],
+    ]);
+    const stats = createChapterCompletionStats(book, { seed: () => seed });
+    expect(stats.percent('c1')).toBe(100);
+    expect(stats.isComplete('c1')).toBe(false);
+    expect(stats.isComplete('c2')).toBe(true);
+    expect(stats.isComplete('c3')).toBe(true);
+    expect(stats.isComplete('missing')).toBe(false);
+  });
+
   it('写入后即使页面进度已有该章也重新计算', async () => {
     setActivePinia(createPinia());
     const book = ref<Novel | undefined>(novel([volume('v1', ['c1'])]));

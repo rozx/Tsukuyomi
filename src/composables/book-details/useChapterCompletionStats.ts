@@ -52,14 +52,18 @@ export function createChapterCompletionStats(
   /** 计算尚未缓存的章节 */
   const ensure = (chapterIds: string[]) => refresh(chapterIds.filter((id) => !lookup(id)));
 
-  /** 百分比；尚未计算返回 null */
+  /** 百分比（四舍五入，只用于显示，与普通目录的完成度标签一致）；尚未计算返回 null */
   const percent = (chapterId: string): number | null => {
     const value = lookup(chapterId);
     if (!value) return null;
     if (value.total === 0) return 100;
     return Math.round((value.translated / value.total) * 100);
   };
-  const isComplete = (chapterId: string) => percent(chapterId) === 100;
+  /** 按段落计数判断：200 段译了 199 段会显示 100%，但仍有未译段落，不算完成 */
+  const isComplete = (chapterId: string) => {
+    const value = lookup(chapterId);
+    return value !== undefined && value.translated >= value.total;
+  };
   const hasTranslation = (chapterId: string) => (lookup(chapterId)?.translated ?? 0) > 0;
 
   const queue = useTaskQueueStore();
