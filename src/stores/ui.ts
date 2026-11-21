@@ -48,11 +48,28 @@ function parseTaskCenterPosition(value: unknown): TaskCenterPosition | null {
   return { x, y };
 }
 
+/** 任务中心固定面板的尺寸（单位 px）；为空时用默认尺寸 */
+export interface TaskCenterSize {
+  width: number;
+  height: number;
+}
+
+function parseTaskCenterSize(value: unknown): TaskCenterSize | null {
+  if (!value || typeof value !== 'object') return null;
+  const { width, height } = value as { width?: unknown; height?: unknown };
+  if (typeof width !== 'number' || typeof height !== 'number') return null;
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  return { width, height };
+}
+
 /** 跨刷新保留的任务中心界面状态 */
 interface TaskCenterUiState {
   taskCenterPinned: boolean;
   taskCenterCollapsed: boolean;
   taskCenterPosition: TaskCenterPosition | null;
+  taskCenterSize: TaskCenterSize | null;
   taskCenterExpandedId: string | null;
   taskCenterOtherCollapsed: boolean;
 }
@@ -61,6 +78,7 @@ const DEFAULT_TASK_CENTER_UI_STATE: TaskCenterUiState = {
   taskCenterPinned: false,
   taskCenterCollapsed: false,
   taskCenterPosition: null,
+  taskCenterSize: null,
   taskCenterExpandedId: null,
   taskCenterOtherCollapsed: false,
 };
@@ -71,6 +89,7 @@ function parseTaskCenterUiState(state: Record<string, unknown>): TaskCenterUiSta
     taskCenterPinned: pinned,
     taskCenterCollapsed: pinned && state.taskCenterCollapsed === true,
     taskCenterPosition: parseTaskCenterPosition(state.taskCenterPosition),
+    taskCenterSize: parseTaskCenterSize(state.taskCenterSize),
     taskCenterExpandedId:
       typeof state.taskCenterExpandedId === 'string' ? state.taskCenterExpandedId : null,
     taskCenterOtherCollapsed: state.taskCenterOtherCollapsed === true,
@@ -121,14 +140,16 @@ function loadUiStateFromStorage(): {
 /**
  * 保存 UI 状态到 localStorage
  */
-function saveUiStateToStorage(state: {
-  sideMenuOpen: boolean;
-  rightPanelOpen: boolean;
-  rightPanelWidth: number;
-  bookWorkspaceMode: BookWorkspaceMode;
-  bookSettingsMenuExpanded: boolean;
-  activeRightTab: ActiveRightTab;
-} & TaskCenterUiState): void {
+function saveUiStateToStorage(
+  state: {
+    sideMenuOpen: boolean;
+    rightPanelOpen: boolean;
+    rightPanelWidth: number;
+    bookWorkspaceMode: BookWorkspaceMode;
+    bookSettingsMenuExpanded: boolean;
+    activeRightTab: ActiveRightTab;
+  } & TaskCenterUiState,
+): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (error) {
@@ -186,6 +207,7 @@ export const useUiStore = defineStore('ui', {
       this.taskCenterPinned = state.taskCenterPinned;
       this.taskCenterCollapsed = state.taskCenterCollapsed;
       this.taskCenterPosition = state.taskCenterPosition;
+      this.taskCenterSize = state.taskCenterSize;
       this.taskCenterExpandedId = state.taskCenterExpandedId;
       this.taskCenterOtherCollapsed = state.taskCenterOtherCollapsed;
       this.isLoaded = true;
@@ -234,6 +256,7 @@ export const useUiStore = defineStore('ui', {
         taskCenterPinned: this.taskCenterPinned,
         taskCenterCollapsed: this.taskCenterCollapsed,
         taskCenterPosition: this.taskCenterPosition,
+        taskCenterSize: this.taskCenterSize,
         taskCenterExpandedId: this.taskCenterExpandedId,
         taskCenterOtherCollapsed: this.taskCenterOtherCollapsed,
       });
@@ -264,7 +287,12 @@ export const useUiStore = defineStore('ui', {
       this.taskCenterPosition = position ? { x: position.x, y: position.y } : null;
       this.saveState();
     },
-    /** 任务中心当前展开的行（队列项或 AI 任务 ID），同一时间最多一行 */
+    /** 固定面板尺寸（用户拖动缩放后保存） */
+    setTaskCenterSize(size: TaskCenterSize | null) {
+      this.taskCenterSize = size ? { width: size.width, height: size.height } : null;
+      this.saveState();
+    },
+    /** 任务中心当前打开详情的任务（队列项或 AI 任务 ID），同一时间最多一个 */
     setTaskCenterExpandedId(id: string | null) {
       this.taskCenterExpandedId = id;
       this.saveState();

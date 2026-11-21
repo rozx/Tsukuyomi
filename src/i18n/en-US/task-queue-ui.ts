@@ -57,10 +57,10 @@ export default {
     empty: 'No tasks running',
     emptyHint:
       'Start a translation from the reader, or select chapters in the chapter list to start several',
-    sectionRunning: 'Running · {count}',
-    sectionQueued: 'Queued · {count}',
-    sectionFinished: 'Finished · {count}',
-    sectionOther: 'Other AI activity · {count}',
+    sectionRunning: 'Running',
+    sectionQueued: 'Queued',
+    sectionFinished: 'Finished',
+    sectionOther: 'Other AI activity',
     pausedRestored:
       'The queue is paused. Tasks unfinished before the reload or restart continue where they stopped',
     pausedUser: 'The queue is paused',
@@ -82,6 +82,10 @@ export default {
     dragToReorder: 'Drag to reorder',
     remoteDetail: 'Details are shown in the other tab',
     logCleared: 'The detailed log was cleared',
+    detailTitle: 'Task details',
+    backToList: 'Back to task list',
+    detailQueued: 'This task has not started yet. Its live log will appear here once it starts.',
+    resize: 'Drag to resize',
     paragraphs: '{current}/{total} paragraphs',
     mode: {
       continue: 'Continue translation',

@@ -34,7 +34,7 @@ From left to right:
   - While chapter tasks run, it shows the running count and an overall progress bar. When items are also queued, it shows running and queued counts with a segmented bar (done / running / not started).
   - When only other AI activity, such as an assistant chat, is running, it shows "AI working" with a pulsing dot. While the queue is paused it shows "Paused · N queued". After a batch ends, it shows done and failed counts until you open the task center or clear finished items.
   - When a new task starts, the chip only flashes; the task center does not open by itself.
-  - Click to open the task center. Chapter tasks are grouped into "Running" / "Queued" / "Finished". Expand a task to see thinking, tool calls, and output; stop, retry, drag to reorder, or pause and resume the queue. "Other AI activity" below lists assistant chats, single-paragraph tasks, and similar items. The task center can be pinned as a floating panel or collapsed into a mini progress bar. See [Task queue and task center](/help/book-details-translation#book-details-translation-section-9).
+  - Click to open the task center. Chapter tasks are grouped into "Running" / "Queued" / "Finished". Click a task to see its details (thinking, tool calls, and output); stop, retry, drag to reorder, or pause and resume the queue. "Other AI activity" below lists assistant chats, single-paragraph tasks, and similar items. The task center can be pinned as a floating panel that you can move and resize, or collapsed into a mini progress bar. See [Task queue and task center](/help/book-details-translation#book-details-translation-section-9).
 - **Sync status**:
 
 | State    | Display                 | Meaning                                                              |
@@ -194,7 +194,7 @@ A: It appears only on `/books/:id` and subroutes when local embeddings are actua
 A: Check the Gist configuration, network, and token permissions. Open message history for the error.
 
 **Q: Where did the old "AI thinking" and "Translation progress" entries go?**
-A: Both are merged into the task center ("Tasks") in the top bar. Expand a chapter task there to see its progress, thinking, and output. Assistant chats, single-paragraph tasks, and similar items are under "Other AI activity" at the bottom of the task center.
+A: Both are merged into the task center ("Tasks") in the top bar. Click a chapter task there to see its progress, thinking, and output. Assistant chats, single-paragraph tasks, and similar items are under "Other AI activity" at the bottom of the task center.
 
 **Q: Why is the task center empty?**
 A: There may be no task records, or they were cleared. Any translation, polishing, or proofreading task appears here.

@@ -65,6 +65,30 @@ describe('ui store · 任务中心状态', () => {
     expect(store.taskCenterPosition).toBeNull();
   });
 
+  it('固定面板尺寸默认为空，设置后刷新恢复', () => {
+    const store = useUiStore();
+    store.loadState();
+    expect(store.taskCenterSize).toBeNull();
+    store.setTaskCenterSize({ width: 520, height: 640 });
+
+    const restored = reload();
+    expect(restored.taskCenterSize).toEqual({ width: 520, height: 640 });
+    restored.setTaskCenterSize(null);
+    expect(reload().taskCenterSize).toBeNull();
+  });
+
+  it('存储中的尺寸不是有效正数时忽略', () => {
+    for (const taskCenterSize of [
+      { width: 'a', height: 400 },
+      { width: 400, height: -1 },
+      null,
+      3,
+    ]) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ taskCenterSize }));
+      expect(reload().taskCenterSize).toBeNull();
+    }
+  });
+
   it('切换到手机断点不改变固定状态', () => {
     const store = useUiStore();
     store.loadState();

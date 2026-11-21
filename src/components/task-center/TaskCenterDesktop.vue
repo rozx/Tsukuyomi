@@ -1,90 +1,109 @@
 <script setup lang="ts">
 /**
  * 桌面任务中心：
- * - 未固定：点击 chip 打开 PrimeVue Popover，点外部关闭
- * - 固定：悬浮面板，点外部不关闭，可拖动标题区移动（位置限制在视口内并持久化），
- *   可收起成迷你进度条；导航与断点切换后保持（挂在 MainLayout dispatcher 上）
+ * - 未固定：点击 chip 打开 PrimeVue Popover，点外部关闭（关闭时回到列表）
+ * - 固定：悬浮面板，点外部不关闭；拖动标题区移动、拖动右边 / 下边 / 右下角缩放，
+ *   位置与尺寸限制在视口内并持久化；可收起成迷你进度条；导航与断点切换后保持（挂在 MainLayout dispatcher 上）
  */
 import { useAnchoredPopover } from 'src/composables/useAnchoredPopover';
+import { usePointerDrag } from 'src/composables/usePointerDrag';
+import {
+  clampPanelPosition,
+  clampPanelSize,
+  defaultPanelPosition,
+  defaultPanelSize,
+  displayPanelBox,
+  PINNED_MINI_SIZE,
+} from 'src/composables/task-center/pinned-panel-geometry';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import Popover from 'primevue/popover';
 import { injectTaskCenter } from 'src/composables/task-center/useTaskCenter';
 import TaskCenterBody from './TaskCenterBody.vue';
 import TaskCenterMiniBar from './TaskCenterMiniBar.vue';
 
+const { t } = useI18n();
 const center = injectTaskCenter();
 const popoverRef = ref<InstanceType<typeof Popover> | null>(null);
-const panelRef = ref<HTMLElement | null>(null);
 
-const PANEL_WIDTH = 400;
-const MARGIN = 8;
-
-const defaultPosition = () => ({
-  x: Math.max(MARGIN, window.innerWidth - PANEL_WIDTH - 16),
-  y: 56,
-});
-
-/** 把位置限制在视口内 */
-const clamp = (pos: { x: number; y: number }) => {
-  const rect = panelRef.value?.getBoundingClientRect();
-  const width = rect?.width ?? PANEL_WIDTH;
-  const height = rect?.height ?? 48;
-  return {
-    x: Math.min(Math.max(MARGIN, pos.x), Math.max(MARGIN, window.innerWidth - width - MARGIN)),
-    y: Math.min(Math.max(MARGIN, pos.y), Math.max(MARGIN, window.innerHeight - height - MARGIN)),
-  };
+const readViewport = () => ({ width: window.innerWidth, height: window.innerHeight });
+/** 视口尺寸（响应式）：面板显示时按它适配，保存的位置与尺寸不随窗口变化而改写 */
+const viewportSize = ref(readViewport());
+const viewport = () => viewportSize.value;
+const onWindowResize = () => {
+  viewportSize.value = readViewport();
 };
 
+/** 拖动 / 缩放过程中的实时位置与尺寸；松开时才写入 store（避免每帧写 localStorage） */
 const livePosition = ref<{ x: number; y: number } | null>(null);
-const panelStyle = computed(() => {
-  const pos = livePosition.value ?? center.position.value ?? defaultPosition();
-  return { left: `${pos.x}px`, top: `${pos.y}px`, width: `${PANEL_WIDTH}px` };
+const liveSize = ref<{ width: number; height: number } | null>(null);
+
+/** 实际显示的位置与尺寸：保存值（或默认值）适配当前视口 */
+const shownBox = computed(() => {
+  const size = liveSize.value ?? center.size.value ?? defaultPanelSize(viewport());
+  const pos = livePosition.value ?? center.position.value ?? defaultPanelPosition(size, viewport());
+  return displayPanelBox({ ...pos, ...size }, viewport(), center.collapsed.value);
 });
+const currentPosition = () => ({ x: shownBox.value.x, y: shownBox.value.y });
+const currentSize = () => ({ width: shownBox.value.width, height: shownBox.value.height });
 
-let dragOffset: { dx: number; dy: number; startX: number; startY: number } | null = null;
-/** 本次按下后是否真的拖动过；拖动结束时紧接着的 click 不算展开 */
+const panelStyle = computed(() => ({
+  left: `${shownBox.value.x}px`,
+  top: `${shownBox.value.y}px`,
+  width: `${shownBox.value.width}px`,
+  height: `${shownBox.value.height}px`,
+}));
+
+// ---------- 拖动标题区移动 ----------
+let moveOrigin = { x: 0, y: 0 };
+/** 本次按下后是否真的拖动过；拖动结束时紧接着的 click 不算展开迷你条 */
 let dragged = false;
-const DRAG_THRESHOLD = 4;
-const onDragMove = (event: PointerEvent) => {
-  if (!dragOffset) return;
-  if (
-    !dragged &&
-    Math.hypot(event.clientX - dragOffset.startX, event.clientY - dragOffset.startY) <
-      DRAG_THRESHOLD
-  ) {
-    return;
-  }
-  dragged = true;
-  livePosition.value = clamp({
-    x: event.clientX - dragOffset.dx,
-    y: event.clientY - dragOffset.dy,
-  });
-};
-const onDragEnd = () => {
-  if (!dragOffset) return;
-  dragOffset = null;
-  window.removeEventListener('pointermove', onDragMove);
-  window.removeEventListener('pointerup', onDragEnd);
-  if (livePosition.value) center.setPosition(livePosition.value);
-  livePosition.value = null;
-};
+const moveDrag = usePointerDrag({
+  onMove: ({ dx, dy }) => {
+    livePosition.value = clampPanelPosition(
+      { x: moveOrigin.x + dx, y: moveOrigin.y + dy },
+      center.collapsed.value ? PINNED_MINI_SIZE : currentSize(),
+      viewport(),
+    );
+  },
+  onEnd: (moved) => {
+    dragged = moved;
+    if (livePosition.value) center.setPosition(livePosition.value);
+    livePosition.value = null;
+  },
+});
 const onDragStart = (event: PointerEvent) => {
-  if (event.button !== 0) return;
-  const rect = panelRef.value?.getBoundingClientRect();
-  if (!rect) return;
-  dragged = false;
-  dragOffset = {
-    dx: event.clientX - rect.left,
-    dy: event.clientY - rect.top,
-    startX: event.clientX,
-    startY: event.clientY,
-  };
-  window.addEventListener('pointermove', onDragMove);
-  window.addEventListener('pointerup', onDragEnd);
+  moveOrigin = currentPosition();
+  moveDrag.begin(event);
 };
 
-const onResize = () => {
-  if (center.position.value) center.setPosition(clamp(center.position.value));
+// ---------- 拖动边缘缩放 ----------
+type ResizeEdge = 'right' | 'bottom' | 'corner';
+let resizeEdge: ResizeEdge = 'corner';
+let resizeOrigin = { width: 0, height: 0 };
+const resizeDrag = usePointerDrag({
+  threshold: 1,
+  onMove: ({ dx, dy }) => {
+    liveSize.value = clampPanelSize(
+      {
+        width: resizeOrigin.width + (resizeEdge === 'bottom' ? 0 : dx),
+        height: resizeOrigin.height + (resizeEdge === 'right' ? 0 : dy),
+      },
+      currentPosition(),
+      viewport(),
+    );
+  },
+  onEnd: () => {
+    if (liveSize.value) center.setSize(liveSize.value);
+    liveSize.value = null;
+  },
+});
+const onResizeStart = (edge: ResizeEdge, event: PointerEvent) => {
+  // 没有保存过位置时默认贴右侧，加宽会让左边移动；显示位置被视口推挤过时也以显示位置为准
+  center.setPosition(currentPosition());
+  resizeEdge = edge;
+  resizeOrigin = currentSize();
+  resizeDrag.begin(event);
 };
 
 const expandFromMini = () => {
@@ -96,13 +115,13 @@ const expandFromMini = () => {
 };
 
 const pin = () => {
-  popoverRef.value?.hide();
   center.setPinned(true);
+  popoverRef.value?.hide();
 };
 const unpin = () => center.setPinned(false);
 
 onMounted(() => {
-  window.addEventListener('resize', onResize);
+  window.addEventListener('resize', onWindowResize);
   center.registerOpener((event) => {
     if (center.pinned.value) {
       center.setCollapsed(!center.collapsed.value);
@@ -115,16 +134,22 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  window.removeEventListener('resize', onResize);
-  onDragEnd();
+  window.removeEventListener('resize', onWindowResize);
+  moveDrag.cancel();
+  resizeDrag.cancel();
   center.registerOpener(null);
 });
 
-// 弹层箭头对准 chip（PrimeVue 默认会偏到 chip 左侧）
+// 弹层箭头对准 chip（PrimeVue 默认会偏到 chip 左侧）；详情视图用按钮下方能放下的高度
 const anchored = useAnchoredPopover({ containerClass: 'tc-popover', max: 600 });
 const onPopoverShow = () => {
   center.setOpen(true);
   anchored.centerArrow();
+};
+/** popover 是概览入口：关闭后再次打开回到列表（固定面板保留当前详情） */
+const onPopoverHide = () => {
+  center.setOpen(false);
+  if (!center.pinned.value) center.closeDetail();
 };
 </script>
 
@@ -134,15 +159,14 @@ const onPopoverShow = () => {
     class="anchored-popover header-popover tc-popover"
     :dismissable="true"
     @show="onPopoverShow"
-    @hide="center.setOpen(false)"
+    @hide="onPopoverHide"
   >
-    <TaskCenterBody mode="popover" @pin="pin" />
+    <TaskCenterBody mode="popover" :detail-height="anchored.height.value" @pin="pin" />
   </Popover>
 
   <Teleport to="body">
     <div
       v-if="center.pinned.value"
-      ref="panelRef"
       class="tc-pinned"
       :class="{ 'tc-pinned--collapsed': center.collapsed.value }"
       :style="panelStyle"
@@ -154,13 +178,31 @@ const onPopoverShow = () => {
         @expand="expandFromMini"
         @drag-start="onDragStart"
       />
-      <TaskCenterBody
-        v-else
-        mode="pinned"
-        @unpin="unpin"
-        @collapse="center.setCollapsed(true)"
-        @drag-start="onDragStart"
-      />
+      <template v-else>
+        <TaskCenterBody
+          mode="pinned"
+          @unpin="unpin"
+          @collapse="center.setCollapsed(true)"
+          @drag-start="onDragStart"
+        />
+        <!-- 缩放手柄：右边、下边、右下角 -->
+        <div
+          class="tc-resize tc-resize--right"
+          aria-hidden="true"
+          @pointerdown.prevent="onResizeStart('right', $event)"
+        />
+        <div
+          class="tc-resize tc-resize--bottom"
+          aria-hidden="true"
+          @pointerdown.prevent="onResizeStart('bottom', $event)"
+        />
+        <div
+          class="tc-resize tc-resize--corner"
+          :title="t('taskQueueUi.resize')"
+          aria-hidden="true"
+          @pointerdown.prevent="onResizeStart('corner', $event)"
+        />
+      </template>
     </div>
   </Teleport>
 </template>
@@ -180,7 +222,54 @@ const onPopoverShow = () => {
   overflow: hidden;
 }
 
+/* 收起成迷你条：宽度固定、高度随内容 */
 .tc-pinned--collapsed {
   width: 280px !important;
+  height: auto !important;
+}
+
+.tc-resize {
+  position: absolute;
+  z-index: 3;
+  touch-action: none;
+}
+
+.tc-resize--right {
+  top: 12px;
+  right: 0;
+  bottom: 12px;
+  /* 窄一些：不挡住列表滚动条 */
+  width: 4px;
+  cursor: ew-resize;
+}
+
+.tc-resize--bottom {
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 4px;
+  cursor: ns-resize;
+}
+
+/* 右下角：可见的斜线手柄 */
+.tc-resize--corner {
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  background: linear-gradient(
+    135deg,
+    transparent 0 55%,
+    var(--moon-opacity-40) 55% 61%,
+    transparent 61% 72%,
+    var(--moon-opacity-40) 72% 78%,
+    transparent 78%
+  );
+  opacity: 0.7;
+}
+
+.tc-resize--corner:hover {
+  opacity: 1;
 }
 </style>

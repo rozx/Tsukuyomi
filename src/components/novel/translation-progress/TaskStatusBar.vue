@@ -65,7 +65,7 @@ const hasProgress = computed(() => progress.value && progress.value.total > 0);
 
 <style scoped>
 .status-bar {
-  padding: 14px 16px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--white-opacity-5);
   flex-shrink: 0;
 }

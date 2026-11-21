@@ -1,33 +1,24 @@
 <script setup lang="ts">
 /**
- * 任务中心中的一个章节任务行：标题、进度、行级操作，点击标题行展开详细过程。
+ * 任务中心中的一个章节任务行：标题、进度、行级操作；点击行打开该任务的详情视图。
  * 排队中的行可拖动调整顺序。
  */
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import {
-  injectTaskCenter,
-  type TaskCenterRow,
-} from 'src/composables/task-center/useTaskCenter';
-import TaskCenterTaskDetail from './TaskCenterTaskDetail.vue';
+import { injectTaskCenter, type TaskCenterRow } from 'src/composables/task-center/useTaskCenter';
 
-const props = defineProps<{
-  row: TaskCenterRow;
-  /** 手机抽屉：点击行打开全屏详情，不在行内展开 */
-  openDetailExternally?: boolean;
-}>();
-const emit = defineEmits<{ openDetail: [row: TaskCenterRow] }>();
+const props = defineProps<{ row: TaskCenterRow }>();
+const emit = defineEmits<{ openDetail: [id: string] }>();
 
 const { t } = useI18n();
 const center = injectTaskCenter();
 
 const item = computed(() => props.row.item);
-const expanded = computed(
-  () => !props.openDetailExternally && center.expandedId.value === props.row.id,
-);
 const unseen = computed(() => center.isUnseen(props.row.id));
 const title = computed(() =>
-  props.row.bookTitle ? `${props.row.bookTitle} · ${props.row.chapterTitle}` : props.row.chapterTitle,
+  props.row.bookTitle
+    ? `${props.row.bookTitle} · ${props.row.chapterTitle}`
+    : props.row.chapterTitle,
 );
 const kindLabel = computed(() => t(`taskQueueUi.kind.${item.value.kind}`));
 const statusIcon = computed(() => {
@@ -55,14 +46,6 @@ const meta = computed(() => {
   return parts.join(' · ');
 });
 
-const onHeaderClick = () => {
-  if (props.openDetailExternally) {
-    emit('openDetail', props.row);
-    return;
-  }
-  center.toggleExpand(props.row.id);
-};
-
 const onDragStart = (event: DragEvent) => {
   event.dataTransfer?.setData('text/task-queue-item', props.row.id);
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
@@ -78,26 +61,28 @@ const onDrop = (event: DragEvent) => {
 <template>
   <div
     class="tc-row"
-    :class="[`tc-row--${item.status}`, { 'tc-row--expanded': expanded }]"
+    :class="`tc-row--${item.status}`"
     :draggable="item.status === 'queued'"
     @dragstart="onDragStart"
     @dragover.prevent
     @drop.prevent="onDrop"
   >
     <div class="tc-row-head">
-      <button type="button" class="tc-row-main" :aria-expanded="expanded" @click="onHeaderClick">
+      <button type="button" class="tc-row-main" @click="emit('openDetail', row.id)">
         <i
           v-if="item.status === 'queued'"
           class="pi pi-bars tc-row-grip"
           :title="t('taskQueueUi.dragToReorder')"
           aria-hidden="true"
         />
-        <i v-else-if="!openDetailExternally" class="pi tc-row-chevron" :class="expanded ? 'pi-chevron-down' : 'pi-chevron-right'" aria-hidden="true" />
         <i v-if="statusIcon" :class="statusIcon" aria-hidden="true" />
         <span class="tc-row-kind">{{ kindLabel }}</span>
         <span class="tc-row-title">{{ title }}</span>
         <span v-if="unseen" class="tc-row-unseen" aria-hidden="true" />
-        <span v-if="item.status === 'running'" class="tc-row-percent">{{ row.progress.percent }}%</span>
+        <span v-if="item.status === 'running'" class="tc-row-percent"
+          >{{ row.progress.percent }}%</span
+        >
+        <i class="pi pi-angle-right tc-row-chevron" aria-hidden="true" />
       </button>
       <div class="tc-row-actions">
         <button
@@ -136,26 +121,18 @@ const onDrop = (event: DragEvent) => {
       <span :style="{ width: `${row.progress.percent}%` }" />
     </div>
     <div v-if="meta" class="tc-row-meta">{{ meta }}</div>
-
-    <div v-if="expanded" class="tc-row-expanded">
-      <TaskCenterTaskDetail v-if="row.detail === 'local' && row.task" :task="row.task" />
-      <div v-else-if="row.detail === 'remote'" class="tc-row-hint">
-        {{ t('taskQueueUi.remoteDetail') }}
-      </div>
-      <div v-else-if="row.detail === 'cleared'" class="tc-row-hint">
-        {{ t(`taskQueueUi.status.${item.status}`) }} · {{ t('taskQueueUi.logCleared') }}
-      </div>
-      <button type="button" class="tc-link" @click="center.openChapter(row)">
-        <i class="pi pi-external-link" aria-hidden="true" />{{ t('taskQueueUi.openChapter') }}
-      </button>
-    </div>
   </div>
 </template>
 
 <style scoped>
 .tc-row {
-  padding: 7px 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--white-opacity-6);
+  transition: background-color 0.15s;
+}
+
+.tc-row:hover {
+  background: var(--white-opacity-4);
 }
 
 .tc-row[draggable='true'] {
@@ -180,13 +157,22 @@ const onDrop = (event: DragEvent) => {
   color: inherit;
   cursor: pointer;
   text-align: left;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .tc-row-grip,
 .tc-row-chevron {
   font-size: 10px;
   color: var(--moon-opacity-50);
+}
+
+.tc-row-chevron {
+  font-size: 12px;
+  color: var(--moon-opacity-40);
+}
+
+.tc-row:hover .tc-row-chevron {
+  color: var(--moon-opacity-70);
 }
 
 .tc-row-kind {
@@ -286,34 +272,5 @@ const onDrop = (event: DragEvent) => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tc-row-expanded {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.tc-row-hint {
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--moon-opacity-60);
-}
-
-.tc-link {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: #a3b7cf;
-  background: none;
-  border: none;
-  padding: 2px 0;
-  cursor: pointer;
-}
-
-.tc-link i {
-  font-size: 10px;
 }
 </style>

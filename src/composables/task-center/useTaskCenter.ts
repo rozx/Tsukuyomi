@@ -5,7 +5,7 @@ import { useAIProcessingStore, type AIProcessingTask } from 'src/stores/ai-proce
 import { useBooksStore } from 'src/stores/books';
 import { useBookDetailsStore } from 'src/stores/book-details';
 import { useSettingsStore } from 'src/stores/settings';
-import { useUiStore, type TaskCenterPosition } from 'src/stores/ui';
+import { useUiStore, type TaskCenterPosition, type TaskCenterSize } from 'src/stores/ui';
 import type { TaskQueueItem } from 'src/models/task-queue';
 import { useThinkingFormatter } from 'src/composables/useThinkingFormatter';
 import { useTranslationTodos } from 'src/composables/translation-progress/useTranslationTodos';
@@ -56,6 +56,11 @@ export interface TaskCenterRow {
   task: AIProcessingTask | null;
   detail: TaskCenterDetail;
 }
+
+/** 详情视图展示的对象：章节任务行或其他 AI 活动 */
+export type TaskCenterDetailTarget =
+  | { kind: 'row'; row: TaskCenterRow }
+  | { kind: 'other'; task: AIProcessingTask };
 
 /**
  * 任务中心的共享状态与操作（chip、popup、固定面板、手机抽屉共用）。
@@ -123,12 +128,10 @@ export function createTaskCenter() {
   }));
 
   const otherTasks = computed(() =>
-    ai.activeTasks
-      .filter(isOtherActivity)
-      .sort((a, b) => {
-        const running = Number(isRunningTask(b)) - Number(isRunningTask(a));
-        return running !== 0 ? running : b.startTime - a.startTime;
-      }),
+    ai.activeTasks.filter(isOtherActivity).sort((a, b) => {
+      const running = Number(isRunningTask(b)) - Number(isRunningTask(a));
+      return running !== 0 ? running : b.startTime - a.startTime;
+    }),
   );
   const otherActiveCount = computed(() => otherTasks.value.filter(isRunningTask).length);
 
@@ -147,7 +150,11 @@ export function createTaskCenter() {
   const flash = ref(false);
   let flashTimer: ReturnType<typeof setTimeout> | null = null;
   watch(
-    () => queue.items.filter((item) => item.status === 'queued' || item.status === 'running').map((item) => item.id).join(),
+    () =>
+      queue.items
+        .filter((item) => item.status === 'queued' || item.status === 'running')
+        .map((item) => item.id)
+        .join(),
     (next, prev) => {
       const before = new Set(prev ? prev.split(',') : []);
       if (!next.split(',').some((id) => id && !before.has(id))) return;
@@ -159,15 +166,15 @@ export function createTaskCenter() {
     },
   );
 
-  // ---------- 展开与未读 ----------
-  const expandedId = computed(() => ui.taskCenterExpandedId);
+  // ---------- 详情与未读 ----------
   const unseen = reactive(new Set<string>());
 
-  const toggleExpand = (id: string) => {
-    const next = ui.taskCenterExpandedId === id ? null : id;
-    ui.setTaskCenterExpandedId(next);
-    if (next) unseen.delete(next);
+  /** 打开某个任务的详情（列表切换为详情视图），同一时间最多一个 */
+  const openDetail = (id: string) => {
+    ui.setTaskCenterExpandedId(id);
+    unseen.delete(id);
   };
+  const closeDetail = () => ui.setTaskCenterExpandedId(null);
   const isUnseen = (id: string) => unseen.has(id);
 
   /** 行 ID → 运行记录：队列行用最新运行记录，其他活动行用自身 */
@@ -195,33 +202,41 @@ export function createTaskCenter() {
     },
   );
 
-  // ---------- 展开行的详细过程 ----------
-  const expandedTask = computed<AIProcessingTask | null>(() => {
+  // ---------- 详情视图 ----------
+  /** 当前打开详情的对象；保存的 ID 已不存在（任务被移除 / 清理）时为 null，回到列表 */
+  const detail = computed<TaskCenterDetailTarget | null>(() => {
     const id = ui.taskCenterExpandedId;
     if (!id) return null;
-    const row = [...groups.value.running, ...groups.value.finished].find((entry) => entry.id === id);
-    if (row?.detail === 'local') return row.task;
-    return otherTasks.value.find((task) => task.id === id) ?? null;
+    const { running, queued, finished } = groups.value;
+    const row = [...running, ...queued, ...finished].find((entry) => entry.id === id);
+    if (row) return { kind: 'row', row };
+    const task = otherTasks.value.find((entry) => entry.id === id);
+    return task ? { kind: 'other', task } : null;
   });
-  const detailTasks = computed(() => (expandedTask.value ? [expandedTask.value] : []));
+  /** 详情里可展示详细过程的运行记录（本标签页有记录时） */
+  const detailTask = computed<AIProcessingTask | null>(() => {
+    const target = detail.value;
+    if (!target) return null;
+    if (target.kind === 'other') return target.task;
+    return target.row.detail === 'local' ? target.row.task : null;
+  });
+  const detailTasks = computed(() => (detailTask.value ? [detailTask.value] : []));
   const { getFormatted } = useThinkingFormatter(detailTasks);
-  const expandedParts = computed(() =>
-    expandedTask.value ? getFormatted(expandedTask.value.id) : [],
-  );
+  const detailParts = computed(() => (detailTask.value ? getFormatted(detailTask.value.id) : []));
   const { currentTaskTodos } = useTranslationTodos({
     recentAITasks: detailTasks,
-    currentTask: expandedTask,
+    currentTask: detailTask,
   });
   const todoCollapsed = computed(() => bookDetails.translationProgress.todoCollapsed);
   const toggleTodoCollapsed = () => bookDetails.toggleTodoCollapsed();
   const autoScroll = computed(() =>
-    expandedTask.value
-      ? bookDetails.translationProgress.autoScrollEnabled[expandedTask.value.id] !== false
+    detailTask.value
+      ? bookDetails.translationProgress.autoScrollEnabled[detailTask.value.id] !== false
       : true,
   );
   const toggleAutoScroll = () => {
-    if (!expandedTask.value) return;
-    bookDetails.setTranslationProgressAutoScroll(expandedTask.value.id, !autoScroll.value);
+    if (!detailTask.value) return;
+    bookDetails.setTranslationProgressAutoScroll(detailTask.value.id, !autoScroll.value);
   };
   const formatDuration = (startTime: number, endTime?: number) =>
     formatTaskDuration(startTime, endTime, now.value, settings.uiLocale);
@@ -246,9 +261,11 @@ export function createTaskCenter() {
   const pinned = computed(() => ui.taskCenterPinned);
   const collapsed = computed(() => ui.taskCenterCollapsed);
   const position = computed(() => ui.taskCenterPosition);
+  const size = computed(() => ui.taskCenterSize);
   const setPinned = (value: boolean) => ui.setTaskCenterPinned(value);
   const setCollapsed = (value: boolean) => ui.setTaskCenterCollapsed(value);
   const setPosition = (value: TaskCenterPosition | null) => ui.setTaskCenterPosition(value);
+  const setSize = (value: TaskCenterSize | null) => ui.setTaskCenterSize(value);
   const otherCollapsed = computed(() => ui.taskCenterOtherCollapsed);
   const toggleOtherCollapsed = () => ui.setTaskCenterOtherCollapsed(!ui.taskCenterOtherCollapsed);
 
@@ -260,7 +277,8 @@ export function createTaskCenter() {
     bookDetails.cleanupStaleTaskState(new Set(ai.activeTasks.map((task) => task.id)));
   });
   const noLocks = computed(
-    () => queue.executorMode === 'standalone' && typeof navigator !== 'undefined' && !navigator.locks,
+    () =>
+      queue.executorMode === 'standalone' && typeof navigator !== 'undefined' && !navigator.locks,
   );
 
   return {
@@ -281,12 +299,13 @@ export function createTaskCenter() {
     groups,
     otherTasks,
     otherActiveCount,
-    // 展开与未读
-    expandedId,
-    toggleExpand,
+    // 详情与未读
+    detail,
+    openDetail,
+    closeDetail,
     isUnseen,
-    expandedTask,
-    expandedParts,
+    detailTask,
+    detailParts,
     currentTaskTodos,
     todoCollapsed,
     toggleTodoCollapsed,
@@ -301,9 +320,11 @@ export function createTaskCenter() {
     pinned,
     collapsed,
     position,
+    size,
     setPinned,
     setCollapsed,
     setPosition,
+    setSize,
     otherCollapsed,
     toggleOtherCollapsed,
   };

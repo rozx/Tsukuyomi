@@ -109,7 +109,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 0 16px 16px;
+  padding: 0 12px 12px;
 }
 
 .stream-header {
@@ -156,28 +156,28 @@ onUnmounted(() => {
 
 /* ── 合并后的日志面板：唯一的滚动容器 ── */
 .stream-panel {
-  /* 子区块的吸顶标签需要不透明底色遮住滚动内容，统一在这里定义便于覆盖 */
-  --stream-label-bg: rgba(22, 22, 27, 0.92);
+  /* 面板底色不透明：子区块的吸顶标签用同一底色遮住滚动内容，看起来与面板融为一体 */
+  --stream-label-bg: #1d2027;
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--stream-label-bg);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 8px;
-  padding: 0 10px 8px;
+  padding: 0 14px 10px;
 }
 
 .stream-panel::-webkit-scrollbar {
-  width: 3px;
+  width: 6px;
 }
 .stream-panel::-webkit-scrollbar-track {
   background: transparent;
 }
 .stream-panel::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
-  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
 }
 
 /* ── 完成提示 ── */

@@ -5,8 +5,8 @@ const scrollMemory = new Map<string, number>();
 
 <script setup lang="ts">
 /**
- * 展开行中的任务详细过程：状态栏、待办与流式内容（复用原翻译进度面板的子组件）。
- * 流式区限高滚动，避免撑开 popup。
+ * 任务详情里的详细过程：状态栏、待办与实时日志（复用原翻译进度面板的子组件）。
+ * 日志区填满父级给出的高度（父级用 flex 布局并设置最小高度）。
  */
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import TaskStatusBar from 'src/components/novel/translation-progress/TaskStatusBar.vue';
@@ -15,13 +15,13 @@ import TaskStream from 'src/components/novel/translation-progress/TaskStream.vue
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { injectTaskCenter } from 'src/composables/task-center/useTaskCenter';
 
-const props = defineProps<{ task: AIProcessingTask; streamHeight?: string }>();
+const props = defineProps<{ task: AIProcessingTask }>();
 
 const center = injectTaskCenter();
 
 /**
- * 跨行切换保持滚动位置：收起时记下流式区的滚动位置，再次展开时恢复
- * （自动滚动开启时流式区本来就跟随到底部，不需要恢复）。
+ * 跨任务切换保持滚动位置：离开详情时记下日志区的滚动位置，再次打开时恢复
+ * （自动滚动开启时日志区本来就跟随到底部，不需要恢复）。
  */
 const streamRef = ref<HTMLElement | null>(null);
 const panel = () => streamRef.value?.querySelector<HTMLElement>('.stream-panel') ?? null;
@@ -46,10 +46,10 @@ onBeforeUnmount(() => {
       :collapsed="center.todoCollapsed.value"
       @toggle-collapsed="center.toggleTodoCollapsed"
     />
-    <div ref="streamRef" class="tc-detail-stream" :style="{ height: streamHeight ?? '200px' }">
+    <div ref="streamRef" class="tc-detail-stream">
       <TaskStream
         :task="task"
-        :parts="center.expandedParts.value"
+        :parts="center.detailParts.value"
         :auto-scroll="center.autoScroll.value"
         @toggle-auto-scroll="center.toggleAutoScroll"
       />
@@ -61,14 +61,11 @@ onBeforeUnmount(() => {
 .tc-detail {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-  border-radius: 8px;
-  background: var(--white-opacity-4);
-  overflow: hidden;
+  min-height: 0;
 }
 
 .tc-detail-stream {
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   min-height: 0;

@@ -89,18 +89,20 @@ The task center has two parts:
   - Failed or cancelled rows can be retried. The "Finished" group can be cleared.
 - **Other AI activity**: assistant chats, single-paragraph tasks, term translation, and other tasks outside the queue. They do not use concurrency slots. You can stop running items or clear records.
 
-On desktop and tablet you can **pin** the task center as a floating panel. A pinned panel stays open when you click outside, can be dragged, and keeps its position after a reload. It can also **collapse** into a mini bar that shows only running tasks and overall progress. On mobile, the task center opens as a bottom sheet; tap a task row for full-screen details.
+Each group starts with a header bar showing its count; the current group's header stays at the top while you scroll.
+
+On desktop and tablet you can **pin** the task center as a floating panel. A pinned panel stays open when you click outside. Drag its title bar to move it, or drag its right edge, bottom edge, or bottom-right corner to resize it. Its position and size are kept after a reload; in a smaller window the panel shrinks temporarily to fit. It can also **collapse** into a mini bar that shows only running tasks and overall progress. On mobile, the task center opens as a bottom sheet; tap a task row for full-screen details.
 
 ### Task details {#book-details-translation-section-12}
 
-Click a chapter task row to expand its details inline. Only one row is expanded at a time:
+Click a task row (a chapter task or other AI activity) to switch the task center to that task's details. The back arrow at the top left returns to the list:
 
+- Title, task type, status, and paragraph progress, plus actions such as stop, remove from queue, retry, and open chapter. A failed task shows the error.
 - Model name, elapsed time, and chunk progress (`current / total`)
 - Todo list
-- A timeline of thinking, tool calls, and output in the order they happened, labeled where it switches between thinking and output
-- "Open chapter" goes to the book and chapter
+- Live log: a timeline of thinking, tool calls, and output in the order they happened, filling the rest of the details view and labeled where it switches between thinking and output
 
-A dot appears on a collapsed row when its task has new activity. Once a finished task's detailed log is cleared, only the result summary remains. In a tab that is not running the queue, an expanded running task shows only its progress, with a note that the details are in the other tab.
+When an unpinned task center is closed and opened again, it shows the list. A pinned panel keeps the details you had open. A dot appears on a row when a task you are not viewing has new activity. A queued task has no live log until it starts. Once a finished task's detailed log is cleared, only the result summary remains. In a tab that is not running the queue, a running task's details show only its progress, with a note that the details are in the other tab.
 
 ### Batch start {#book-details-translation-batch}
 

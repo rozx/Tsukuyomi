@@ -14,7 +14,13 @@ let pinia: Pinia;
 
 function mountCenter() {
   let center!: ReturnType<typeof createTaskCenter>;
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { render: () => null } }, { path: '/books/:id', component: { render: () => null } }] });
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/', component: { render: () => null } },
+      { path: '/books/:id', component: { render: () => null } },
+    ],
+  });
   app = createApp(
     defineComponent({
       setup() {
@@ -45,7 +51,15 @@ function queueItem(patch: Partial<TaskQueueItem>): TaskQueueItem {
 }
 
 function task(patch: Partial<AIProcessingTask>): AIProcessingTask {
-  return { id: 't1', type: 'translation', modelName: 'M', status: 'processing', startTime: 1, thinkingMessage: '', ...patch } as AIProcessingTask;
+  return {
+    id: 't1',
+    type: 'translation',
+    modelName: 'M',
+    status: 'processing',
+    startTime: 1,
+    thinkingMessage: '',
+    ...patch,
+  } as AIProcessingTask;
 }
 
 beforeEach(() => {
@@ -60,30 +74,52 @@ afterEach(() => {
 });
 
 describe('useTaskCenter', () => {
-  it('同一时间最多展开一行，展开另一行时原行收起', () => {
+  it('打开详情解析为对应的队列行或其他 AI 活动，关闭后回到列表', () => {
+    useTaskQueueStore().items = [queueItem({ id: 'q1', status: 'queued', aiTaskIds: [] })];
+    useAIProcessingStore().activeTasks = [task({ id: 'x', type: 'assistant' })];
     const center = mountCenter();
-    center.toggleExpand('a');
-    expect(useUiStore().taskCenterExpandedId).toBe('a');
-    center.toggleExpand('b');
-    expect(useUiStore().taskCenterExpandedId).toBe('b');
-    center.toggleExpand('b');
+    expect(center.detail.value).toBeNull();
+
+    center.openDetail('q1');
+    expect(center.detail.value).toMatchObject({ kind: 'row', row: { id: 'q1' } });
+    expect(center.detailTask.value).toBeNull();
+
+    center.openDetail('x');
+    expect(center.detail.value).toMatchObject({ kind: 'other', task: { id: 'x' } });
+    expect(center.detailTask.value?.id).toBe('x');
+
+    center.closeDetail();
+    expect(center.detail.value).toBeNull();
     expect(useUiStore().taskCenterExpandedId).toBeNull();
   });
 
-  it('未展开的任务有新的思考内容时显示未读，展开后清除', async () => {
+  it('保存的详情 ID 对应的任务已不存在时回到列表', () => {
+    useUiStore().setTaskCenterExpandedId('gone');
+    const center = mountCenter();
+    expect(center.detail.value).toBeNull();
+    expect(center.detailTask.value).toBeNull();
+  });
+
+  it('未打开详情的任务有新的思考内容时显示未读，打开后清除', async () => {
     const queue = useTaskQueueStore();
-    queue.items = [queueItem({ id: 'q1', aiTaskIds: ['t1'] }), queueItem({ id: 'q2', chapterId: 'c2', aiTaskIds: ['t2'] })];
+    queue.items = [
+      queueItem({ id: 'q1', aiTaskIds: ['t1'] }),
+      queueItem({ id: 'q2', chapterId: 'c2', aiTaskIds: ['t2'] }),
+    ];
     const ai = useAIProcessingStore();
     ai.activeTasks = [task({ id: 't1', queueItemId: 'q1' }), task({ id: 't2', queueItemId: 'q2' })];
     const center = mountCenter();
-    center.toggleExpand('q1');
+    center.openDetail('q1');
     await nextTick();
-    ai.activeTasks = [task({ id: 't1', queueItemId: 'q1', thinkingMessage: 'x' }), task({ id: 't2', queueItemId: 'q2', thinkingMessage: 'y' })];
+    ai.activeTasks = [
+      task({ id: 't1', queueItemId: 'q1', thinkingMessage: 'x' }),
+      task({ id: 't2', queueItemId: 'q2', thinkingMessage: 'y' }),
+    ];
     await nextTick();
     await nextTick();
     expect(center.isUnseen('q2')).toBe(true);
     expect(center.isUnseen('q1')).toBe(false);
-    center.toggleExpand('q2');
+    center.openDetail('q2');
     expect(center.isUnseen('q2')).toBe(false);
   });
 

@@ -2,23 +2,29 @@
 /**
  * 任务中心内容：标题区（并发、暂停 / 继续、全部停止、固定）、
  * 进行中 / 排队中 / 已完成三组章节任务，以及「其他 AI 活动」区。
+ * 点击任务行时整个内容区切换为该任务的详情视图（标题区保留，固定面板仍可拖动）；
+ * 手机抽屉不在这里切换，而是把事件交给外层打开全屏详情。
  * popover、固定悬浮面板、手机抽屉共用。
  */
 import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
-import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { injectTaskCenter, type TaskCenterRow } from 'src/composables/task-center/useTaskCenter';
 import TaskCenterQueueRow from './TaskCenterQueueRow.vue';
 import TaskCenterOtherSection from './TaskCenterOtherSection.vue';
+import TaskCenterSectionHeader from './TaskCenterSectionHeader.vue';
+import TaskCenterDetailView from './TaskCenterDetailView.vue';
 
-const props = defineProps<{ mode: 'popover' | 'pinned' | 'sheet' }>();
+const props = defineProps<{
+  mode: 'popover' | 'pinned' | 'sheet';
+  /** popover 详情视图的高度（px）：日志区需要确定的高度才能填满 */
+  detailHeight?: number;
+}>();
 const emit = defineEmits<{
   pin: [];
   unpin: [];
   collapse: [];
   dragStart: [event: PointerEvent];
-  openRowDetail: [row: TaskCenterRow];
-  openTaskDetail: [task: AIProcessingTask];
+  openDetail: [id: string];
 }>();
 
 const { t } = useI18n();
@@ -26,7 +32,41 @@ const center = injectTaskCenter();
 const queue = center.queue;
 const groups = center.groups;
 
-const external = computed(() => props.mode === 'sheet');
+const showDetail = computed(() => props.mode !== 'sheet' && center.detail.value !== null);
+const bodyStyle = computed(() =>
+  props.mode === 'popover' && showDetail.value && props.detailHeight
+    ? { height: `${props.detailHeight}px` }
+    : undefined,
+);
+const onOpenDetail = (id: string) => {
+  center.openDetail(id);
+  if (props.mode === 'sheet') emit('openDetail', id);
+};
+
+interface QueueSection {
+  key: 'running' | 'queued' | 'finished';
+  label: string;
+  rows: TaskCenterRow[];
+  action?: { label: string; run: () => void };
+}
+const sections = computed<QueueSection[]>(() => {
+  const all: QueueSection[] = [
+    { key: 'running', label: t('taskQueueUi.sectionRunning'), rows: groups.value.running },
+    {
+      key: 'queued',
+      label: t('taskQueueUi.sectionQueued'),
+      rows: groups.value.queued,
+      action: { label: t('taskQueueUi.removeAllQueued'), run: () => void queue.removeAllQueued() },
+    },
+    {
+      key: 'finished',
+      label: t('taskQueueUi.sectionFinished'),
+      rows: groups.value.finished,
+      action: { label: t('taskQueueUi.clearFinished'), run: () => void queue.clearFinished() },
+    },
+  ];
+  return all.filter((section) => section.rows.length > 0);
+});
 const isEmpty = computed(
   () =>
     groups.value.running.length === 0 &&
@@ -44,7 +84,11 @@ const pausedText = computed(() => {
 
 <template>
   <!-- 与同步、消息弹层共用 header 弹层外壳（hp-*，见主题 CSS） -->
-  <div class="tc-body" :class="[`tc-body--${mode}`, { 'hp-panel': mode === 'popover' }]">
+  <div
+    class="tc-body"
+    :class="[`tc-body--${mode}`, { 'hp-panel': mode === 'popover' }]"
+    :style="bodyStyle"
+  >
     <header
       class="hp-head tc-head"
       :class="{ 'tc-head--drag': mode === 'pinned' }"
@@ -131,7 +175,9 @@ const pausedText = computed(() => {
     <div v-if="center.noLocks.value" class="tc-banner">{{ t('taskQueueUi.noLocks') }}</div>
     <div v-if="pausedText" class="tc-banner">{{ pausedText }}</div>
 
-    <div class="tc-scroll">
+    <TaskCenterDetailView v-if="showDetail" :mode="mode" @back="center.closeDetail()" />
+
+    <div v-else class="tc-scroll">
       <div v-if="isEmpty" class="tc-empty">
         <i class="pi pi-list-check" aria-hidden="true" />
         <div class="tc-empty-title">{{ t('taskQueueUi.empty') }}</div>
@@ -139,55 +185,30 @@ const pausedText = computed(() => {
       </div>
 
       <template v-else>
-        <section v-if="groups.running.length > 0">
-          <div class="tc-section">
-            {{ t('taskQueueUi.sectionRunning', { count: groups.running.length }) }}
-          </div>
-          <TaskCenterQueueRow
-            v-for="row in groups.running"
-            :key="row.id"
-            :row="row"
-            :open-detail-externally="external"
-            @open-detail="emit('openRowDetail', $event)"
-          />
-        </section>
-
-        <section v-if="groups.queued.length > 0">
-          <div class="tc-section">
-            <span>{{ t('taskQueueUi.sectionQueued', { count: groups.queued.length }) }}</span>
-            <button type="button" class="tc-section-action" @click="queue.removeAllQueued()">
-              {{ t('taskQueueUi.removeAllQueued') }}
+        <section v-for="section in sections" :key="section.key" class="tc-section">
+          <TaskCenterSectionHeader
+            :tone="section.key"
+            :label="section.label"
+            :count="section.rows.length"
+          >
+            <button
+              v-if="section.action"
+              type="button"
+              class="tc-sh-action"
+              @click="section.action.run()"
+            >
+              {{ section.action.label }}
             </button>
-          </div>
+          </TaskCenterSectionHeader>
           <TaskCenterQueueRow
-            v-for="row in groups.queued"
+            v-for="row in section.rows"
             :key="row.id"
             :row="row"
-            :open-detail-externally="external"
-            @open-detail="emit('openRowDetail', $event)"
+            @open-detail="onOpenDetail"
           />
         </section>
 
-        <section v-if="groups.finished.length > 0">
-          <div class="tc-section">
-            <span>{{ t('taskQueueUi.sectionFinished', { count: groups.finished.length }) }}</span>
-            <button type="button" class="tc-section-action" @click="queue.clearFinished()">
-              {{ t('taskQueueUi.clearFinished') }}
-            </button>
-          </div>
-          <TaskCenterQueueRow
-            v-for="row in groups.finished"
-            :key="row.id"
-            :row="row"
-            :open-detail-externally="external"
-            @open-detail="emit('openRowDetail', $event)"
-          />
-        </section>
-
-        <TaskCenterOtherSection
-          :open-detail-externally="external"
-          @open-detail="emit('openTaskDetail', $event)"
-        />
+        <TaskCenterOtherSection @open-detail="onOpenDetail" />
       </template>
     </div>
   </div>
@@ -201,8 +222,14 @@ const pausedText = computed(() => {
   color: var(--moon-opacity-90);
 }
 
+/* 手机抽屉：由抽屉正文滚动，列表不另设滚动容器，分组标题栏才能相对抽屉吸顶 */
+.tc-body--sheet .tc-scroll {
+  overflow: visible;
+}
+
+/* 固定面板：高度由外层面板尺寸决定（可拖动缩放） */
 .tc-body--pinned {
-  max-height: min(560px, 70dvh);
+  flex: 1;
 }
 
 .tc-head--drag {
@@ -229,22 +256,13 @@ const pausedText = computed(() => {
   overflow-y: auto;
 }
 
-.tc-section {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px 2px;
-  font-size: 11px;
-  color: var(--moon-opacity-50);
+/* 分区之间：标题栏色带已有上下边线，最后一行不再画底线，避免双线 */
+.tc-section > .tc-row:last-child {
+  border-bottom: none;
 }
 
-.tc-section-action {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 11px;
-  color: #a3b7cf;
-  cursor: pointer;
+.tc-section:first-child > :deep(.tc-sh) {
+  border-top-color: transparent;
 }
 
 .tc-empty {

@@ -1,16 +1,15 @@
 <script setup lang="ts">
 /**
  * 「其他 AI 活动」区：助手、单段任务、术语翻译等非队列 AI 任务（原「AI 思考」面板的内容）。
- * 不计入队列数量、并发名额与 chip 进度条。
+ * 不计入队列数量、并发名额与 chip 进度条。点击行打开该任务的详情视图。
  */
 import { useI18n } from 'vue-i18n';
 import type { AIProcessingTask } from 'src/stores/ai-processing';
 import { injectTaskCenter } from 'src/composables/task-center/useTaskCenter';
 import { isRunningTask } from 'src/composables/task-center/task-center-state';
-import TaskCenterTaskDetail from './TaskCenterTaskDetail.vue';
+import TaskCenterSectionHeader from './TaskCenterSectionHeader.vue';
 
-defineProps<{ openDetailExternally?: boolean }>();
-const emit = defineEmits<{ openDetail: [task: AIProcessingTask] }>();
+const emit = defineEmits<{ openDetail: [id: string] }>();
 
 const { t } = useI18n();
 const center = injectTaskCenter();
@@ -26,44 +25,33 @@ const description = (task: AIProcessingTask) =>
 </script>
 
 <template>
-  <section class="tc-other">
-    <div class="tc-section-head">
-      <button
-        type="button"
-        class="tc-section-toggle"
-        :aria-expanded="!center.otherCollapsed.value"
-        @click="center.toggleOtherCollapsed"
-      >
-        <i
-          class="pi"
-          :class="center.otherCollapsed.value ? 'pi-chevron-right' : 'pi-chevron-down'"
-          aria-hidden="true"
-        />
-        {{ t('taskQueueUi.sectionOther', { count: center.otherTasks.value.length }) }}
-      </button>
+  <section class="tc-section">
+    <TaskCenterSectionHeader
+      tone="other"
+      :label="t('taskQueueUi.sectionOther')"
+      :count="center.otherTasks.value.length"
+      collapsible
+      :collapsed="center.otherCollapsed.value"
+      @toggle="center.toggleOtherCollapsed"
+    >
       <template v-if="!center.otherCollapsed.value && center.otherTasks.value.length > 0">
-        <button type="button" class="tc-section-action" @click="center.clearOther('finished')">
+        <button type="button" class="tc-sh-action" @click="center.clearOther('finished')">
           {{ t('taskQueueUi.clearOtherFinished') }}
         </button>
-        <button type="button" class="tc-section-action" @click="center.clearOther('all')">
+        <button type="button" class="tc-sh-action" @click="center.clearOther('all')">
           {{ t('taskQueueUi.clearOtherAll') }}
         </button>
       </template>
-    </div>
+    </TaskCenterSectionHeader>
     <template v-if="!center.otherCollapsed.value">
       <div v-for="task in center.otherTasks.value" :key="task.id" class="tc-other-row">
         <div class="tc-other-head">
-          <button
-            type="button"
-            class="tc-other-main"
-            @click="
-              openDetailExternally ? emit('openDetail', task) : center.toggleExpand(task.id)
-            "
-          >
+          <button type="button" class="tc-other-main" @click="emit('openDetail', task.id)">
             <i :class="statusIcon(task)" aria-hidden="true" />
             <span class="tc-other-kind">{{ t(`appUi.taskTypes.${task.type}`) }}</span>
             <span class="tc-other-desc">{{ description(task) }}</span>
             <span v-if="center.isUnseen(task.id)" class="tc-other-unseen" aria-hidden="true" />
+            <i class="pi pi-angle-right tc-other-chevron" aria-hidden="true" />
           </button>
           <button
             v-if="isRunningTask(task)"
@@ -76,57 +64,24 @@ const description = (task: AIProcessingTask) =>
             <i class="pi pi-stop-circle" aria-hidden="true" />
           </button>
         </div>
-        <TaskCenterTaskDetail
-          v-if="!openDetailExternally && center.expandedId.value === task.id"
-          :task="task"
-        />
       </div>
     </template>
   </section>
 </template>
 
 <style scoped>
-.tc-other {
-  border-top: 1px solid var(--white-opacity-10);
-}
-
-.tc-section-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px 4px;
-}
-
-.tc-section-toggle {
-  flex: 1;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--moon-opacity-50);
-  font-size: 11px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.tc-section-toggle i {
-  font-size: 10px;
-}
-
-.tc-section-action {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 11px;
-  color: #a3b7cf;
-  cursor: pointer;
-}
-
 .tc-other-row {
-  padding: 6px 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--white-opacity-6);
+  transition: background-color 0.15s;
+}
+
+.tc-other-row:hover {
+  background: var(--white-opacity-4);
+}
+
+.tc-other-row:last-child {
+  border-bottom: none;
 }
 
 .tc-other-head {
@@ -145,7 +100,7 @@ const description = (task: AIProcessingTask) =>
   border: none;
   padding: 0;
   color: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   cursor: pointer;
   text-align: left;
 }
@@ -179,18 +134,29 @@ const description = (task: AIProcessingTask) =>
   background: #f0b46c;
 }
 
+.tc-other-main .tc-other-chevron {
+  font-size: 12px;
+  color: var(--moon-opacity-40);
+}
+
+.tc-other-row:hover .tc-other-chevron {
+  color: var(--moon-opacity-70);
+}
+
 .tc-other-stop {
   width: 24px;
   height: 24px;
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--moon-opacity-60);
+  /* 按钮系统：文字 / 图标按钮 */
+  color: var(--btn-text-color);
   cursor: pointer;
 }
 
 .tc-other-stop:hover {
-  background: var(--white-opacity-8);
+  background: var(--btn-text-hover-bg);
+  color: var(--btn-text-hover-color);
 }
 
 .tc-other-running {

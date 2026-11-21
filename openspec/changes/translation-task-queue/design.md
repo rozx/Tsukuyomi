@@ -96,7 +96,7 @@ TaskQueueItem {
 - 通知完全由队列负责：`useMainLayoutShell` 的错误 / 取消监听跳过所有带 `queueItemId` 的任务。手动来源项的错误、取消提示改由队列根据队列项状态发出，文案沿用 `task-status-toasts`。这样对账发生在何时都不会误弹 toast。
 - 任务中心按 `queueItemId` 去重，同一章节同一任务只显示一行（以队列项为准）。升级前遗留的章节级记录（没有 `queueItemId`、非单段任务）归入「其他 AI 活动」的历史，只供查看。
 - 不带 `queueItemId` 的运行中记录（助手、单段任务）被第二个标签页改写的问题是已有行为，本次不处理。
-- 已完成区展示队列项自身的终态，不依赖 aiProcessing 的 30 条历史上限；展开时若对应日志已被裁剪，显示「日志已清理」。队列项终态保留到用户清除，超过 200 条时自动删除最旧的已结束项。
+- 已完成区展示队列项自身的终态，不依赖 aiProcessing 的 30 条历史上限；打开详情时若对应日志已被裁剪，显示「日志已清理」。队列项终态保留到用户清除，超过 200 条时自动删除最旧的已结束项。
 
 ### D7 页面实时更新
 
@@ -117,7 +117,7 @@ TaskQueueItem {
 - 每个标签页加载队列状态；只有持有 Web Lock `tsukuyomi:task-queue-runner` 的标签页执行调度。
 - 所有标签页（含执行者）对队列的修改都在 `task-queue` 仓库的单个 readwrite 事务内完成「读取 → 判重 / 定序 → 写入」，IndexedDB 事务跨标签页串行，避免两个标签页同时入队时判重和排序出错；提交后经 `BroadcastChannel('tsukuyomi:task-queue')` 广播。
 - 需要执行者动手的操作（停止运行项、全部停止、暂停 / 继续）写成「期望状态」：队列项 `cancelRequested: true`、队列级 `paused`。执行者收到广播后按期望状态中止任务或调整调度，非执行者不直接碰 AbortController。
-- 非执行者标签页的 aiProcessing store 里没有执行者的实时流（思考、工具调用），展开运行中的行时只显示由队列项字段推导的进度，并提示「详细过程在另一个标签页中」。
+- 非执行者标签页的 aiProcessing store 里没有执行者的实时流（思考、工具调用），打开运行中任务的详情时只显示由队列项字段推导的进度，并提示「详细过程在另一个标签页中」。
 - 区分「恢复」与「接管」：标签页启动时先用 `ifAvailable` 请求执行者锁——立即拿到说明当前没有存活执行者，按 D5「恢复」处理（暂停）；拿不到则挂一个等待中的锁请求，之后被授予时说明是原执行者离开，按 D5「接管」处理（保持暂停状态，未暂停则继续）。
 - 队列项状态变化与 `chapterWrite` 都经 `BroadcastChannel` 广播，非执行者据此刷新显示。
 - 无 `navigator.locks` 时当前标签页直接充当执行者，不做跨标签页协调（风险见下）。
@@ -133,8 +133,8 @@ TaskQueueItem {
 
 - 遵循 dispatcher + 三变体规则：`src/components/task-center/TaskCenter.vue`（dispatcher）、`TaskCenterDesktop.vue`（PrimeVue Popover + 固定后的悬浮面板）、`TaskCenterTablet.vue`（`<TaskCenterDesktop />` wrapper）、`TaskCenterMobile.vue`（`MobileBottomSheet` + 全屏详情）。逻辑在 `src/composables/task-center/useTaskCenter.ts`，以 provide / inject 共享。
 - chip 本体是 `TaskCenterChip.vue`，由 `AppHeader` / `TabletSysBar` / `MobileSysBar` 各自放在原 AI 思考 chip 位置。
-- 固定后的悬浮面板挂在 `MainLayout` dispatcher（跨断点存活）；固定 / 收起 / 位置 / 当前展开项存 `ui` store，随它一起持久化到 localStorage（`tsukuyomi-ui-state`，不是 IndexedDB 的 `ui-state` 仓库）。手机断点下固定面板不渲染，状态保留。
-- 展开行复用 `TaskStatusBar`、`TaskTodos`、`TaskStream`；流式区限高约 200px 内滚动。删除 `TaskSwitcher`、`TaskSwitcherItem`、`TaskActionBar`、`AppProgressPanelDesktop`、`TabletProgressPanel`；`ThinkingProcessBody` 的列表与清理能力并入「其他 AI 活动」区。
+- 固定后的悬浮面板挂在 `MainLayout` dispatcher（跨断点存活）；固定 / 收起 / 位置 / 尺寸 / 当前打开详情的任务存 `ui` store，随它一起持久化到 localStorage（`tsukuyomi-ui-state`，不是 IndexedDB 的 `ui-state` 仓库）。手机断点下固定面板不渲染，状态保留。
+- 点击任务行在任务中心内切换为详情视图（标题区保留、可返回列表；手机为全屏详情），复用 `TaskStatusBar`、`TaskTodos`、`TaskStream`，实时日志占满剩余高度。未固定的 popup 关闭后回到列表；固定面板保留当前详情。固定面板可拖动右边 / 下边 / 右下角缩放，保存的位置与尺寸只在显示时适配视口，不随窗口变化改写。删除 `TaskSwitcher`、`TaskSwitcherItem`、`TaskActionBar`、`AppProgressPanelDesktop`、`TabletProgressPanel`；`ThinkingProcessBody` 的列表与清理能力并入「其他 AI 活动」区。
 
 ### D12 设置与迁移
 
