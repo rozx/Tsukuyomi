@@ -3,15 +3,19 @@ import { useI18n } from 'vue-i18n';
 
 import { ref } from 'vue';
 import Popover from 'primevue/popover';
+import { useAnchoredPopover } from 'src/composables/useAnchoredPopover';
 
 const { t } = useI18n();
 
 const popover = ref<InstanceType<typeof Popover> | null>(null);
+// 弹层总在按钮下方、箭头对准按钮；内容超出时列表区域滚动
+const anchored = useAnchoredPopover({ containerClass: 'keyboard-shortcuts-popover', max: 560 });
 
 // Expose popover ref for parent component to toggle
 defineExpose({
   popover,
   toggle: (event: Event) => {
+    anchored.prepare(event);
     popover.value?.toggle(event);
   },
   hide: () => {
@@ -21,8 +25,17 @@ defineExpose({
 </script>
 
 <template>
-  <Popover ref="popover" style="width: 28rem; max-width: 90vw">
-    <div class="flex flex-col max-h-[70vh] overflow-hidden">
+  <Popover
+    ref="popover"
+    class="anchored-popover keyboard-shortcuts-popover"
+    style="width: 28rem; max-width: 90vw"
+    @show="anchored.centerArrow"
+  >
+    <!-- flex-nowrap：Quasar 的 .flex 默认会换行，超出最大高度时标题和列表会排成两列 -->
+    <div
+      class="flex flex-col flex-nowrap overflow-hidden"
+      :style="{ maxHeight: `${anchored.height.value}px` }"
+    >
       <div class="p-3 border-b border-white/10">
         <h4 class="font-medium text-moon-100">{{ t('readerUi.shortcuts') }}</h4>
         <p class="text-xs text-moon/60 mt-1">{{ t('readerUi.shortcutsHint') }}</p>

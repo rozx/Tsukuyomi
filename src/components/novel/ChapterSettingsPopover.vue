@@ -14,6 +14,7 @@ import { useI18n } from 'vue-i18n';
 import { computed, ref } from 'vue';
 import Popover from 'primevue/popover';
 import { useUiStore } from 'src/stores/ui';
+import { useAnchoredPopover } from 'src/composables/useAnchoredPopover';
 import MobileBottomSheet from 'src/components/layout/MobileBottomSheet.vue';
 import ChapterSettingsBody from './ChapterSettingsBody.vue';
 import type { Novel, Chapter } from 'src/models/novel';
@@ -35,6 +36,9 @@ const isPhone = computed(() => uiStore.deviceType === 'phone');
 const popover = ref<InstanceType<typeof Popover> | null>(null);
 const mobileVisible = ref(false);
 
+// 弹层总在按钮下方、箭头对准按钮（矮窗口时内容收缩，中间区域滚动）
+const anchored = useAnchoredPopover({ containerClass: 'chapter-settings-popover', max: 600 });
+
 const closeShell = () => {
   if (isPhone.value) {
     mobileVisible.value = false;
@@ -53,6 +57,7 @@ defineExpose({
     if (isPhone.value) {
       mobileVisible.value = !mobileVisible.value;
     } else {
+      anchored.prepare(event);
       popover.value?.toggle(event);
     }
   },
@@ -61,8 +66,14 @@ defineExpose({
 </script>
 
 <template>
-  <Popover v-if="!isPhone" ref="popover" style="width: 32rem; max-width: 90vw">
-    <div class="h-[600px] overflow-hidden">
+  <Popover
+    v-if="!isPhone"
+    ref="popover"
+    class="anchored-popover chapter-settings-popover"
+    style="width: 32rem; max-width: 90vw"
+    @show="anchored.centerArrow"
+  >
+    <div class="overflow-hidden" :style="{ height: `${anchored.height.value}px` }">
       <ChapterSettingsBody
         :book="book"
         :chapter="chapter"

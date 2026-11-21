@@ -59,6 +59,17 @@ const emit = defineEmits<{
 }>();
 
 const overflowMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
+
+/**
+ * 溢出菜单里打开的弹层（导出、术语、角色、记忆、快捷键）锚定到 ⋮ 按钮：
+ * 菜单项在点击后随菜单关闭消失，锚定到它会让弹层悬在半空、箭头指向空处。
+ * 弹层只读取事件的 currentTarget 作为锚点。
+ */
+let overflowAnchor: Element | null = null;
+const anchoredToOverflow = (event?: Event): Event =>
+  overflowAnchor
+    ? ({ currentTarget: overflowAnchor } as unknown as Event)
+    : (event ?? new Event('click'));
 const translateMenuRef = ref<{ toggle: (event: Event) => void } | null>(null);
 
 const stats = computed(() =>
@@ -105,33 +116,36 @@ const overflowMenuItems = computed<MenuItem[]>(() => [
     icon: 'pi pi-file-export',
     // PrimeVue Menu command 回调只暴露 MenuItemCommandEvent，originalEvent 可能缺失，
     // 这里仅用 event 用于 Popover 定位；缺失时使用 document.body 兜底。
-    command: (event) => emit('toggleExport', event.originalEvent ?? new Event('click')),
+    command: (event) => emit('toggleExport', anchoredToOverflow(event.originalEvent)),
   },
   { separator: true },
   {
     label: t('readerUi.termsCount', { count: props.usedTermCount }),
     icon: 'pi pi-bookmark',
-    command: (event) => emit('toggleTermPopover', event.originalEvent ?? new Event('click')),
+    command: (event) => emit('toggleTermPopover', anchoredToOverflow(event.originalEvent)),
   },
   {
     label: t('readerUi.charactersCount', { count: props.usedCharacterCount }),
     icon: 'pi pi-user',
-    command: (event) => emit('toggleCharacterPopover', event.originalEvent ?? new Event('click')),
+    command: (event) => emit('toggleCharacterPopover', anchoredToOverflow(event.originalEvent)),
   },
   {
     label: t('readerUi.memoriesCount', { count: props.usedMemoryCount }),
     icon: 'pi pi-lightbulb',
-    command: (event) => emit('toggleMemoryPopover', event.originalEvent ?? new Event('click')),
+    command: (event) => emit('toggleMemoryPopover', anchoredToOverflow(event.originalEvent)),
   },
   { separator: true },
   {
     label: t('readerUi.shortcuts'),
     icon: 'pi pi-info-circle',
-    command: (event) => emit('toggleKeyboardShortcuts', event.originalEvent ?? new Event('click')),
+    command: (event) => emit('toggleKeyboardShortcuts', anchoredToOverflow(event.originalEvent)),
   },
 ]);
 
-const onOverflowToggle = (event: Event) => overflowMenuRef.value?.toggle(event);
+const onOverflowToggle = (event: Event) => {
+  if (event.currentTarget instanceof Element) overflowAnchor = event.currentTarget;
+  overflowMenuRef.value?.toggle(event);
+};
 const onTranslateMenuToggle = (event: Event) => translateMenuRef.value?.toggle(event);
 
 const translateBusy = computed(() => props.isTranslatingChapter || props.isPolishingChapter);
@@ -348,7 +362,4 @@ const showTranslateCaret = computed(() => !props.translationStatus.hasNone);
 .ctt-primary-caret i {
   font-size: 10px;
 }
-
-
-
 </style>

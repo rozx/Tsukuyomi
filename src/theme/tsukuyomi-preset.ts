@@ -550,6 +550,18 @@ const CUSTOM_CSS = `
   outline-offset: 2px;
 }
 
+/*
+ * 从按钮弹出的 Popover（useAnchoredPopover）：箭头按 --anchored-arrow-x 对准按钮中心。
+ * 两个伪元素都以 left 为中心（各自用负 margin 居中），未设置变量时沿用 PrimeVue 的算法。
+ */
+.anchored-popover::before,
+.anchored-popover::after {
+  left: var(
+    --anchored-arrow-x,
+    calc(var(--p-popover-arrow-offset) + var(--p-popover-arrow-left))
+  ) !important;
+}
+
 /* Badge 样式优化 - Moonlight Glow 主题 */
 .p-badge {
   display: inline-flex !important;
