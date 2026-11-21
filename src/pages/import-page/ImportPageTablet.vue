@@ -2,8 +2,8 @@
 /**
  * 平板导入工作台：分两层——
  * - 任务列表：未打开任务时整页显示，选择或新建任务后进入任务；
- * - 任务内：页头左上「全部任务」返回列表，下方为运行条 + 分区标签。
- * 横屏时月詠对话停靠在布局右栏；竖屏宽度不够停靠，对话改为最前面的「对话」标签。
+ * - 任务内：页头左上「全部任务」返回列表，下方按「来源 → 整理 → 导入」三步引导。
+ * 横屏时月詠对话停靠在布局右栏；竖屏宽度不够停靠，任务顶部显示月詠预览，点开右侧滑入的对话面板。
  */
 import ImportPageHeader from 'src/components/import/ImportPageHeader.vue';
 import ImportTaskList from 'src/components/import/ImportTaskList.vue';
@@ -18,7 +18,7 @@ const portrait = usePortrait();
 <template>
   <div class="ipt">
     <ImportPageHeader :show-back="!!store.task" />
-    <ImportTaskWorkspace v-if="store.task" :with-chat="portrait" />
+    <ImportTaskWorkspace v-if="store.task" :chat-preview="portrait" />
     <div v-else class="ipt-list">
       <ImportTaskList navigable />
     </div>

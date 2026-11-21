@@ -12,6 +12,7 @@ import {
   type ImportPageContext,
 } from '../composables/import-page/useImportPage';
 import { useImportWorkspaceStore } from '../stores/import-workspace';
+import { ImportRepository } from '../services/import/import-repository';
 import { webLocksFixture } from './web-locks-fixture';
 
 const feedback = vi.hoisted(() => ({ add: vi.fn() }));
@@ -117,5 +118,25 @@ describe('导入工作台：离开导入页（手机任务列表的返回）', (
     ctx.leave();
     await settle();
     expect(router.currentRoute.value.path).toBe('/');
+  });
+});
+
+describe('导入工作台：打开任务时落在哪个分区（手机没有对话分区）', () => {
+  it('还没有来源时落在来源，有来源后落在卷章草稿，方案可导入或已导入时落在导入方案', async () => {
+    const { ctx } = await mount<ImportPageContext>('/import', provideImportPage);
+    const store = useImportWorkspaceStore();
+    const task = await ImportRepository.createTask('任务');
+    store.selectedTaskId = task.id;
+    store.task = task;
+    store.sources = [];
+    expect(ctx.landingSection.value).toBe('sources');
+
+    store.sources = [{ id: 's', status: 'extracted', purpose: 'content' } as never];
+    expect(ctx.landingSection.value).toBe('draft');
+
+    store.task = { ...task, state: 'ready' };
+    expect(ctx.landingSection.value).toBe('plan');
+    store.task = { ...task, state: 'applied' };
+    expect(ctx.landingSection.value).toBe('plan');
   });
 });

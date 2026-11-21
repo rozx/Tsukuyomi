@@ -9,7 +9,7 @@
  * Active tab state is shared with MobileTabBar / BookDetailsTablet rail via
  * useMainNavActive() and the uiStore.activeRightTab state.
  */
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import TabletSysBar from 'src/components/layout/TabletSysBar.vue';
 import TabletNavRail from 'src/components/layout/TabletNavRail.vue';
 import TabletChatPanel from 'src/components/layout/TabletChatPanel.vue';
@@ -31,9 +31,16 @@ const rightPanelOverlayStyle = computed(() => ({
   width: `min(92vw, ${ui.rightPanelWidth}px)`,
 }));
 
+// 右侧滑入的对话面板：普通路由是月詠；导入路由只在竖屏使用（横屏对话常驻停靠），显示导入对话
+const overlayChat = computed(() => !isImportRoute.value || portrait.value);
 const isChatOpen = computed(
-  () => ui.rightPanelOpen && ui.activeRightTab === 'chat' && !isImportRoute.value,
+  () => ui.rightPanelOpen && ui.activeRightTab === 'chat' && overlayChat.value,
 );
+
+// 进出导入路由时收起面板：另一种对话不应在切换页面时自己滑出来
+watch(isImportRoute, () => {
+  if (ui.rightPanelOpen && ui.activeRightTab === 'chat') ui.closeRightPanel();
+});
 
 const closeRightPanel = () => ui.closeRightPanel();
 
@@ -63,19 +70,26 @@ useOverlayCloseStack({
         <div class="overlay-clip">
           <!-- AI 助手 面板——独立挂载，仅当 activeRightTab === 'chat' 时 slide-in -->
           <div
-            v-if="!isImportRoute"
+            v-if="overlayChat"
             class="overlay-right-panel z-50"
             :class="{ 'overlay-right-panel-open': isChatOpen }"
             :style="rightPanelOverlayStyle"
             :inert="!isChatOpen"
           >
-            <TabletChatPanel />
+            <div v-if="isImportRoute" class="import-chat-skin h-full">
+              <ImportChatPanel />
+            </div>
+            <TabletChatPanel v-else />
           </div>
         </div>
       </main>
 
-      <!-- 竖屏宽度不够停靠：导入页把对话改为页内的「对话」标签 -->
-      <aside v-if="isImportRoute && !portrait" class="tablet-import-chat" :style="importDockStyle">
+      <!-- 竖屏宽度不够停靠：导入页的对话改为右侧滑入面板（任务顶部的月詠预览打开） -->
+      <aside
+        v-if="isImportRoute && !portrait"
+        class="tablet-import-chat import-chat-skin"
+        :style="importDockStyle"
+      >
         <ImportChatPanel />
       </aside>
     </div>
@@ -87,10 +101,13 @@ useOverlayCloseStack({
   display: contents;
 }
 
-/* 与 TabletChatPanel 相同的面板底色与左边框，常驻停靠 */
 .tablet-import-chat {
   flex-shrink: 0;
   min-height: 0;
+}
+
+/* 导入对话的面板底色与左边框（与 TabletChatPanel 相同），停靠与竖屏滑入共用 */
+.import-chat-skin {
   background: rgba(14, 16, 20, 0.96);
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(18px);

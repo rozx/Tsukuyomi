@@ -78,7 +78,7 @@
 ### D8 平板：删除页内右侧竖栏，按钮进顶部信息条
 
 - 删除 `TabletSideRail.vue`、`BooksTabletSideRail.vue` 与 `BookDetailsTablet.vue` 内的竖栏；`useTabletRightRail` 不再有调用方，删除（助手开关统一走 `useMainNavDispatch().dispatch('chat')`，行为相同）；`rail-base.css` 在 `RightPanelRail` 与平板竖栏都删除后不再被引用，一并删除。
-- **助手**：`TabletSysBar` 在任务中心 chip 与同步 chip 之间加「月詠」按钮，规则与 D2 相同：面板打开时为激活态；导入路由下显示激活态且拦掉点击（平板导入页的 `ImportChatPanel` 常驻停靠，见 `MainLayoutTablet.vue` 的 `.tablet-import-chat`）。平板只显示图标，带 `aria-label` 与 title。覆盖层的遮罩只盖 `<main>`，面板打开时再点顶部栏按钮即可关闭。
+- **助手**：`TabletSysBar` 在任务中心 chip 与同步 chip 之间加「月詠」按钮，规则与 D2 相同：面板打开时为激活态；导入路由横屏时显示激活态且拦掉点击（平板横屏导入页的 `ImportChatPanel` 常驻停靠，见 `MainLayoutTablet.vue` 的 `.tablet-import-chat`）；竖屏时导入对话改在右侧滑入面板（见 `import-guided-steps`），按钮照常调用 `dispatch('chat')` 开关它。平板只显示图标，带 `aria-label` 与 title。覆盖层的遮罩只盖 `<main>`，面板打开时再点顶部栏按钮即可关闭。
 - **列表 / 目录开关**：`TabletSysBar` 品牌文字左侧放一个空挂载点 `<div id="tablet-sysbar-leading">`。`BooksPageTablet` 与 `BookDetailsTablet` 用 `<Teleport to="#tablet-sysbar-leading" defer>` 把各自的开关按钮渲染进去；状态仍是页面 composable 的 `isListOpen` / `isTabletSidebarOpen`，竖屏叠层遮罩、横屏参与布局的行为不变。
   - 不把状态搬进 `ui` store 让顶部栏自己渲染：顶部栏在布局里，拿不到页面 provide 的 composable；搬进 store 等于给壳层加平板专属状态，违反 `tablet-shell-chrome`「平板壳层不引入新业务状态」。Teleport 只需要一个空节点，按钮与状态都留在页面里；离开页面或断点切到桌面时，按钮随页面变体卸载，挂载点为空、不占宽度。
   - `defer`（Vue 3.5）让 Teleport 在同一轮挂载完成后再解析目标，避免页面先于顶部栏挂载时找不到挂载点。

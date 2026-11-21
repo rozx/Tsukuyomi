@@ -10,13 +10,13 @@ Set an **Assistant** default under [AI models](/help/ai-models-guide). The impor
 
 Open **AI import** (`/import`):
 
-| Device  | Entry                                                                                                                                                                                               |
-| :------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Desktop | AI import in the left rail                                                                                                                                                                          |
-| Tablet  | AI import in the left rail. Pick or create a task in the task list; inside a task, All tasks (top left) returns to the list                                                                         |
-| Mobile  | AI import under Quick actions on Home, or in the + menu of the Library. Opening a task starts in Chat; ‹ (top left) returns to the task list, and the bottom Tsukuyomi button also switches to Chat |
+| Device  | Entry                                                                                                                                                                                                                    |
+| :------ | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Desktop | AI import in the left rail                                                                                                                                                                                               |
+| Tablet  | AI import in the left rail. Pick or create a task in the task list; inside a task, All tasks (top left) returns to the list. In portrait, tap the Tsukuyomi preview at the top of the task to slide in the chat          |
+| Mobile  | AI import under Quick actions on Home, or in the + menu of the Library. The top of a task shows what Tsukuyomi is doing; tap it (or the bottom Tsukuyomi button) to open the chat. ‹ (top left) returns to the task list |
 
-On desktop and on a tablet in landscape, chat appears on the right, with Sources, Volume/chapter draft, and Import plan in the workspace. A tablet in portrait has no room to dock the chat, so it becomes the first tab, Chat, in the workspace. Mobile calls the sections Chat, Sources, Draft, and Plan. This guide uses the desktop names.
+An open task guides you through three steps, Sources → Organize → Import. The top shows each step's progress, and you can tap any step to view it. The bottom has the current step's main button (Let Tsukuyomi organize, Pause, Generate import plan); Confirm import is in the Import step. On desktop and on a tablet in landscape, the chat is docked on the right. On a tablet in portrait and on mobile, the top of the task shows what Tsukuyomi is doing; tap it to open the chat (it slides in from the right on a tablet and rises from the bottom on mobile).
 
 ## First import: an EPUB {#import-guide-section-3}
 
@@ -26,7 +26,7 @@ Follow these steps with an EPUB. URL, TXT, and Markdown examples appear below.
 
 Choose **New task** or **New import task** on an empty page. One task organizes one novel; several files from the same book can share a task.
 
-Open Sources and choose **Choose files**, or drag the EPUB into the source area. A new source shows **Not read yet** until you send a request.
+A new task starts in the Sources step. Choose **Choose files**, or drag the EPUB into the source area. Once a task has sources, choose Add sources below the source list to show this area again. A new source shows **Not read yet** until you send a request or choose **Let Tsukuyomi organize** at the bottom.
 
 ### 2. Explain the goal {#import-guide-section-5}
 
@@ -36,13 +36,13 @@ For example:
 
 The conversation shows source reading, extraction, and draft operations. After identifying the book, the assistant names the task. You can rename it at the top; your manual name is retained.
 
-If asked which book the files belong to or which work to choose, reply before processing continues. Use Pause at the top to stop temporarily.
+If asked which book the files belong to or which work to choose, reply before processing continues. Use Pause at the bottom to stop temporarily.
 
 ### 3. Check metadata, contents, and source text {#import-guide-section-6}
 
-When organization finishes, open Volume/chapter draft:
+Once organizing starts, the task switches to the Organize step, which shows the volume/chapter draft. When the run finishes:
 
-1. In Basic information, check title, author, description, and tags. Import to should be New novel. You can edit these fields.
+1. Expand Basic info (collapsed, it shows only title and author) and check title, author, description, and tags. Import to should be New novel. You can edit these fields.
 2. Review Metadata candidates and choose Adopt only after checking them. These include author, description, cover, and tags.
 3. Check volume/chapter names and order. Checkboxes control inclusion; edit names or move chapters up/down or between volumes.
 4. Use the eye icon, Inspect source, on at least the first, middle, and last chapter. Check both ends and look for contents/navigation text mixed into the body. Use Show more for long chapters.
@@ -55,7 +55,7 @@ The assistant reads your draft edits. If simultaneous changes conflict, reload t
 
 ### 4. Generate a plan {#import-guide-section-7}
 
-Open Import plan and choose Generate import plan, or inspect the plan already generated. Wait for the current run, pause it, or answer its question first.
+In the Organize step, choose Generate import plan at the bottom; the task switches to the Import step. If a plan already exists, open the Import step and inspect it. Wait for the current run, pause it, or answer its question first.
 
 Check:
 
@@ -150,7 +150,7 @@ Uncheck an unwanted chapter to exclude it. Delete draft chapter removes it from 
 
 ## Add chapters to an existing book {#import-guide-section-18}
 
-Add URLs/files, select the existing book under Draft → Basic information → Import to, and explain:
+Add URLs/files, select the existing book under Organize → Basic info → Import to, and explain:
 
 > These are chapters 11–15 of the book in my library. Add them, check for duplicates, and retain existing chapters.
 
@@ -211,7 +211,7 @@ Built-in sites such as Syosetu, Kakuyomu, and Hameln use their site contents rul
 
 ### Continue later {#import-guide-section-25}
 
-Choose Pause and wait for Paused. Completed extraction and draft changes remain. Open the original task later and choose Continue organizing/Continue execution, or send a new instruction.
+Choose Pause at the bottom and wait for Paused. Completed extraction and draft changes remain. Open the original task later and, in the Organize step, choose Continue organizing/Resume at the bottom (or ▶ in the chat header), or send a new instruction.
 
 Reloading or closing does not run or import automatically. Sources, draft, chat, and questions are stored on this device. The workspace must remain open to execute; tasks cannot continue on another device and are not cloud-synced. Applied books sync normally.
 
@@ -223,7 +223,7 @@ Long conversations compress older messages near the model window, retaining rece
 
 ### Undo an import {#import-guide-section-26}
 
-In the original task's Plan → Import history, choose Undo and confirm:
+In the original task's Import step → Import history, choose Undo and confirm:
 
 - A newly created novel and its body are deleted.
 - An updated novel restores prior metadata, volumes, chapters, source, all language translations, and selections.
@@ -236,14 +236,14 @@ Deleting the task removes sources, chat, extraction, and undo records. Applied b
 
 | Situation                                         | Next step                                                                                                                                                                     |
 | :------------------------------------------------ | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unread                                            | Send an import request or Continue organizing; adding a source does not read it immediately                                                                                   |
+| Unread                                            | Send an import request or choose Let Tsukuyomi organize; adding a source does not read it immediately                                                                         |
 | Inspected, no body                                | Continue organizing to extract chapters                                                                                                                                       |
-| Extracted                                         | Check counts, order, and body in Draft, then generate a plan                                                                                                                  |
+| Extracted                                         | Check counts, order, and body in the Organize step, then generate a plan                                                                                                      |
 | Excluded                                          | Specify the source if it should be used                                                                                                                                       |
 | Processing/extraction failed                      | Read the reason. Retry only failed chapters for temporary errors; use files for login/verification pages                                                                      |
 | Requests to a site are paused for about N minutes | The site refused requests several times. Retry the remaining chapters after a few minutes, use the desktop app, or enable Firecrawl for the site in Settings → Site mappings. |
 | Waiting for answer                                | Reply in chat                                                                                                                                                                 |
-| Ready for preview, absent from library            | Inspect/generate the plan and Confirm import                                                                                                                                  |
+| Ready for preview, absent from library            | Open the Import step, inspect/generate the plan, and Confirm import                                                                                                           |
 | Completeness unconfirmed                          | Verify contents further or review a partial import                                                                                                                            |
 | Confirm disabled                                  | Wait/pause, answer questions, handle pending items, or regenerate an outdated plan. No changes means nothing needs writing                                                    |
 | Target busy                                       | Wait for translation, polishing, proofreading, or assistant writes, including final saves after stopping                                                                      |

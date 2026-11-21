@@ -20,6 +20,9 @@ import ImportSourceViewer from './ImportSourceViewer.vue';
 import ImportFilterChips from './ImportFilterChips.vue';
 import { SOURCE_STATUS } from './import-labels';
 
+/** listFirst：手机引导流程里已有来源时先显示来源列表，添加来源收进一个按钮 */
+const props = withDefaults(defineProps<{ listFirst?: boolean }>(), { listFirst: false });
+const addOpen = ref(false);
 const ctx = injectImportPage();
 const store = useImportWorkspaceStore();
 const { t } = useI18n();
@@ -63,6 +66,8 @@ const STATUS_ORDER: ImportSource['status'][] = [
 
 const filter = ref<SourceFilter>('all');
 const overview = computed(() => sourceOverview(store.sources));
+// 已有来源时（手机引导流程）把添加来源收进按钮，列表排在最前
+const compactAdd = computed(() => props.listFirst && overview.value.total > 0);
 const filters = computed(() => [
   { id: 'all' as SourceFilter, label: t('importUi.common.all'), count: overview.value.total },
   ...STATUS_ORDER.map((status) => ({
@@ -102,12 +107,24 @@ const open = async (sourceId: string) => {
 </script>
 
 <template>
-  <section class="isp" :aria-label="t('importUi.sources.title')">
+  <section
+    class="isp"
+    :class="{ 'isp--list-first': compactAdd }"
+    :aria-label="t('importUi.sources.title')"
+  >
     <div class="isp-layout" :class="{ 'isp-layout--split': selectedSource }">
       <div class="isp-main">
-        <ImportSourceAdd />
+        <ImportSourceAdd v-if="!compactAdd || addOpen" />
+        <button
+          v-if="compactAdd && !addOpen"
+          type="button"
+          class="ui-btn ui-btn--ghost isp-add-toggle"
+          @click="addOpen = true"
+        >
+          <i class="pi pi-plus" aria-hidden="true" />{{ t('importUi.sourceAdd.title') }}
+        </button>
 
-        <section class="ipl-card">
+        <section class="ipl-card isp-list-card">
           <div class="ipl-card-head">
             <h3 class="ipl-card-title">
               <i class="pi pi-folder" aria-hidden="true" />{{ t('importUi.sources.title') }}
@@ -171,6 +188,15 @@ const open = async (sourceId: string) => {
   flex-direction: column;
   gap: 0.85rem;
   min-width: 0;
+}
+
+/* 手机引导流程：已有来源时列表在前，添加来源是列表下方的按钮 */
+.isp--list-first .isp-list-card {
+  order: -1;
+}
+
+.isp-add-toggle {
+  align-self: flex-start;
 }
 
 .isp-empty {

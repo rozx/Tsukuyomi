@@ -15,9 +15,9 @@
 ## 3. 平板：删除页内右侧竖栏
 
 - [ ] 3.1 先写测试：挂载平板布局 + 书库页，`#tablet-sysbar-leading` 内有列表开关，点击后 `isListOpen` 切换、标题与 `aria-pressed` 同步；书籍详情页同理切换 `isTabletSidebarOpen`（标题「收起 / 展开目录」）；导航到首页后挂载点为空；实现：`TabletSysBar` 加空挂载点，`BooksPageTablet` / `BookDetailsTablet` 用 `<Teleport to="#tablet-sysbar-leading" defer>` 渲染开关，测试通过
-- [ ] 3.2 先写测试：`TabletSysBar` 的「月詠」按钮调用 `dispatch('chat')` 开 / 关助手、面板打开时为激活态、导入路由下显示激活态且点击不改变 `rightPanelOpen`；实现并通过
+- [ ] 3.2 先写测试：`TabletSysBar` 的「月詠」按钮调用 `dispatch('chat')` 开 / 关助手、面板打开时为激活态、导入路由横屏下显示激活态且点击不改变 `rightPanelOpen`、竖屏下照常开关导入对话；实现并通过
 - [ ] 3.3 删除 `TabletSideRail.vue`、`BooksTabletSideRail.vue`、`BookDetailsTablet.vue` 内的竖栏（含其中的向量按钮）、`useTabletRightRail.ts`；`RightPanelRail` 已删后 `rail-base.css` 无引用则删除；去掉 `NotificationBadge.vue` 等注释里对 `.tsr-btn` 的引用；`bun run type-check` 通过
-- [ ] 3.4 品牌文字加 `min-width: 0` 与省略号；浏览器在平板 768×1024（竖屏）与 1024×768（横屏）验证：书库页、书籍详情页开关开合（竖屏点叠层外侧关闭后按钮同步）、首页没有开关、所有页面可从顶部栏开关助手、助手打开时点顶部栏按钮能关闭、导入页按钮为激活态且点击无效、顶部栏不溢出、内容区延伸到右边缘
+- [ ] 3.4 品牌文字加 `min-width: 0` 与省略号；浏览器在平板 768×1024（竖屏）与 1024×768（横屏）验证：书库页、书籍详情页开关开合（竖屏点叠层外侧关闭后按钮同步）、首页没有开关、所有页面可从顶部栏开关助手、助手打开时点顶部栏按钮能关闭、导入页横屏按钮为激活态且点击无效、竖屏按钮开关右侧滑入的导入对话、顶部栏不溢出、内容区延伸到右边缘
 
 ## 4. 任务中心后台向量化区
 

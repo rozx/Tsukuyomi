@@ -10,6 +10,7 @@ import { computed, inject, onMounted, provide, ref, watch, type InjectionKey } f
 import { useRoute, useRouter } from 'vue-router';
 import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import { useImportDraftDeletion } from './useImportDraftDeletion';
+import { STEP_SECTION, importStepStates } from './import-steps';
 import {
   ImportPreviewService,
   type ImportChapterPreview,
@@ -70,6 +71,17 @@ function createImportPage() {
     section.value = 'chat';
     void router.push(`/import/${taskId}`);
   }
+
+  /**
+   * 打开任务时默认停在哪个分区（手机没有对话分区）：按三步流程（来源 → 整理 → 导入）停在当前步。
+   */
+  const landingSection = computed<ImportSection>(() => {
+    const { current } = importStepStates({
+      sourceCount: store.sources.length,
+      taskState: store.task?.state ?? 'draft',
+    });
+    return STEP_SECTION[current];
+  });
 
   /** 平板 / 手机：从任务内返回任务列表（桌面任务列表常驻左侧，不需要） */
   async function closeTask(): Promise<void> {
@@ -180,6 +192,7 @@ function createImportPage() {
     ready,
     routeTaskId,
     section,
+    landingSection,
     draftWindows,
     selectedChapterId,
     preview,

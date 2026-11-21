@@ -1,15 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import MobileSysBar from 'src/components/layout/MobileSysBar.vue';
 import MobileTabBar from 'src/components/layout/MobileTabBar.vue';
 import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
 import MobileChatSheet from 'src/components/layout/MobileChatSheet.vue';
+import ImportChatSheet from 'src/components/import/ImportChatSheet.vue';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
 
 const ui = useUiStore();
-// 导入路由的对话是工作台的「对话」分区（常驻页面内），不挂普通月詠抽屉
+// 导入路由挂导入专用的月詠抽屉（绑定当前导入任务），其余路由挂普通月詠抽屉；两者共用同一个开关
 const isImportRoute = useImportRouteScope();
 
 // 右侧面板在移动端是 AI 助手的底部抽屉（翻译进度已移到顶部信息条的任务中心）
@@ -23,6 +24,11 @@ const isChatOpen = computed<boolean>({
       ui.closeRightPanel();
     }
   },
+});
+
+// 进出导入路由时收起抽屉：另一种月詠抽屉不应在切换页面时自己弹出来
+watch(isImportRoute, () => {
+  if (isChatOpen.value) isChatOpen.value = false;
 });
 
 const closeSideMenu = () => ui.closeSideMenu();
@@ -61,6 +67,7 @@ useOverlayCloseStack({
     <!-- AI 助手底部抽屉常驻 DOM，useRightPanel 内部状态不会被 sheet 关闭时清掉 —— 只有
          MobileBottomSheet 的 transition 控制可见性。 -->
     <MobileChatSheet v-if="!isImportRoute" v-model:visible="isChatOpen" />
+    <ImportChatSheet v-else v-model:visible="isChatOpen" />
   </div>
 </template>
 
