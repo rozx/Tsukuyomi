@@ -8,7 +8,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useUiStore } from 'src/stores/ui';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 
-/** 与 .desktop-shell-aside 的宽度过渡时长一致：收起动画结束后再卸载面板 */
+/** 与 .desktop-shell-aside 的宽度过渡时长一致：收起动画结束后再隐藏面板 */
 const ASIDE_TRANSITION_MS = 220;
 
 const ui = useUiStore();
@@ -17,20 +17,24 @@ const isImportRoute = useImportRouteScope();
 const asideOpen = computed(() => ui.rightPanelOpen || isImportRoute.value);
 const asideWidth = computed(() => (asideOpen.value ? `${ui.rightPanelWidth}px` : '0px'));
 
-// 关闭时右侧零宽度；面板内容在收起动画播完后才卸载，打开时立即挂载
+// 关闭时右侧零宽度。面板第一次打开时才挂载，之后一直保留：对话的发送状态与消息在面板组件里，
+// 回复进行中收起面板若卸载，后台请求仍在跑，再打开时停止按钮消失、还能对同一会话重复发送。
+// 收起动画播完后用 v-show 隐藏（display: none），零宽度容器里不留可聚焦的内容。
 const panelMounted = ref(asideOpen.value);
-let unmountTimer: ReturnType<typeof setTimeout> | undefined;
+const panelShown = ref(asideOpen.value);
+let hideTimer: ReturnType<typeof setTimeout> | undefined;
 watch(asideOpen, (open) => {
-  clearTimeout(unmountTimer);
+  clearTimeout(hideTimer);
   if (open) {
     panelMounted.value = true;
+    panelShown.value = true;
     return;
   }
-  unmountTimer = setTimeout(() => {
-    panelMounted.value = false;
+  hideTimer = setTimeout(() => {
+    panelShown.value = false;
   }, ASIDE_TRANSITION_MS);
 });
-onBeforeUnmount(() => clearTimeout(unmountTimer));
+onBeforeUnmount(() => clearTimeout(hideTimer));
 
 // 段落「复制到助手 / 解释选中」写入 ui.assistantInputMessage。面板关闭时对话组件不在，
 // 由一直挂载的桌面外壳打开面板；消息的填入与清空交给挂载后的对话面板（useRightPanel 的
@@ -63,7 +67,7 @@ watch(
 
       <div class="desktop-shell-aside" :style="{ width: asideWidth }">
         <div class="desktop-shell-aside-inner" :style="{ width: `${ui.rightPanelWidth}px` }">
-          <AppRightPanel v-if="panelMounted" />
+          <AppRightPanel v-if="panelMounted" v-show="panelShown" />
         </div>
       </div>
 

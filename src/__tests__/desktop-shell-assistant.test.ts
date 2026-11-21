@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import './setup';
-import { createApp, defineComponent, h, nextTick, type App } from 'vue';
+import { createApp, defineComponent, h, nextTick, onMounted, onUnmounted, type App } from 'vue';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { createPinia, setActivePinia } from 'pinia';
 import { useUiStore } from '../stores/ui';
@@ -12,7 +12,17 @@ function stub(name: string) {
 vi.mock('src/components/layout/AppHeader.vue', () => stub('stub-header'));
 vi.mock('src/components/layout/AppFooter.vue', () => stub('stub-footer'));
 vi.mock('src/components/layout/AppSideMenu.vue', () => stub('stub-side-menu'));
-vi.mock('src/components/layout/AppRightPanel.vue', () => stub('stub-right-panel'));
+// 右侧面板记录挂载 / 卸载次数：收起时要保留同一个实例（对话的发送状态在面板组件里）
+const panelLife = vi.hoisted(() => ({ mounts: 0, unmounts: 0 }));
+vi.mock('src/components/layout/AppRightPanel.vue', () => ({
+  default: defineComponent({
+    setup() {
+      onMounted(() => (panelLife.mounts += 1));
+      onUnmounted(() => (panelLife.unmounts += 1));
+      return () => h('div', { class: 'stub-right-panel' });
+    },
+  }),
+}));
 vi.mock('src/components/desk-pet/DeskPet.vue', () => stub('stub-desk-pet'));
 
 const { default: MainLayoutDesktop } =
@@ -42,7 +52,7 @@ async function mount(path = '/books') {
 const aside = (host: HTMLElement) => host.querySelector<HTMLElement>('.desktop-shell-aside')!;
 
 describe('桌面外壳：右侧助手面板', () => {
-  it('面板关闭时右侧宽度为 0，且不渲染面板内容', async () => {
+  it('面板从未打开时右侧宽度为 0，且不渲染面板内容', async () => {
     const { ui, host } = await mount();
     ui.rightPanelOpen = false;
     await nextTick();
@@ -62,6 +72,28 @@ describe('桌面外壳：右侧助手面板', () => {
     await nextTick();
     expect(aside(host).style.width).toBe('420px');
     expect(host.querySelector('.stub-right-panel')).not.toBeNull();
+  });
+
+  it('收起面板后保留同一个面板实例，只在收起动画结束后隐藏；再打开不重新挂载', async () => {
+    panelLife.mounts = 0;
+    panelLife.unmounts = 0;
+    const { ui, host } = await mount();
+    ui.rightPanelOpen = true;
+    await nextTick();
+    expect(panelLife.mounts).toBe(1);
+    ui.rightPanelOpen = false;
+    await nextTick();
+    await new Promise((resolve) => setTimeout(resolve, 260));
+    await nextTick();
+    expect(aside(host).style.width).toBe('0px');
+    const panel = host.querySelector<HTMLElement>('.stub-right-panel');
+    expect(panel).not.toBeNull();
+    expect(panel!.style.display).toBe('none');
+    expect(panelLife.unmounts).toBe(0);
+    ui.rightPanelOpen = true;
+    await nextTick();
+    expect(host.querySelector<HTMLElement>('.stub-right-panel')!.style.display).toBe('');
+    expect(panelLife.mounts).toBe(1);
   });
 
   it('导入页上面板即使关闭也常驻', async () => {

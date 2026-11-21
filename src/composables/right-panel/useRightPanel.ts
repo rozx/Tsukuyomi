@@ -486,9 +486,9 @@ export function useRightPanel() {
   );
 
   // 监听助手输入消息状态，自动填充输入框。
-  // immediate: 桌面端 AppChatPanelDesktop 只在面板打开时挂载，面板关闭时触发 "复制到助手"
-  // 由 MainLayoutDesktop 先打开面板，本组件随后挂载并立即消费当时已存在的
-  // assistantInputMessage；否则首次挂载时 watcher 非 immediate，会漏掉那条消息。
+  // immediate: 桌面端 AppChatPanelDesktop 在面板第一次打开时才挂载（之后收起只隐藏不卸载），
+  // 面板从未打开时触发 "复制到助手" 由 MainLayoutDesktop 先打开面板，本组件随后挂载并立即消费
+  // 当时已存在的 assistantInputMessage；否则首次挂载时 watcher 非 immediate，会漏掉那条消息。
   watch(
     () => ui.assistantInputMessage,
     (message) => {
