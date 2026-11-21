@@ -3,6 +3,7 @@ import AppHeader from 'src/components/layout/AppHeader.vue';
 import AppFooter from 'src/components/layout/AppFooter.vue';
 import AppSideMenu from 'src/components/layout/AppSideMenu.vue';
 import AppRightPanel from 'src/components/layout/AppRightPanel.vue';
+import DeskPet from 'src/components/desk-pet/DeskPet.vue';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useUiStore } from 'src/stores/ui';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
@@ -65,6 +66,11 @@ watch(
           <AppRightPanel v-if="panelMounted" />
         </div>
       </div>
+
+      <!-- 月詠桌宠：只在桌面布局挂载，右侧助手面板关着时转述进度（打开时桌宠自己隐藏） -->
+      <div class="desktop-shell-pet">
+        <DeskPet />
+      </div>
     </div>
 
     <AppFooter />
@@ -117,6 +123,13 @@ watch(
 
 .desktop-shell-aside-inner {
   flex-shrink: 0;
+}
+
+.desktop-shell-pet {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 25;
 }
 
 .desktop-shell-canvas {

@@ -80,19 +80,30 @@ export function createTaskCenter() {
   // ---------- 打开 / 确认 ----------
   const acknowledgedAt = ref(readAck());
   const isOpen = ref(false);
-  let opener: ((event?: Event) => void) | null = null;
+  /** 由任务中心变体注册；anchor 为弹层定位的元素（缺省用 event.currentTarget） */
+  let opener: ((event?: Event, anchor?: Element) => void) | null = null;
 
   const acknowledge = () => {
     acknowledgedAt.value = Date.now();
     writeAck(acknowledgedAt.value);
   };
   /** 由任务中心变体注册：桌面切换 popover，手机切换底部抽屉 */
-  const registerOpener = (fn: ((event?: Event) => void) | null) => {
+  const registerOpener = (fn: ((event?: Event, anchor?: Element) => void) | null) => {
     opener = fn;
   };
   const toggle = (event?: Event) => {
     acknowledge();
     opener?.(event);
+  };
+  /**
+   * 从其他入口（如月詠桌宠）打开任务中心：不切换——已经在屏幕上时不动；
+   * anchor 为弹层定位的元素（调用方的按钮可能随即卸载，所以由调用方给一个稳定的锚点）；
+   * event 为触发的点击，弹层据此把这次点击排除在「点外侧关闭」之外。
+   */
+  const open = (anchor?: Element, event?: Event) => {
+    if (surfaceVisible.value) return;
+    acknowledge();
+    opener?.(event, anchor);
   };
   const setOpen = (open: boolean) => {
     isOpen.value = open;
@@ -143,12 +154,14 @@ export function createTaskCenter() {
   const setPinnedPanelShown = (shown: boolean) => {
     pinnedPanelShown.value = shown;
   };
+  /** 任务中心是否在屏幕上：popup / 手机抽屉打开，或固定面板显示 */
+  const surfaceVisible = computed(() => isOpen.value || pinnedPanelShown.value);
   const embeddingCollapsed = computed(() => ui.taskCenterEmbeddingCollapsed);
   const toggleEmbeddingCollapsed = () =>
     ui.setTaskCenterEmbeddingCollapsed(!ui.taskCenterEmbeddingCollapsed);
   /** 任务中心可见（popup / 手机抽屉打开，或固定面板显示）且该区展开时才刷新本书统计 */
   const embeddingStatsVisible = computed(
-    () => (isOpen.value || pinnedPanelShown.value) && !ui.taskCenterEmbeddingCollapsed,
+    () => surfaceVisible.value && !ui.taskCenterEmbeddingCollapsed,
   );
   const embedding = createEmbeddingBackground({ visible: embeddingStatsVisible });
 
@@ -163,6 +176,10 @@ export function createTaskCenter() {
     }),
   );
   const overall = computed(() => overallProgress(queue.items, acknowledgedAt.value));
+  /** 确认之后结束、还没被查看的章节任务（chip 完成提示的明细，桌宠小结用） */
+  const unseenFinished = computed(() =>
+    groups.value.finished.filter((row) => (row.item.endedAt ?? 0) > acknowledgedAt.value),
+  );
 
   /** 新的章节任务入队或开始时短暂提示（不打开 popup、不动右侧面板） */
   const flash = ref(false);
@@ -305,6 +322,7 @@ export function createTaskCenter() {
     isOpen,
     setOpen,
     toggle,
+    open,
     registerOpener,
     acknowledge,
     // chip
@@ -351,6 +369,8 @@ export function createTaskCenter() {
     toggleEmbeddingCollapsed,
     embeddingStatsVisible,
     setPinnedPanelShown,
+    surfaceVisible,
+    unseenFinished,
   };
 }
 

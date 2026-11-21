@@ -55,6 +55,16 @@ describe('ui store · 任务中心状态', () => {
     expect(reload().taskCenterEmbeddingCollapsed).toBe(true);
   });
 
+  it('桌宠气泡默认收起，展开后刷新仍保持', () => {
+    const store = useUiStore();
+    store.loadState();
+    expect(store.deskPetBubbleExpanded).toBe(false);
+    store.setDeskPetBubbleExpanded(true);
+    expect(reload().deskPetBubbleExpanded).toBe(true);
+    reload().setDeskPetBubbleExpanded(false);
+    expect(reload().deskPetBubbleExpanded).toBe(false);
+  });
+
   it('取消固定时同时清除收起状态', () => {
     const store = useUiStore();
     store.loadState();

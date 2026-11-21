@@ -53,9 +53,9 @@ export function useAnchoredPopover(options: {
   const height = ref(options.max);
   let anchorEl: Element | null = null;
 
-  /** 打开前调用：记下按钮并按其位置计算高度 */
-  const prepare = (event: Event) => {
-    const anchor = event.currentTarget;
+  /** 打开前调用：记下按钮（事件的 currentTarget 或直接给定的元素）并按其位置计算高度 */
+  const prepare = (source: Event | Element) => {
+    const anchor = source instanceof Element ? source : source.currentTarget;
     if (!(anchor instanceof Element)) return;
     anchorEl = anchor;
     height.value = fitHeightBelowAnchor(anchor.getBoundingClientRect(), window.innerHeight, {

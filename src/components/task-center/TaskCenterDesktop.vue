@@ -122,14 +122,16 @@ const unpin = () => center.setPinned(false);
 
 onMounted(() => {
   window.addEventListener('resize', onWindowResize);
-  center.registerOpener((event) => {
+  center.registerOpener((event, anchor) => {
     if (center.pinned.value) {
       center.setCollapsed(!center.collapsed.value);
       return;
     }
-    if (!event) return;
-    anchored.prepare(event);
-    popoverRef.value?.toggle(event);
+    // 其他入口（月詠桌宠）给出稳定的锚点，自己的按钮可能随即卸载
+    const target = anchor ?? (event?.currentTarget instanceof Element ? event.currentTarget : null);
+    if (!target) return;
+    anchored.prepare(target);
+    popoverRef.value?.toggle(event ?? new MouseEvent('click'), target);
   });
 });
 

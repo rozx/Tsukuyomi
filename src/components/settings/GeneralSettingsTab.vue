@@ -38,6 +38,22 @@
         {{ t('settings.taskQueue.maxConcurrentHint') }}
       </p>
     </div>
+
+    <h3 class="text-base font-semibold pt-2">{{ t('settings.deskPet.title') }}</h3>
+    <div class="flex items-start justify-between gap-3 max-w-xl">
+      <div class="flex flex-col gap-1">
+        <label for="desk-pet-enabled">{{ t('settings.deskPet.show') }}</label>
+        <p id="desk-pet-enabled-hint" class="text-sm opacity-70">
+          {{ t('settings.deskPet.showHint') }}
+        </p>
+      </div>
+      <ToggleSwitch
+        input-id="desk-pet-enabled"
+        :model-value="settings.deskPetEnabled"
+        aria-describedby="desk-pet-enabled-hint"
+        @update:model-value="setShowDeskPet"
+      />
+    </div>
   </section>
 </template>
 
@@ -46,6 +62,7 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Select from 'primevue/select';
 import InputNumber from 'primevue/inputnumber';
+import ToggleSwitch from 'primevue/toggleswitch';
 import { isAppLocale, resolveAppLocale } from 'src/models/locale';
 import { languageOptions } from 'src/i18n/translate';
 import {
@@ -70,6 +87,20 @@ async function setMaxConcurrent(value: number | null) {
     toast.add({
       severity: 'error',
       summary: t('settings.taskQueue.saveFailed'),
+      detail: String(error),
+      life: 5000,
+    });
+  }
+}
+
+async function setShowDeskPet(value: boolean) {
+  if (value === settings.deskPetEnabled) return;
+  try {
+    await settings.setShowDeskPet(value);
+  } catch (error) {
+    toast.add({
+      severity: 'error',
+      summary: t('settings.deskPet.saveFailed'),
       detail: String(error),
       life: 5000,
     });

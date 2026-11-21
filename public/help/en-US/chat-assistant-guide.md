@@ -29,6 +29,7 @@ Tsukuyomi is a calm, learned priestess of the moon. Her normally composed tone o
 - Desktop and tablet: click the "Tsukuyomi" button in the top system bar (💬, after the divider) to open or close the assistant panel. On desktop the panel docks on the right; on tablet it slides in from the right. On mobile, use "Tsukuyomi" in the bottom tab bar.
 - When you use "Copy source to assistant" or "Explain selected text" on a paragraph in the reader, the panel opens automatically, even if it was closed, and fills in the input box.
 - Translation, polishing, and proofreading progress is not shown here. Open the task center in the top bar instead.
+- On desktop, while the assistant panel is closed, the desk companion in the bottom-right corner shows what the assistant is thinking, which tools it calls, and its reply; when the reply finishes it shows "Reply ready". Clicking the summary or the companion's avatar opens the assistant panel, and the companion hides while the panel is open. See [Desk companion](/help/toolbar-guide#toolbar-guide-desk-pet).
 - On desktop, drag the panel's left edge to resize it; when closed, it takes up no width on the right.
 
 ### Send a message {#chat-assistant-guide-section-5}

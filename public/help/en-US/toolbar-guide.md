@@ -95,6 +95,21 @@ Since v0.16.1, packaged desktop releases also show an update badge:
 
 See [Settings → About](/help/settings-guide).
 
+### 5) Tsukuyomi desk companion {#toolbar-guide-desk-pet}
+
+Desktop only (including Electron): a desk companion sits in the bottom-right corner of the page, shown with the existing Tsukuyomi avatar. While the task center or the assistant panel is closed, a speech bubble above the avatar shows the progress of translation, polishing, and proofreading tasks and of assistant replies. Everything comes from the tasks' own records, with no extra AI calls. Tablet and phone layouts don't show it.
+
+- **Avatar states**: while tasks run, the ring turns light blue, breathes with a soft glow, and has a spinning arc; the avatar sways as it works, and the badge shows how many tasks are running. After a task ends and its summary hasn't been seen, the ring turns green, it hops every few seconds, and the badge shows ✓. If something failed, the ring turns red, it shakes its head, and the badge shows the failure count. When idle, it shrinks, dims, nods off, and lets out a "zzz"; hover over it to wake it up. With "reduce motion" turned on in your system, all animation stops and only the colors and badge remain.
+- **Click the avatar**: in any state, clicking the avatar opens the assistant panel on the right so you can talk to Tsukuyomi.
+- **Bubble content**: a title line with the chapter title and paragraph progress (or "Assistant"), then the latest activity, labeled "Thinking" (the end of the reasoning text), "Tool" (a short line, with the tool name and status in small text), or "Output" (the end of the translation or reply).
+- **Collapse and expand**: click the arrow at the top-right of the bubble. Collapsed shows only the latest activity; expanded shows a log of the last 8 entries, with "Open task center" at the bottom and ‹ › to switch when several tasks are running. Your choice is remembered.
+- **Which task it follows**: the assistant (while its panel is closed) comes first, then the chapter you're reading, then other chapters. It switches only when the current task ends; a task you pick stays selected until it ends.
+- **Making way**: while the task center is open (or the pinned panel is expanded), chapter tasks aren't narrated. When Tsukuyomi is already on the right (the assistant panel is open, or you're on the import page), the companion hides, and comes back when you close the panel or leave the import page.
+- **Summaries**: when a chapter task ends, the bubble shows `"Chapter N" translated` or the done and failed counts; when an assistant reply finishes, it shows "Reply ready" and the start of the reply. Click the summary to open the task center (or the assistant panel), or "Dismiss" to close it. Dismissing a chapter summary also clears the task center chip's done notice, and opening the task center counts as seeing it.
+- **Idle**: with nothing running, it dozes in the corner; click it to open the assistant panel.
+
+You can turn it off in **Settings → General → Desk companion**.
+
 ---
 
 ## 📱 Tablet layout {#toolbar-guide-section-7}

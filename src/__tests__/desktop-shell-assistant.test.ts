@@ -13,6 +13,7 @@ vi.mock('src/components/layout/AppHeader.vue', () => stub('stub-header'));
 vi.mock('src/components/layout/AppFooter.vue', () => stub('stub-footer'));
 vi.mock('src/components/layout/AppSideMenu.vue', () => stub('stub-side-menu'));
 vi.mock('src/components/layout/AppRightPanel.vue', () => stub('stub-right-panel'));
+vi.mock('src/components/desk-pet/DeskPet.vue', () => stub('stub-desk-pet'));
 
 const { default: MainLayoutDesktop } =
   await import('src/layouts/main-layout/MainLayoutDesktop.vue');
@@ -47,6 +48,11 @@ describe('桌面外壳：右侧助手面板', () => {
     await nextTick();
     expect(aside(host).style.width).toBe('0px');
     expect(host.querySelector('.stub-right-panel')).toBeNull();
+  });
+
+  it('桌面外壳挂载月詠桌宠（显示与否由桌宠自己按设置与助手面板判断）', async () => {
+    const { host } = await mount();
+    expect(host.querySelector('.desktop-shell-pet .stub-desk-pet')).not.toBeNull();
   });
 
   it('面板打开时按保存的宽度停靠并渲染面板', async () => {

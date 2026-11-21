@@ -12,6 +12,12 @@ export default {
       importExport: '匯入/匯出',
       about: '關於',
     },
+    deskPet: {
+      title: '月詠桌寵',
+      show: '顯示月詠桌寵',
+      showHint: '僅桌面端。收合任務中心或助手面板時，右下角的月詠會轉述翻譯與助手的進度。',
+      saveFailed: '無法儲存桌寵設定',
+    },
     taskQueue: {
       title: '任務佇列',
       maxConcurrent: '最大同時進行任務',

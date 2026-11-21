@@ -43,6 +43,10 @@ A new book takes the interface language as its target when actually created. Cha
 
 **Max concurrent tasks** sets how many chapter translation, polishing, and proofreading tasks run at once (1–5, default 2), shared across all books. Raising it starts queued tasks right away; lowering it does not interrupt running tasks. Single-paragraph tasks and assistant chats do not use these slots. See [Task queue and task center](/help/book-details-translation#book-details-translation-section-9).
 
+### Desk companion {#settings-guide-desk-pet}
+
+**Show Tsukuyomi desk companion** (on by default, desktop only): while the task center or assistant panel is closed, Tsukuyomi in the bottom-right corner shows translation and assistant progress; click it to open the assistant panel. Turning it off hides the companion and its bubble right away. See [System bar and navigation · Desk companion](/help/toolbar-guide#toolbar-guide-desk-pet).
+
 ## 1) 🤖 AI models {#settings-guide-section-4}
 
 Configure default task models.

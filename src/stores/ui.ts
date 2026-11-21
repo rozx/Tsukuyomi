@@ -74,6 +74,8 @@ interface TaskCenterUiState {
   taskCenterOtherCollapsed: boolean;
   /** 后台向量化区是否折叠（默认折叠，只占一行区头） */
   taskCenterEmbeddingCollapsed: boolean;
+  /** 桌面端月詠桌宠的气泡是否展开（默认收起，只显示最新一段） */
+  deskPetBubbleExpanded: boolean;
 }
 
 const DEFAULT_TASK_CENTER_UI_STATE: TaskCenterUiState = {
@@ -84,6 +86,7 @@ const DEFAULT_TASK_CENTER_UI_STATE: TaskCenterUiState = {
   taskCenterExpandedId: null,
   taskCenterOtherCollapsed: false,
   taskCenterEmbeddingCollapsed: true,
+  deskPetBubbleExpanded: false,
 };
 
 function parseTaskCenterUiState(state: Record<string, unknown>): TaskCenterUiState {
@@ -97,6 +100,7 @@ function parseTaskCenterUiState(state: Record<string, unknown>): TaskCenterUiSta
       typeof state.taskCenterExpandedId === 'string' ? state.taskCenterExpandedId : null,
     taskCenterOtherCollapsed: state.taskCenterOtherCollapsed === true,
     taskCenterEmbeddingCollapsed: state.taskCenterEmbeddingCollapsed !== false,
+    deskPetBubbleExpanded: state.deskPetBubbleExpanded === true,
   };
 }
 
@@ -213,6 +217,7 @@ export const useUiStore = defineStore('ui', {
       this.taskCenterExpandedId = state.taskCenterExpandedId;
       this.taskCenterOtherCollapsed = state.taskCenterOtherCollapsed;
       this.taskCenterEmbeddingCollapsed = state.taskCenterEmbeddingCollapsed;
+      this.deskPetBubbleExpanded = state.deskPetBubbleExpanded;
       this.isLoaded = true;
     },
 
@@ -263,6 +268,7 @@ export const useUiStore = defineStore('ui', {
         taskCenterExpandedId: this.taskCenterExpandedId,
         taskCenterOtherCollapsed: this.taskCenterOtherCollapsed,
         taskCenterEmbeddingCollapsed: this.taskCenterEmbeddingCollapsed,
+        deskPetBubbleExpanded: this.deskPetBubbleExpanded,
       });
     },
     /**
@@ -307,6 +313,10 @@ export const useUiStore = defineStore('ui', {
     },
     setTaskCenterEmbeddingCollapsed(collapsed: boolean) {
       this.taskCenterEmbeddingCollapsed = collapsed;
+      this.saveState();
+    },
+    setDeskPetBubbleExpanded(expanded: boolean) {
+      this.deskPetBubbleExpanded = expanded;
       this.saveState();
     },
   },

@@ -223,6 +223,7 @@ function copyOptionalAppSettingsFields(target: AppSettings, source: AppSettings)
   if (typeof source.quickStartDismissed === 'boolean') {
     target.quickStartDismissed = source.quickStartDismissed;
   }
+  if (typeof source.showDeskPet === 'boolean') target.showDeskPet = source.showDeskPet;
   if (typeof source.firecrawlFallbackEnabled === 'boolean') {
     target.firecrawlFallbackEnabled = source.firecrawlFallbackEnabled;
   }

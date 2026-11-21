@@ -17,7 +17,11 @@ import type {
 import type { SyncConfig } from 'src/models/sync';
 import type { DesktopMcpStartConfig } from 'src/models/desktop-mcp';
 import { SyncType } from 'src/models/sync';
-import { DEFAULT_AGENT_MCP_SETTINGS, GENERAL_SETTINGS_TAB } from 'src/models/settings';
+import {
+  DEFAULT_AGENT_MCP_SETTINGS,
+  GENERAL_SETTINGS_TAB,
+  isDeskPetEnabled,
+} from 'src/models/settings';
 import {
   TASK_QUEUE_MAX_CONCURRENT_DEFAULT,
   pickTaskQueueMaxConcurrent,
@@ -463,6 +467,9 @@ export const useSettingsStore = defineStore('settings', {
       };
     },
 
+    /** 是否显示桌面端月詠桌宠（缺省开启） */
+    deskPetEnabled: (state): boolean => isDeskPetEnabled(state.settings),
+
     /**
      * 获取最后打开的设置标签页索引
      */
@@ -684,6 +691,10 @@ export const useSettingsStore = defineStore('settings', {
     /**
      * 设置章节任务队列「最大同时进行任务」（钳制到 1–5 后保存）
      */
+    async setShowDeskPet(show: boolean): Promise<void> {
+      await this.updateSettings({ showDeskPet: show });
+    },
+
     async setTaskQueueMaxConcurrent(limit: number): Promise<void> {
       await this.updateSettings({ taskQueueMaxConcurrent: pickTaskQueueMaxConcurrent(limit) });
     },

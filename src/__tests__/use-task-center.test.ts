@@ -152,6 +152,21 @@ describe('useTaskCenter', () => {
     expect(center.embeddingStatsVisible.value).toBe(true);
   });
 
+  it('open 从其他入口打开任务中心：已在屏幕上时不动，否则确认并按给定元素定位', () => {
+    const center = mountCenter();
+    const calls: Array<[Event | undefined, Element | undefined]> = [];
+    center.registerOpener((event, anchor) => calls.push([event, anchor]));
+    const anchor = document.createElement('button');
+
+    center.open(anchor);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]![1]).toBe(anchor);
+
+    center.setOpen(true);
+    center.open(anchor);
+    expect(calls).toHaveLength(1);
+  });
+
   it('其他 AI 活动不计入章节任务数量', () => {
     const ai = useAIProcessingStore();
     ai.activeTasks = [task({ id: 'x', type: 'assistant' })];

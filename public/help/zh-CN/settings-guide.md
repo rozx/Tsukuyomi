@@ -45,6 +45,10 @@
 
 **最大同时进行任务**设置同时运行的章节翻译、润色、校对任务数（1–5，默认 2），所有书籍共用。调高后排队中的任务立即开始；调低不会中断正在运行的任务。单段落任务和助手对话不占用这个名额。详见 [任务队列与任务中心](/help/book-details-translation#book-details-translation-section-9)。
 
+### 月詠桌宠 {#settings-guide-desk-pet}
+
+**显示月詠桌宠**（默认开启，仅桌面端）：页面右下角的月詠在任务中心或助手面板收起时转述翻译与助手的进度，点它打开助手面板。关闭后桌宠与气泡立即隐藏。详见 [系统栏与导航 · 月詠桌宠](/help/toolbar-guide#toolbar-guide-desk-pet)。
+
 ## 1) 🤖 AI 模型 {#settings-guide-section-4}
 
 用于配置“任务默认模型”。
