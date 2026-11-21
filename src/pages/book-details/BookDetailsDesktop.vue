@@ -389,14 +389,14 @@ const settingsPanelComponent = computed<Component | null>(() => {
   min-height: 0;
 }
 
-/* 鼠标/触摸/程序化聚焦不显示蓝色焦点框；保留键盘 :focus-visible 的轻量焦点指示以维持可访问性 */
-.chapter-content-panel:focus:not(:focus-visible) {
+/*
+ * 阅读区滚动容器不画焦点框：它是 tabindex="-1"，Tab 键到不了，只在切换 / 恢复章节时由
+ * scrollCurrentContentToTop 程序化聚焦，好让 PageUp / PageDown / 空格直接滚动正文。
+ * 页面刚加载或上一次操作是按键时，Chrome 会把这种程序化聚焦当成 :focus-visible，
+ * 整个阅读区被框起来像被全选；段落自己的焦点 / 选中样式不受影响。
+ */
+.chapter-content-panel:focus {
   outline: none;
-}
-
-.chapter-content-panel:focus-visible {
-  outline: 2px solid var(--tsukuyomi-opacity-40);
-  outline-offset: -2px;
 }
 
 /* 隐藏原生滚动条：章节内容改用自定义索引驱动滚动条（Teleport 到 .page-container）。
