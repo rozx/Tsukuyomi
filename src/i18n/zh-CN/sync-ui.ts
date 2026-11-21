@@ -266,6 +266,11 @@ export default {
       noRevisions: '暂无修订历史',
       loading: '加载中...',
       deleteGist: '删除当前 Gist',
+      autoSyncTitle: '自动同步',
+      syncNowTitle: '立即同步',
+      dangerTitle: '危险操作',
+      dangerDescription:
+        '永久删除远端 Gist 及其中的全部同步数据，本地数据不受影响。此操作不可撤销。',
     },
     time: {
       never: '从未',

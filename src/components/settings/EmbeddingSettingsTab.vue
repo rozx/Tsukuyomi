@@ -2,7 +2,6 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Slider from 'primevue/slider';
 import type { SliderSlideEndEvent } from 'primevue/slider';
-import ToggleSwitch from 'primevue/toggleswitch';
 import Button from 'primevue/button';
 import ProgressBar from 'primevue/progressbar';
 import { useSettingsStore } from 'src/stores/settings';
@@ -17,6 +16,12 @@ import { MODEL_ID, MODEL_VERSION } from 'src/services/embedding-service';
 import { CHAPTER_MODEL_VERSION } from 'src/services/chapter-embedding-service';
 import { isMobileDevice } from 'src/utils/platform';
 import { useI18n } from 'vue-i18n';
+import SettingsPanel from './form/SettingsPanel.vue';
+import SettingsSection from './form/SettingsSection.vue';
+import SettingsField from './form/SettingsField.vue';
+import SettingsToggleRow from './form/SettingsToggleRow.vue';
+import SettingsNote from './form/SettingsNote.vue';
+import SettingsStatus from './form/SettingsStatus.vue';
 
 const settingsStore = useSettingsStore();
 const { t } = useI18n();
@@ -206,13 +211,6 @@ onUnmounted(() => {
 });
 
 // 以下 computed 把模板里的 ?: / && 收进脚本侧，并把三态按钮折叠成单个绑定
-const toggleCardClass = computed(() =>
-  effectiveEnableLocalEmbedding.value
-    ? 'bg-primary-500/5 border-primary-500/30'
-    : 'bg-moon/5 border-moon/10',
-);
-const enableLabelClass = computed(() => (isMobile.value ? 'text-moon/50' : 'text-moon/90'));
-const enableDescClass = computed(() => (isMobile.value ? 'text-moon/50' : 'text-moon/70'));
 const showProgressBar = computed(() => embeddingStatus.value === 'loading');
 const progressValue = computed(() => downloadProgress.value ?? undefined);
 const progressMode = computed(() =>
@@ -266,12 +264,6 @@ const statusAction = computed<{
       return null;
   }
 });
-const semanticLabelClass = computed(() =>
-  effectiveEnableLocalEmbedding.value ? 'text-moon/80' : 'text-moon/40',
-);
-const semanticDescClass = computed(() =>
-  effectiveEnableLocalEmbedding.value ? 'text-moon/60' : 'text-moon/40',
-);
 const semanticDescription = computed(() => {
   if (effectiveEnableLocalEmbedding.value) return t('settingsUi.embedding.semanticOn');
   if (isMobile.value) return t('settingsUi.embedding.semanticMobile');
@@ -280,45 +272,31 @@ const semanticDescription = computed(() => {
 </script>
 
 <template>
-  <div class="p-4 space-y-5">
-    <!-- 本地嵌入总开关 -->
-    <div class="p-3 rounded-lg border space-y-2" :class="toggleCardClass">
-      <div class="flex items-start justify-between gap-3">
-        <div class="flex-1 min-w-0">
-          <label class="text-sm font-medium block" :class="enableLabelClass">
-            {{ t('settingsUi.embedding.enable') }}
-          </label>
-          <p class="text-xs mt-0.5" :class="enableDescClass">
-            <template v-if="isMobile">
-              <span class="pi pi-mobile mr-1"></span>
-              {{ t('settingsUi.embedding.mobileHint') }}
-            </template>
-            <template v-else>
-              {{ t('settingsUi.embedding.desktopHint') }}
-            </template>
-          </p>
-        </div>
-        <ToggleSwitch
-          :model-value="effectiveEnableLocalEmbedding"
-          :disabled="isMobile"
-          @update:model-value="updateEnableLocalEmbedding($event as boolean)"
-        />
-      </div>
-    </div>
+  <SettingsPanel>
+    <!-- 嵌入模型：本地嵌入总开关 + 模型状态 -->
+    <SettingsSection
+      :title="t('settingsUi.embedding.modelTitle')"
+      :description="t('settingsUi.embedding.modelDescription')"
+    >
+      <SettingsToggleRow
+        :label="t('settingsUi.embedding.enable')"
+        :model-value="effectiveEnableLocalEmbedding"
+        :disabled="isMobile"
+        @update:model-value="updateEnableLocalEmbedding"
+      >
+        <template #hint>
+          <template v-if="isMobile">
+            <span class="pi pi-mobile mr-1" aria-hidden="true"></span>
+            {{ t('settingsUi.embedding.mobileHint') }}
+          </template>
+          <template v-else>
+            {{ t('settingsUi.embedding.desktopHint') }}
+          </template>
+        </template>
+      </SettingsToggleRow>
 
-    <!-- 嵌入模型 -->
-    <div v-if="effectiveEnableLocalEmbedding" class="space-y-3">
-      <div>
-        <h3 class="text-sm font-medium text-moon/90 mb-1">
-          {{ t('settingsUi.embedding.modelTitle') }}
-        </h3>
-        <p class="text-xs text-moon/70">
-          {{ t('settingsUi.embedding.modelDescription') }}
-        </p>
-      </div>
-
-      <div class="p-3 bg-moon/5 rounded-lg border border-moon/10 space-y-2">
-        <div class="flex items-center justify-between">
+      <div v-if="effectiveEnableLocalEmbedding" class="embedding-status">
+        <div class="flex items-center justify-between gap-3">
           <div class="flex items-center gap-2">
             <span :class="[statusIcon, statusClass]"></span>
             <span class="text-xs text-moon/80">{{ statusLabel }}</span>
@@ -352,15 +330,12 @@ const semanticDescription = computed(() => {
           <p v-if="downloadFile" class="text-xs text-moon/50 mt-1 truncate">{{ downloadFile }}</p>
         </div>
 
-        <p v-if="showError" class="text-xs text-red-400">
-          {{ lastError }}
-        </p>
+        <SettingsStatus v-if="showError" tone="error">{{ lastError }}</SettingsStatus>
 
-        <p class="text-xs text-moon/60">
-          <span class="pi pi-info-circle mr-1"></span>
+        <SettingsStatus tone="muted">
           {{ MODEL_ID }}
           {{ t('settingsUi.embedding.modelSize') }}
-        </p>
+        </SettingsStatus>
 
         <!-- 运行后端与模型版本（原向量化面板底部的状态块） -->
         <dl
@@ -378,112 +353,90 @@ const semanticDescription = computed(() => {
           </dd>
         </dl>
       </div>
-    </div>
+    </SettingsSection>
 
     <!-- 记忆注入 -->
-    <div class="space-y-3">
-      <div>
-        <h3 class="text-sm font-medium text-moon/90 mb-1">
-          {{ t('settingsUi.embedding.memoryTitle') }}
-        </h3>
-        <p class="text-xs text-moon/70">
-          {{ t('settingsUi.embedding.memoryDescription') }}
-        </p>
-      </div>
-
-      <div class="space-y-4">
-        <!-- 字符预算 -->
-        <div class="space-y-1.5">
-          <div class="flex items-center justify-between">
-            <label class="text-xs text-moon/80">{{ t('settingsUi.embedding.charBudget') }}</label>
-            <span class="text-xs text-moon/60 tabular-nums">{{ charBudget }}</span>
-          </div>
-          <Slider
-            v-model="charBudget"
-            :min="500"
-            :max="5000"
-            :step="100"
-            class="w-full"
-            @slideend="updateCharBudget($event)"
-          />
-          <div class="flex justify-between text-xs text-moon/40">
+    <SettingsSection
+      :title="t('settingsUi.embedding.memoryTitle')"
+      :description="t('settingsUi.embedding.memoryDescription')"
+    >
+      <!-- 字符预算 -->
+      <SettingsField :label="t('settingsUi.embedding.charBudget')">
+        <template #label-aside>{{ charBudget }}</template>
+        <Slider
+          v-model="charBudget"
+          :min="500"
+          :max="5000"
+          :step="100"
+          class="w-full"
+          :aria-label="t('settingsUi.embedding.charBudget')"
+          @slideend="updateCharBudget($event)"
+        />
+        <template #hint>
+          <div class="flex justify-between">
             <span>500</span>
             <span>5000</span>
           </div>
-        </div>
+        </template>
+      </SettingsField>
 
-        <!-- 最低分数阈值 -->
-        <div class="space-y-1.5">
-          <div class="flex items-center justify-between">
-            <label class="text-xs text-moon/80">{{ t('settingsUi.embedding.minScore') }}</label>
-            <span class="text-xs text-moon/60 tabular-nums">{{
-              minScoreThreshold.toFixed(2)
-            }}</span>
-          </div>
-          <Slider
-            v-model="minScoreThreshold"
-            :min="0"
-            :max="0.5"
-            :step="0.01"
-            class="w-full"
-            @slideend="updateMinScoreThreshold($event)"
-          />
-          <div class="flex justify-between text-xs text-moon/40">
+      <!-- 最低分数阈值 -->
+      <SettingsField :label="t('settingsUi.embedding.minScore')">
+        <template #label-aside>{{ minScoreThreshold.toFixed(2) }}</template>
+        <Slider
+          v-model="minScoreThreshold"
+          :min="0"
+          :max="0.5"
+          :step="0.01"
+          class="w-full"
+          :aria-label="t('settingsUi.embedding.minScore')"
+          @slideend="updateMinScoreThreshold($event)"
+        />
+        <template #hint>
+          <div class="flex justify-between">
             <span>{{ t('settingsUi.embedding.minScoreAll') }}</span>
             <span>0.5</span>
           </div>
-        </div>
+        </template>
+      </SettingsField>
 
-        <!-- 语义信号开关 -->
-        <div class="flex items-center justify-between pt-1">
-          <div class="pr-3">
-            <label class="text-xs block" :class="semanticLabelClass">
-              {{ t('settingsUi.embedding.semantic') }}
-            </label>
-            <p class="text-xs mt-0.5" :class="semanticDescClass">
-              {{ semanticDescription }}
-            </p>
-          </div>
-          <ToggleSwitch
-            :model-value="enableSemantic"
-            :disabled="!effectiveEnableLocalEmbedding"
-            @update:model-value="updateEnableSemantic($event as boolean)"
-          />
-        </div>
-      </div>
+      <!-- 语义信号开关 -->
+      <SettingsToggleRow
+        :label="t('settingsUi.embedding.semantic')"
+        :hint="semanticDescription"
+        :model-value="enableSemantic"
+        :disabled="!effectiveEnableLocalEmbedding"
+        @update:model-value="updateEnableSemantic"
+      />
 
-      <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
-        <p class="text-xs text-moon/70">
-          <span class="pi pi-info-circle mr-1"></span>
-          {{ t('settingsUi.embedding.weights') }}
-        </p>
-      </div>
-    </div>
+      <SettingsNote>{{ t('settingsUi.embedding.weights') }}</SettingsNote>
+    </SettingsSection>
 
     <!-- 章节嵌入 -->
-    <div class="space-y-3">
-      <div>
-        <h3 class="text-sm font-medium text-moon/90 mb-1">
-          {{ t('settingsUi.embedding.chapterTitle') }}
-        </h3>
-        <p class="text-xs text-moon/70">
-          {{ t('settingsUi.embedding.chapterDescription') }}
-        </p>
-      </div>
-
-      <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
-        <p class="text-xs text-moon/70">
-          <span class="pi pi-info-circle mr-1"></span>
-          {{ t('settingsUi.embedding.chapterAuto') }}
-          <strong class="text-moon/90">{{ t('settingsUi.embedding.backgroundSection') }}</strong>
-          {{ t('settingsUi.embedding.chapterAutoSuffix') }}
-        </p>
-      </div>
-    </div>
-  </div>
+    <SettingsSection
+      :title="t('settingsUi.embedding.chapterTitle')"
+      :description="t('settingsUi.embedding.chapterDescription')"
+    >
+      <SettingsNote>
+        {{ t('settingsUi.embedding.chapterAuto') }}
+        <strong>{{ t('settingsUi.embedding.backgroundSection') }}</strong>
+        {{ t('settingsUi.embedding.chapterAutoSuffix') }}
+      </SettingsNote>
+    </SettingsSection>
+  </SettingsPanel>
 </template>
 
 <style scoped>
+.embedding-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--white-opacity-6);
+  border-radius: 10px;
+  background: var(--white-opacity-3);
+}
+
 .embedding-download-progress :deep(.p-progressbar-value) {
   transition: width 400ms ease-out;
 }

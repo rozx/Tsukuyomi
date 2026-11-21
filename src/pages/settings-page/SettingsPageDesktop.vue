@@ -149,7 +149,8 @@ const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.val
   min-height: 0;
   height: 100%;
   overflow-y: auto;
-  padding: 1.2rem;
+  /* 各标签页根容器（SettingsPanel）自身不留边距，统一由这里控制 */
+  padding: 1.25rem 1.5rem 1.5rem;
   overscroll-behavior: contain;
 }
 

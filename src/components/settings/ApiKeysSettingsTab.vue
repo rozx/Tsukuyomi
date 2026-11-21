@@ -2,7 +2,12 @@
 import { onMounted, ref, watch } from 'vue';
 import Password from 'primevue/password';
 import Button from 'primevue/button';
-import ToggleSwitch from 'primevue/toggleswitch';
+import SettingsPanel from './form/SettingsPanel.vue';
+import SettingsSection from './form/SettingsSection.vue';
+import SettingsField from './form/SettingsField.vue';
+import SettingsToggleRow from './form/SettingsToggleRow.vue';
+import SettingsNote from './form/SettingsNote.vue';
+import SettingsStatus from './form/SettingsStatus.vue';
 import { useSettingsStore } from 'src/stores/settings';
 import { useFirecrawlKeySettings } from 'src/composables/settings/useFirecrawlKeySettings';
 import { useI18n } from 'vue-i18n';
@@ -45,158 +50,148 @@ const tavilyUrl = 'https://tavily.com/';
 </script>
 
 <template>
-  <div class="p-4 space-y-4">
+  <SettingsPanel>
     <!-- Tavily API Key -->
-    <div class="space-y-3">
-      <div>
-        <h3 class="text-sm font-medium text-moon/90 mb-1">
-          {{ t('settingsUi.apiKeys.tavilyTitle') }}
-        </h3>
-        <p class="text-xs text-moon/70">
-          {{ t('settingsUi.apiKeys.tavilyBefore') }}
-          <a
-            :href="tavilyUrl"
-            target="_blank"
-            rel="noopener"
-            class="text-primary-400 hover:text-primary-300"
-          >
-            tavily.com
-          </a>
-          {{ t('settingsUi.apiKeys.tavilyAfter') }}
-        </p>
-      </div>
+    <SettingsSection :title="t('settingsUi.apiKeys.tavilyTitle')">
+      <template #description>
+        {{ t('settingsUi.apiKeys.tavilyBefore') }}
+        <a :href="tavilyUrl" target="_blank" rel="noopener">tavily.com</a>
+        {{ t('settingsUi.apiKeys.tavilyAfter') }}
+      </template>
 
-      <div class="space-y-2">
-        <label class="text-xs text-moon/80">API Key</label>
-        <div class="flex gap-2">
+      <SettingsField label="API Key" input-id="tavily-api-key">
+        <div class="api-key-row">
           <Password
             v-model="tavilyApiKey"
+            input-id="tavily-api-key"
             :feedback="false"
             :toggle-mask="true"
             placeholder="tvly-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-            class="flex-1"
-            :pt="{ root: { class: 'w-full' }, input: { class: 'w-full' } }"
+            fluid
+            class="api-key-input"
           />
-          <Button
-            :label="t('settingsUi.common.save')"
-            size="small"
-            :disabled="tavilyApiKey === (settingsStore.tavilyApiKey ?? '')"
-            @click="saveApiKey(tavilyApiKey)"
-          />
+          <div class="api-key-buttons">
+            <Button
+              :label="t('settingsUi.common.save')"
+              :disabled="tavilyApiKey === (settingsStore.tavilyApiKey ?? '')"
+              @click="saveApiKey(tavilyApiKey)"
+            />
+          </div>
         </div>
-        <p class="text-xs text-moon/60">
-          <span v-if="settingsStore.tavilyApiKey" class="text-green-400">
-            <span class="pi pi-check-circle"></span> {{ t('settingsUi.common.configured') }}
-          </span>
-          <span v-else-if="firecrawl.fallbackEnabled.value" class="text-moon/60">
-            <span class="pi pi-info-circle"></span> {{ t('settingsUi.apiKeys.tavilyFallback') }}
-          </span>
-          <span v-else class="text-amber-400">
-            <span class="pi pi-exclamation-triangle"></span>
+        <template #hint>
+          <SettingsStatus v-if="settingsStore.tavilyApiKey" tone="success">
+            {{ t('settingsUi.common.configured') }}
+          </SettingsStatus>
+          <SettingsStatus v-else-if="firecrawl.fallbackEnabled.value" tone="muted">
+            {{ t('settingsUi.apiKeys.tavilyFallback') }}
+          </SettingsStatus>
+          <SettingsStatus v-else tone="warn">
             {{ t('settingsUi.apiKeys.tavilyDisabled') }}
-          </span>
-        </p>
-      </div>
-    </div>
+          </SettingsStatus>
+        </template>
+      </SettingsField>
+    </SettingsSection>
 
     <!-- Firecrawl -->
-    <div class="space-y-3 pt-4 border-t border-moon/20">
-      <div>
-        <h3 class="text-sm font-medium text-moon/90 mb-1">
-          {{ t('settingsUi.apiKeys.firecrawlTitle') }}
-        </h3>
-        <p class="text-xs text-moon/70">
-          {{ t('settingsUi.apiKeys.firecrawlBefore') }}
-          <a
-            :href="firecrawlUrl"
-            target="_blank"
-            rel="noopener"
-            class="text-primary-400 hover:text-primary-300"
-          >
-            Firecrawl
-          </a>
-          {{ t('settingsUi.apiKeys.firecrawlAfter') }}
-        </p>
-      </div>
+    <SettingsSection :title="t('settingsUi.apiKeys.firecrawlTitle')">
+      <template #description>
+        {{ t('settingsUi.apiKeys.firecrawlBefore') }}
+        <a :href="firecrawlUrl" target="_blank" rel="noopener">Firecrawl</a>
+        {{ t('settingsUi.apiKeys.firecrawlAfter') }}
+      </template>
 
-      <div class="flex flex-row items-start justify-between gap-3">
-        <div class="space-y-1 flex-1 min-w-0">
-          <label class="text-xs text-moon/80">{{ t('settingsUi.apiKeys.fallback') }}</label>
-          <p class="text-xs text-moon/60">
-            {{ t('settingsUi.apiKeys.fallbackHint') }}
-          </p>
-        </div>
-        <ToggleSwitch
-          class="shrink-0"
-          :model-value="firecrawl.fallbackEnabled.value"
-          @update:model-value="firecrawl.setFallbackEnabled"
-        />
-      </div>
+      <SettingsToggleRow
+        :label="t('settingsUi.apiKeys.fallback')"
+        :hint="t('settingsUi.apiKeys.fallbackHint')"
+        :model-value="firecrawl.fallbackEnabled.value"
+        @update:model-value="firecrawl.setFallbackEnabled"
+      />
 
-      <div class="space-y-2">
-        <label class="text-xs text-moon/80">{{ t('settingsUi.apiKeys.optionalKey') }}</label>
-        <div class="flex flex-col gap-2 sm:flex-row">
+      <SettingsField :label="t('settingsUi.apiKeys.optionalKey')" input-id="firecrawl-api-key">
+        <div class="api-key-row">
           <Password
             v-model="firecrawl.keyInput.value"
+            input-id="firecrawl-api-key"
             :feedback="false"
             :toggle-mask="true"
             placeholder="fc-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-            class="flex-1"
-            :pt="{ root: { class: 'w-full' }, input: { class: 'w-full' } }"
+            fluid
+            class="api-key-input"
           />
-          <div class="flex gap-2">
+          <div class="api-key-buttons">
             <Button
               :label="t('settingsUi.common.save')"
-              size="small"
               :loading="firecrawl.busy.value"
               :disabled="!firecrawl.isDirty.value || firecrawl.busy.value"
               @click="firecrawl.save"
             />
             <Button
               :label="t('settingsUi.apiKeys.checkCredits')"
-              size="small"
-              class="p-button-outlined"
+              outlined
               :loading="firecrawl.busy.value"
               :disabled="!firecrawl.canCheckCredits.value"
               @click="firecrawl.refreshCredits"
             />
           </div>
         </div>
-        <p v-if="firecrawl.error.value" class="text-xs text-red-400">
-          <span class="pi pi-times-circle"></span> {{ firecrawl.error.value }}
-        </p>
-        <p v-else-if="firecrawl.credits.value" class="text-xs text-green-400">
-          <span class="pi pi-check-circle"></span>
-          {{
-            t('settingsUi.apiKeys.credits', {
-              remaining: firecrawl.credits.value.remainingCredits,
-              plan: firecrawl.credits.value.planCredits,
-            })
-          }}
-          <template v-if="firecrawl.credits.value.billingPeriodEnd">
+        <template #hint>
+          <SettingsStatus v-if="firecrawl.error.value" tone="error">
+            {{ firecrawl.error.value }}
+          </SettingsStatus>
+          <SettingsStatus v-else-if="firecrawl.credits.value" tone="success">
             {{
-              t('settingsUi.apiKeys.periodEnd', {
-                date: formatPeriodEnd(firecrawl.credits.value.billingPeriodEnd),
+              t('settingsUi.apiKeys.credits', {
+                remaining: firecrawl.credits.value.remainingCredits,
+                plan: firecrawl.credits.value.planCredits,
               })
             }}
-          </template>
-        </p>
-        <p v-else-if="firecrawl.hasKey.value" class="text-xs text-green-400">
-          <span class="pi pi-check-circle"></span> {{ t('settingsUi.apiKeys.firecrawlConfigured') }}
-        </p>
-        <p v-else class="text-xs text-moon/60">
-          <span class="pi pi-info-circle"></span>
-          {{ t('settingsUi.apiKeys.keyless') }}
-        </p>
-      </div>
-    </div>
+            <template v-if="firecrawl.credits.value.billingPeriodEnd">
+              {{
+                t('settingsUi.apiKeys.periodEnd', {
+                  date: formatPeriodEnd(firecrawl.credits.value.billingPeriodEnd),
+                })
+              }}
+            </template>
+          </SettingsStatus>
+          <SettingsStatus v-else-if="firecrawl.hasKey.value" tone="success">
+            {{ t('settingsUi.apiKeys.firecrawlConfigured') }}
+          </SettingsStatus>
+          <SettingsStatus v-else tone="muted">
+            {{ t('settingsUi.apiKeys.keyless') }}
+          </SettingsStatus>
+        </template>
+      </SettingsField>
+    </SettingsSection>
 
     <!-- 信息说明 -->
-    <div class="p-3 bg-moon/5 rounded-lg border border-moon/10">
-      <p class="text-xs text-moon/70">
-        <span class="pi pi-info-circle mr-1"></span>
-        {{ t('settingsUi.apiKeys.storage') }}
-      </p>
-    </div>
-  </div>
+    <SettingsNote>{{ t('settingsUi.apiKeys.storage') }}</SettingsNote>
+  </SettingsPanel>
 </template>
+
+<style scoped>
+.api-key-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.api-key-input {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.api-key-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .api-key-buttons {
+    flex: 1 1 100%;
+  }
+
+  .api-key-buttons > * {
+    flex: 1 1 auto;
+  }
+}
+</style>

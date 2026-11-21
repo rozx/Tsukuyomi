@@ -1,60 +1,59 @@
 <template>
-  <section class="space-y-4 p-4" :aria-label="t('settings.general.title')">
-    <h2 class="text-lg font-semibold">{{ t('settings.general.title') }}</h2>
-    <div class="flex flex-col gap-2 max-w-xl">
-      <label for="interface-language">{{ t('settings.general.language') }}</label>
-      <Select
+  <SettingsPanel>
+    <SettingsSection :title="t('settings.general.title')">
+      <SettingsField
+        :label="t('settings.general.language')"
         input-id="interface-language"
-        :model-value="locale"
-        :options="languages"
-        option-label="label"
-        option-value="value"
-        :disabled="saving"
-        aria-describedby="interface-language-hint"
-        @update:model-value="setLocale"
-      />
-      <p id="interface-language-hint" class="text-sm opacity-70">
-        {{ t('settings.general.languageHint') }}
-      </p>
-    </div>
+        :hint="t('settings.general.languageHint')"
+        hint-id="interface-language-hint"
+      >
+        <Select
+          input-id="interface-language"
+          :model-value="locale"
+          :options="languages"
+          option-label="label"
+          option-value="value"
+          :disabled="saving"
+          class="w-full"
+          aria-describedby="interface-language-hint"
+          @update:model-value="setLocale"
+        />
+      </SettingsField>
+    </SettingsSection>
 
-    <h3 class="text-base font-semibold pt-2">{{ t('settings.taskQueue.title') }}</h3>
-    <div class="flex flex-col gap-2 max-w-xl">
-      <label for="task-queue-max-concurrent">{{ t('settings.taskQueue.maxConcurrent') }}</label>
-      <InputNumber
+    <SettingsSection :title="t('settings.taskQueue.title')">
+      <SettingsField
+        :label="t('settings.taskQueue.maxConcurrent')"
         input-id="task-queue-max-concurrent"
-        :model-value="settings.taskQueueMaxConcurrent"
-        :min="TASK_QUEUE_MAX_CONCURRENT_MIN"
-        :max="TASK_QUEUE_MAX_CONCURRENT_MAX"
-        :step="1"
-        show-buttons
-        button-layout="horizontal"
-        :allow-empty="false"
-        class="w-40"
-        aria-describedby="task-queue-max-concurrent-hint"
-        @update:model-value="setMaxConcurrent"
-      />
-      <p id="task-queue-max-concurrent-hint" class="text-sm opacity-70">
-        {{ t('settings.taskQueue.maxConcurrentHint') }}
-      </p>
-    </div>
+        :hint="t('settings.taskQueue.maxConcurrentHint')"
+        hint-id="task-queue-max-concurrent-hint"
+      >
+        <InputNumber
+          input-id="task-queue-max-concurrent"
+          :model-value="settings.taskQueueMaxConcurrent"
+          :min="TASK_QUEUE_MAX_CONCURRENT_MIN"
+          :max="TASK_QUEUE_MAX_CONCURRENT_MAX"
+          :step="1"
+          show-buttons
+          button-layout="horizontal"
+          :allow-empty="false"
+          class="w-40"
+          aria-describedby="task-queue-max-concurrent-hint"
+          @update:model-value="setMaxConcurrent"
+        />
+      </SettingsField>
+    </SettingsSection>
 
-    <h3 class="text-base font-semibold pt-2">{{ t('settings.deskPet.title') }}</h3>
-    <div class="flex items-start justify-between gap-3 max-w-xl">
-      <div class="flex flex-col gap-1">
-        <label for="desk-pet-enabled">{{ t('settings.deskPet.show') }}</label>
-        <p id="desk-pet-enabled-hint" class="text-sm opacity-70">
-          {{ t('settings.deskPet.showHint') }}
-        </p>
-      </div>
-      <ToggleSwitch
+    <SettingsSection :title="t('settings.deskPet.title')">
+      <SettingsToggleRow
         input-id="desk-pet-enabled"
+        :label="t('settings.deskPet.show')"
+        :hint="t('settings.deskPet.showHint')"
         :model-value="settings.deskPetEnabled"
-        aria-describedby="desk-pet-enabled-hint"
         @update:model-value="setShowDeskPet"
       />
-    </div>
-  </section>
+    </SettingsSection>
+  </SettingsPanel>
 </template>
 
 <script setup lang="ts">
@@ -62,7 +61,10 @@ import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Select from 'primevue/select';
 import InputNumber from 'primevue/inputnumber';
-import ToggleSwitch from 'primevue/toggleswitch';
+import SettingsPanel from './form/SettingsPanel.vue';
+import SettingsSection from './form/SettingsSection.vue';
+import SettingsField from './form/SettingsField.vue';
+import SettingsToggleRow from './form/SettingsToggleRow.vue';
 import { isAppLocale, resolveAppLocale } from 'src/models/locale';
 import { languageOptions } from 'src/i18n/translate';
 import {

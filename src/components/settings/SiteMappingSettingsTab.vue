@@ -6,6 +6,10 @@
  */
 import InputText from 'primevue/inputtext';
 import ToggleSwitch from 'primevue/toggleswitch';
+import SettingsPanel from './form/SettingsPanel.vue';
+import SettingsSection from './form/SettingsSection.vue';
+import SettingsToggleRow from './form/SettingsToggleRow.vue';
+import SettingsStatus from './form/SettingsStatus.vue';
 import Select from 'primevue/select';
 import Button from 'primevue/button';
 import ProxyOptionLabel from './ProxyOptionLabel.vue';
@@ -20,39 +24,34 @@ const s = provideSiteMappingSettings();
 </script>
 
 <template>
-  <div class="site-mapping-tab p-4 space-y-3">
-    <div>
-      <h3 class="text-sm font-medium text-moon/90 mb-1">{{ t('settingsUi.sites.title') }}</h3>
-      <p class="text-xs text-moon/70">
+  <SettingsPanel>
+    <SettingsSection :title="t('settingsUi.sites.title')">
+      <template #description>
         {{ t('settingsUi.sites.description') }}
         <template v-if="s.electron">{{ t('settingsUi.sites.electronHint') }}</template>
         <template v-else>{{ t('settingsUi.sites.webHint') }}</template>
-      </p>
-    </div>
+      </template>
 
-    <div class="space-y-1">
-      <div class="site-mapping-toggle-row flex items-center justify-between gap-3">
-        <label class="text-xs text-moon/80">{{ t('settingsUi.sites.autoAdd') }}</label>
-        <ToggleSwitch
-          :model-value="s.autoAddMapping.value"
-          :disabled="s.autoAddDisabled.value"
-          @update:model-value="s.setAutoAddMapping"
-        />
-      </div>
-      <p v-if="s.autoAddDisabled.value" class="text-xs text-amber-400">
-        {{ t('settingsUi.sites.autoAddDisabled') }}
-      </p>
-      <p v-else class="text-xs text-moon/60">
-        {{ t('settingsUi.sites.autoAddHint') }}
-      </p>
-    </div>
+      <SettingsToggleRow
+        :label="t('settingsUi.sites.autoAdd')"
+        :model-value="s.autoAddMapping.value"
+        :disabled="s.autoAddDisabled.value"
+        @update:model-value="s.setAutoAddMapping"
+      >
+        <template #hint>
+          <SettingsStatus v-if="s.autoAddDisabled.value" tone="warn">
+            {{ t('settingsUi.sites.autoAddDisabled') }}
+          </SettingsStatus>
+          <template v-else>{{ t('settingsUi.sites.autoAddHint') }}</template>
+        </template>
+      </SettingsToggleRow>
 
-    <div class="space-y-2 pt-4 border-t border-moon/20">
-      <div class="flex flex-col gap-2 sm:flex-row">
+      <div class="site-mapping-add-row">
         <InputText
           v-model="s.newSiteInput.value"
           :placeholder="t('settingsUi.sites.domainPlaceholder')"
-          class="w-full sm:flex-1"
+          :aria-label="t('settingsUi.sites.site')"
+          class="site-mapping-add-input"
         />
         <Select
           v-model="s.newProxyInput.value"
@@ -60,7 +59,7 @@ const s = provideSiteMappingSettings();
           option-label="name"
           option-value="id"
           :placeholder="t('settingsUi.sites.methodPlaceholder')"
-          class="w-full sm:flex-1"
+          class="site-mapping-add-input"
         >
           <template #option="slotProps">
             <ProxyOptionLabel
@@ -71,16 +70,13 @@ const s = provideSiteMappingSettings();
         </Select>
         <Button
           :label="t('settingsUi.sites.add')"
-          size="small"
-          class="w-full sm:w-auto"
+          icon="pi pi-plus"
           :disabled="s.addMappingDisabled.value"
           @click="s.addSiteMapping"
         />
       </div>
-    </div>
 
-    <div v-if="s.hasSiteMappings.value" class="mt-3">
-      <div class="site-mapping-table-wrapper">
+      <div v-if="s.hasSiteMappings.value" class="site-mapping-table-wrapper">
         <DataTable
           :value="s.siteMappingEntries.value"
           :paginator="s.mappingPaginator.value"
@@ -149,28 +145,42 @@ const s = provideSiteMappingSettings();
           </Column>
         </DataTable>
       </div>
-    </div>
-    <p v-else class="text-xs text-moon/60 italic">
-      {{ t('settingsUi.sites.empty') }}
-    </p>
+      <p v-else class="site-mapping-empty">
+        {{ t('settingsUi.sites.empty') }}
+      </p>
+    </SettingsSection>
 
     <SiteMappingEditDialog />
-  </div>
+  </SettingsPanel>
 </template>
 
-<style>
+<style scoped>
+.site-mapping-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.site-mapping-add-input {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
 .site-mapping-table-wrapper {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-@media (max-width: 640px) {
-  .site-mapping-toggle-row {
-    align-items: flex-start;
-  }
+.site-mapping-empty {
+  margin: 0;
+  font-size: 0.76rem;
+  font-style: italic;
+  color: var(--moon-50-opacity-58);
+}
 
-  .site-mapping-toggle-row .p-toggleswitch {
-    margin-left: auto;
+@media (max-width: 640px) {
+  .site-mapping-add-row > * {
+    flex: 1 1 100%;
   }
 }
 </style>

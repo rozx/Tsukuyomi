@@ -1,20 +1,18 @@
 <template>
-  <section
-    class="border-t border-white/10 pt-6 mt-6 space-y-3"
-    aria-labelledby="sync-cleanup-title"
+  <SettingsSection
+    :title="t('syncUi.cleanup.title')"
+    :description="t('syncUi.cleanup.description')"
   >
-    <h3 id="sync-cleanup-title" class="text-sm font-medium text-moon/90">
-      {{ t('syncUi.cleanup.title') }}
-    </h3>
-    <p class="text-xs text-moon/60">{{ t('syncUi.cleanup.description') }}</p>
-    <Button
-      :label="t(plan ? 'syncUi.cleanup.rescan' : 'syncUi.cleanup.scan')"
-      icon="pi pi-search"
-      outlined
-      :loading="phase === 'scan'"
-      :disabled="blocked"
-      @click="scan"
-    />
+    <div>
+      <Button
+        :label="t(plan ? 'syncUi.cleanup.rescan' : 'syncUi.cleanup.scan')"
+        icon="pi pi-search"
+        outlined
+        :loading="phase === 'scan'"
+        :disabled="blocked"
+        @click="scan"
+      />
+    </div>
     <p v-if="error" role="alert" class="text-sm text-red-300">{{ error }}</p>
     <div v-if="plan" class="space-y-3" aria-live="polite">
       <p v-if="plan.partial" class="text-xs text-amber-200/90">
@@ -48,7 +46,7 @@
       <i class="pi pi-spin pi-spinner mr-2" aria-hidden="true" />{{ t('syncUi.settings.loading') }}
     </p>
     <ConfirmDialog group="sync-cleanup" />
-  </section>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -64,6 +62,7 @@ import { useBooksStore } from 'src/stores/books';
 import { useSettingsStore } from 'src/stores/settings';
 import { formatFileSize, getGroupedFiles } from './sync-revision-display';
 import SyncRevisionGroup from './SyncRevisionGroup.vue';
+import SettingsSection from './form/SettingsSection.vue';
 
 const props = defineProps<{ config: SyncConfig }>();
 const emit = defineEmits<{ cleaned: [] }>();

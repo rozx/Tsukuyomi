@@ -266,6 +266,11 @@ export default {
       noRevisions: '暫無修訂歷史',
       loading: '載入中...',
       deleteGist: '刪除目前的 Gist',
+      autoSyncTitle: '自動同步',
+      syncNowTitle: '立即同步',
+      dangerTitle: '危險操作',
+      dangerDescription:
+        '永久刪除遠端 Gist 及其中的所有同步資料，本機資料不受影響。此操作無法復原。',
     },
     time: {
       never: '從未',

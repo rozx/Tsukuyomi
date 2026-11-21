@@ -279,6 +279,11 @@ export default {
       noRevisions: 'No revision history',
       loading: 'Loading...',
       deleteGist: 'Delete current Gist',
+      autoSyncTitle: 'Auto sync',
+      syncNowTitle: 'Sync now',
+      dangerTitle: 'Danger zone',
+      dangerDescription:
+        'Permanently deletes the remote Gist and all synced data in it. Local data is not affected. This cannot be undone.',
     },
     time: {
       never: 'Never',

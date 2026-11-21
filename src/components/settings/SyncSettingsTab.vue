@@ -3,7 +3,6 @@ import { ref, computed, watch } from 'vue';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Password from 'primevue/password';
-import Checkbox from 'primevue/checkbox';
 import InputNumber from 'primevue/inputnumber';
 import { useConfirm } from 'primevue/useconfirm';
 import ConfirmDialog from 'primevue/confirmdialog';
@@ -19,6 +18,10 @@ import ForceSyncToggle from 'src/components/sync/ForceSyncToggle.vue';
 import RestoreDeletedItemsDialog from 'src/components/dialogs/RestoreDeletedItemsDialog.vue';
 import SyncRevisionCard from 'src/components/settings/SyncRevisionCard.vue';
 import SyncCleanupPanel from 'src/components/settings/SyncCleanupPanel.vue';
+import SettingsPanel from 'src/components/settings/form/SettingsPanel.vue';
+import SettingsSection from 'src/components/settings/form/SettingsSection.vue';
+import SettingsField from 'src/components/settings/form/SettingsField.vue';
+import SettingsToggleRow from 'src/components/settings/form/SettingsToggleRow.vue';
 import { isRevisionRestoreBlocked } from 'src/utils/sync-revision-guards';
 import co from 'co';
 import { useI18n } from 'vue-i18n';
@@ -142,6 +145,13 @@ const syncButtonLabel = computed(() =>
   forceMode.value ? t('syncUi.settings.forcePushLabel') : t('syncUi.settings.sync'),
 );
 const syncButtonSeverity = computed(() => (forceMode.value ? 'danger' : 'primary'));
+const lastSyncLabel = computed(() =>
+  gistLastSyncTime.value
+    ? t('syncUi.settings.lastSync', {
+        time: new Date(gistLastSyncTime.value).toLocaleString(locale.value),
+      })
+    : undefined,
+);
 const handleSyncClick = () => {
   if (forceMode.value) {
     triggerForceSync();
@@ -942,147 +952,121 @@ const deleteGist = () => {
 </script>
 
 <template>
-  <div class="p-4 space-y-4">
-    <div>
-      <h3 class="text-sm font-medium text-moon/90 mb-1">{{ t('syncUi.settings.title') }}</h3>
-      <p class="text-xs text-moon/70">
+  <SettingsPanel>
+    <!-- 账号与 Gist -->
+    <SettingsSection :title="t('syncUi.settings.title')">
+      <template #description>
         {{ t('syncUi.settings.description') }}
-      </p>
-      <p class="text-xs text-moon/60 mt-1">
-        {{ t('syncUi.settings.tokenScope') }} <code class="text-xs">gist</code>
-      </p>
-    </div>
+        {{ t('syncUi.settings.tokenScope') }} <code>gist</code>
+      </template>
 
-    <!-- 启用同步 -->
-    <div class="space-y-2">
-      <div class="flex items-center gap-2">
-        <Checkbox
-          :binary="true"
-          :model-value="gistEnabled"
-          input-id="gist-enabled"
-          :disabled="isRevisionActionLocked"
-          @update:model-value="(value) => handleGistEnabledChange(value as boolean)"
-        />
-        <label for="gist-enabled" class="text-xs text-moon/80 cursor-pointer">
-          {{ t('syncUi.settings.enable') }}
-        </label>
-      </div>
-    </div>
-
-    <!-- GitHub 用户名 -->
-    <div class="space-y-2">
-      <label for="gist-username" class="text-xs text-moon/80">{{
-        t('syncUi.settings.username')
-      }}</label>
-      <InputText
-        id="gist-username"
-        v-model="gistUsername"
-        :placeholder="t('syncUi.settings.usernamePlaceholder')"
-        class="w-full"
-        :disabled="gistInputDisabled"
-        @blur="() => saveGistConfig()"
+      <SettingsToggleRow
+        input-id="gist-enabled"
+        :label="t('syncUi.settings.enable')"
+        :model-value="gistEnabled"
+        :disabled="isRevisionActionLocked"
+        @update:model-value="handleGistEnabledChange"
       />
-    </div>
 
-    <!-- GitHub Token -->
-    <div class="space-y-2">
-      <label for="gist-token" class="text-xs text-moon/80">GitHub Personal Access Token</label>
-      <Password
-        id="gist-token"
-        v-model="gistToken"
-        :placeholder="t('syncUi.settings.tokenPlaceholder')"
-        class="w-full"
-        :disabled="gistInputDisabled"
-        :feedback="false"
-        toggle-mask
-        @blur="() => saveGistConfig()"
-      />
-      <p class="text-xs text-moon/60">
-        {{ t('syncUi.settings.tokenHelp') }}
-      </p>
-    </div>
-
-    <!-- Gist ID -->
-    <div class="space-y-2">
-      <label for="gist-id" class="text-xs text-moon/80">{{
-        t('syncUi.settings.gistIdLabel')
-      }}</label>
-      <InputText
-        id="gist-id"
-        v-model="gistId"
-        :placeholder="t('syncUi.settings.gistIdPlaceholder')"
-        class="w-full"
-        :disabled="gistInputDisabled"
-        @blur="() => saveGistConfig()"
-      />
-      <p class="text-xs text-moon/60">{{ t('syncUi.settings.gistIdHelp') }}</p>
-    </div>
-
-    <!-- 自动同步设置 -->
-    <div class="p-4 rounded-lg border border-white/10 bg-white/5 space-y-3">
-      <div class="flex items-center gap-2">
-        <Checkbox
-          :binary="true"
-          :model-value="autoSyncEnabled"
-          input-id="auto-sync-enabled"
+      <SettingsField :label="t('syncUi.settings.username')" input-id="gist-username">
+        <InputText
+          id="gist-username"
+          v-model="gistUsername"
+          :placeholder="t('syncUi.settings.usernamePlaceholder')"
+          class="w-full"
           :disabled="gistInputDisabled"
-          @update:model-value="handleAutoSyncEnabledChange"
+          @blur="() => saveGistConfig()"
         />
-        <label for="auto-sync-enabled" class="text-xs text-moon/80 cursor-pointer">
-          {{ t('syncUi.settings.autoSync') }}
-        </label>
-      </div>
-      <div v-if="autoSyncEnabled" class="space-y-2">
-        <label for="sync-interval" class="text-xs text-moon/80">{{
-          t('syncUi.settings.interval')
-        }}</label>
+      </SettingsField>
+
+      <SettingsField
+        label="GitHub Personal Access Token"
+        input-id="gist-token"
+        :hint="t('syncUi.settings.tokenHelp')"
+      >
+        <Password
+          v-model="gistToken"
+          input-id="gist-token"
+          :placeholder="t('syncUi.settings.tokenPlaceholder')"
+          fluid
+          :disabled="gistInputDisabled"
+          :feedback="false"
+          toggle-mask
+          @blur="() => saveGistConfig()"
+        />
+      </SettingsField>
+
+      <SettingsField
+        :label="t('syncUi.settings.gistIdLabel')"
+        input-id="gist-id"
+        :hint="t('syncUi.settings.gistIdHelp')"
+      >
+        <InputText
+          id="gist-id"
+          v-model="gistId"
+          :placeholder="t('syncUi.settings.gistIdPlaceholder')"
+          class="w-full"
+          :disabled="gistInputDisabled"
+          @blur="() => saveGistConfig()"
+        />
+      </SettingsField>
+
+      <template #actions>
+        <Button
+          :label="t('syncUi.settings.validateToken')"
+          icon="pi pi-check-circle"
+          outlined
+          :disabled="validateTokenDisabled"
+          :loading="gistValidating"
+          @click="validateGistToken"
+        />
+      </template>
+    </SettingsSection>
+
+    <!-- 自动同步 -->
+    <SettingsSection :title="t('syncUi.settings.autoSyncTitle')">
+      <SettingsToggleRow
+        input-id="auto-sync-enabled"
+        :label="t('syncUi.settings.autoSync')"
+        :model-value="autoSyncEnabled"
+        :disabled="gistInputDisabled"
+        @update:model-value="handleAutoSyncEnabledChange"
+      />
+      <SettingsField
+        v-if="autoSyncEnabled"
+        :label="t('syncUi.settings.interval')"
+        input-id="sync-interval"
+        :hint="t('syncUi.settings.intervalHint', { minutes: syncIntervalMinutes ?? 0 })"
+      >
         <InputNumber
-          id="sync-interval"
+          input-id="sync-interval"
           :model-value="syncIntervalMinutes"
           :min="1"
           :max="1440"
-          :show-buttons="true"
-          class="w-full"
+          show-buttons
+          button-layout="horizontal"
+          class="w-40"
           :disabled="gistInputDisabled"
           @focus="stopAutoSync"
           @update:model-value="handleSyncIntervalChange"
         />
-        <p class="text-xs text-moon/60">
-          {{ t('syncUi.settings.intervalHint', { minutes: syncIntervalMinutes ?? 0 }) }}
-        </p>
-      </div>
-    </div>
+      </SettingsField>
+    </SettingsSection>
 
-    <!-- 最后同步时间 -->
-    <div v-if="gistLastSyncTime" class="text-xs text-moon/60">
-      {{
-        t('syncUi.settings.lastSync', {
-          time: new Date(gistLastSyncTime).toLocaleString(locale),
-        })
-      }}
-    </div>
-
-    <!-- 操作按钮 -->
-    <div class="space-y-3 pt-2">
+    <!-- 立即同步 -->
+    <SettingsSection :title="t('syncUi.settings.syncNowTitle')" :description="lastSyncLabel">
       <ForceSyncToggle :disabled="syncActionDisabled" />
-      <Button
-        :label="t('syncUi.settings.validateToken')"
-        icon="pi pi-check-circle"
-        class="p-button-outlined w-full"
-        :disabled="validateTokenDisabled"
-        :loading="gistValidating"
-        @click="validateGistToken"
-      />
-      <Button
-        :label="syncButtonLabel"
-        icon="pi pi-sync"
-        :severity="syncButtonSeverity"
-        class="w-full"
-        :disabled="syncActionDisabled"
-        :loading="gistSyncing"
-        @click="handleSyncClick"
-      />
-    </div>
+      <template #actions>
+        <Button
+          :label="syncButtonLabel"
+          icon="pi pi-sync"
+          :severity="syncButtonSeverity"
+          :disabled="syncActionDisabled"
+          :loading="gistSyncing"
+          @click="handleSyncClick"
+        />
+      </template>
+    </SettingsSection>
 
     <SyncCleanupPanel
       v-if="hasRevisionHistory"
@@ -1091,19 +1075,21 @@ const deleteGist = () => {
     />
 
     <!-- 修订历史 -->
-    <div v-if="hasRevisionHistory" class="border-t border-white/10 pt-6 mt-6">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-sm font-medium text-moon/90">{{ t('syncUi.settings.revisions') }}</h3>
+    <SettingsSection v-if="hasRevisionHistory" :title="t('syncUi.settings.revisions')">
+      <template #header-actions>
         <Button
           icon="pi pi-refresh"
-          class="p-button-text p-button-sm"
+          text
+          rounded
+          size="small"
+          :aria-label="t('syncUi.settings.revisions')"
           :disabled="loadRevisionsBtnDisabled"
           :loading="loadingRevisions"
           @click="loadRevisions"
         />
-      </div>
+      </template>
 
-      <div class="space-y-2">
+      <div v-if="revisions.length > 0" class="space-y-2">
         <SyncRevisionCard
           v-for="revision in revisions"
           :key="revision.version"
@@ -1122,25 +1108,32 @@ const deleteGist = () => {
         />
       </div>
 
-      <div v-if="hasNoRevisions" class="text-sm text-moon/60 text-center py-4">
+      <p v-if="hasNoRevisions" class="text-sm text-moon/60 text-center py-2">
         {{ t('syncUi.settings.noRevisions') }}
-      </div>
-      <div v-if="loadingRevisions" class="text-sm text-moon/60 text-center py-4">
+      </p>
+      <p v-if="loadingRevisions" class="text-sm text-moon/60 text-center py-2">
         {{ t('syncUi.settings.loading') }}
-      </div>
-    </div>
+      </p>
+    </SettingsSection>
 
-    <!-- 删除 Gist 按钮（独立区域） -->
-    <div class="border-t border-white/10 pt-6 mt-6">
-      <Button
-        :label="t('syncUi.settings.deleteGist')"
-        icon="pi pi-trash"
-        class="p-button-danger w-full"
-        :disabled="deleteGistDisabled"
-        :loading="gistSyncing"
-        @click="deleteGist"
-      />
-    </div>
+    <!-- 删除 Gist（危险操作） -->
+    <SettingsSection
+      tone="danger"
+      :title="t('syncUi.settings.dangerTitle')"
+      :description="t('syncUi.settings.dangerDescription')"
+    >
+      <template #actions>
+        <Button
+          :label="t('syncUi.settings.deleteGist')"
+          icon="pi pi-trash"
+          severity="danger"
+          outlined
+          :disabled="deleteGistDisabled"
+          :loading="gistSyncing"
+          @click="deleteGist"
+        />
+      </template>
+    </SettingsSection>
 
     <!-- 确认对话框（force-sync group 挂在 MainLayout，这里不重复挂） -->
     <ConfirmDialog group="sync" />
@@ -1151,67 +1144,5 @@ const deleteGist = () => {
       @restore="handleRestoreItems"
       @cancel="handleCancelRestore"
     />
-  </div>
+  </SettingsPanel>
 </template>
-
-<style scoped>
-.revisions-table :deep(.p-datatable) {
-  background: transparent;
-  color: inherit;
-}
-
-.revisions-table :deep(.p-datatable-header) {
-  background: transparent;
-  border: none;
-  padding: 0.5rem 0;
-}
-
-.revisions-table :deep(.p-datatable-thead > tr > th) {
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-  padding: 0.75rem;
-  font-weight: 500;
-}
-
-.revisions-table :deep(.p-datatable-tbody > tr) {
-  background: transparent;
-  border: none;
-}
-
-.revisions-table :deep(.p-datatable-tbody > tr > td) {
-  padding: 0.75rem;
-  border: none;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.9);
-}
-
-.revisions-table :deep(.p-datatable-tbody > tr:hover) {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.revisions-table :deep(.p-paginator) {
-  background: transparent;
-  border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 0.75rem 0;
-}
-
-.revisions-table :deep(.p-paginator .p-paginator-pages .p-paginator-page) {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.revisions-table :deep(.p-paginator .p-paginator-pages .p-paginator-page.p-highlight) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.95);
-}
-
-.revisions-table :deep(.p-paginator .p-paginator-pages .p-paginator-page:hover) {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
-}
-</style>

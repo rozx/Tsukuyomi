@@ -9,8 +9,11 @@ import ProgressBar from 'primevue/progressbar';
 import { useI18n } from 'vue-i18n';
 import { useFilePicker } from 'src/composables/dialogs/useFilePicker';
 import { useSettingsImportExport } from 'src/composables/settings/useSettingsImportExport';
+import SettingsPanel from './form/SettingsPanel.vue';
+import SettingsSection from './form/SettingsSection.vue';
+import ImportExportResult from './ImportExportResult.vue';
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const { busy, progress, statusText, lastResult, currentData, importFromFile, exportSettings } =
   useSettingsImportExport();
 
@@ -27,140 +30,98 @@ const currentItems = computed(() => {
   ] as const;
 });
 
-const finishedAt = (at: number) =>
-  t('settingsUi.importExport.finishedAt', {
-    time: new Date(at).toLocaleTimeString(locale.value, { hour: '2-digit', minute: '2-digit' }),
-  });
 const { fileInputRef, triggerFilePicker, createFileSelectHandler } = useFilePicker();
 
 const handleFileSelect = createFileSelectHandler(importFromFile);
 </script>
 
 <template>
-  <div class="p-4 space-y-4">
+  <SettingsPanel>
     <!-- 导入资料 -->
-    <div class="p-4 rounded-lg border border-white/10 bg-white/5">
-      <div class="space-y-3">
-        <div>
-          <h3 class="text-sm font-medium text-moon/90 mb-1">
-            {{ t('settingsUi.importExport.importTitle') }}
-          </h3>
-          <p class="text-xs text-moon/70">
-            {{ t('settingsUi.importExport.importHint') }}
-          </p>
-        </div>
-        <div
-          class="rounded-md border border-amber-400/20 bg-amber-400/5 px-3 py-2"
-          data-testid="settings-current-data"
-        >
-          <p class="text-xs text-amber-200/90 mb-1.5">
-            {{ t('settingsUi.importExport.current.title') }}
-          </p>
-          <dl class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs">
-            <div v-for="item in currentItems" :key="item.key" class="flex justify-between gap-2">
-              <dt class="text-moon/60">{{ t(`settingsUi.importExport.current.${item.key}`) }}</dt>
-              <dd class="text-moon/90 tabular-nums">
-                {{ item.value ?? t('settingsUi.importExport.current.counting') }}
-              </dd>
-            </div>
-          </dl>
-        </div>
+    <SettingsSection
+      :title="t('settingsUi.importExport.importTitle')"
+      :description="t('settingsUi.importExport.importHint')"
+    >
+      <div class="import-current-data" data-testid="settings-current-data">
+        <p class="import-current-data-title">
+          {{ t('settingsUi.importExport.current.title') }}
+        </p>
+        <dl class="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs">
+          <div v-for="item in currentItems" :key="item.key" class="flex justify-between gap-2">
+            <dt class="text-moon/60">{{ t(`settingsUi.importExport.current.${item.key}`) }}</dt>
+            <dd class="text-moon/90 tabular-nums">
+              {{ item.value ?? t('settingsUi.importExport.current.counting') }}
+            </dd>
+          </div>
+        </dl>
+      </div>
+      <div
+        v-if="busy === 'import'"
+        class="space-y-1.5"
+        role="status"
+        aria-live="polite"
+        data-testid="settings-import-status"
+      >
+        <ProgressBar
+          :value="progress ?? undefined"
+          :mode="progress === null ? 'indeterminate' : 'determinate'"
+          :show-value="false"
+          style="height: 0.375rem"
+        />
+        <p class="text-xs text-moon/80">{{ statusText }}</p>
+        <p class="text-xs text-moon/50">{{ t('settingsUi.importExport.busyHint') }}</p>
+      </div>
+      <ImportExportResult
+        v-if="lastResult?.kind === 'import'"
+        :ok="lastResult.ok"
+        :detail="lastResult.detail"
+        :at="lastResult.at"
+        data-testid="settings-import-result"
+      />
+      <template #actions>
         <Button
           :label="t('settingsUi.importExport.importTitle')"
           icon="pi pi-upload"
-          class="p-button-primary w-full"
           :loading="busy === 'import'"
           :disabled="busy !== null"
           @click="triggerFilePicker"
         />
-        <div
-          v-if="busy === 'import'"
-          class="space-y-1.5"
-          role="status"
-          aria-live="polite"
-          data-testid="settings-import-status"
-        >
-          <ProgressBar
-            :value="progress ?? undefined"
-            :mode="progress === null ? 'indeterminate' : 'determinate'"
-            :show-value="false"
-            style="height: 0.375rem"
-          />
-          <p class="text-xs text-moon/80">{{ statusText }}</p>
-          <p class="text-xs text-moon/50">{{ t('settingsUi.importExport.busyHint') }}</p>
-        </div>
-        <div
-          v-if="lastResult?.kind === 'import'"
-          class="flex items-start gap-2 rounded-md px-3 py-2 text-xs"
-          :class="
-            lastResult.ok ? 'bg-emerald-500/10 text-emerald-200' : 'bg-red-500/10 text-red-200'
-          "
-          role="status"
-          data-testid="settings-import-result"
-        >
-          <i
-            :class="lastResult.ok ? 'pi pi-check-circle' : 'pi pi-exclamation-circle'"
-            class="mt-0.5"
-            aria-hidden="true"
-          />
-          <div class="min-w-0 space-y-0.5">
-            <p class="break-words">{{ lastResult.detail }}</p>
-            <p class="opacity-70">{{ finishedAt(lastResult.at) }}</p>
-          </div>
-        </div>
-      </div>
-    </div>
+      </template>
+    </SettingsSection>
 
     <!-- 导出资料 -->
-    <div class="p-4 rounded-lg border border-white/10 bg-white/5">
-      <div class="space-y-3">
-        <div>
-          <h3 class="text-sm font-medium text-moon/90 mb-1">
-            {{ t('settingsUi.importExport.exportTitle') }}
-          </h3>
-          <p class="text-xs text-moon/70">
-            {{ t('settingsUi.importExport.exportHint') }}
-          </p>
-        </div>
+    <SettingsSection
+      :title="t('settingsUi.importExport.exportTitle')"
+      :description="t('settingsUi.importExport.exportHint')"
+    >
+      <div
+        v-if="busy === 'export'"
+        class="space-y-1.5"
+        role="status"
+        aria-live="polite"
+        data-testid="settings-export-status"
+      >
+        <ProgressBar mode="indeterminate" style="height: 0.375rem" />
+        <p class="text-xs text-moon/80">{{ statusText }}</p>
+      </div>
+      <ImportExportResult
+        v-if="lastResult?.kind === 'export'"
+        :ok="lastResult.ok"
+        :detail="lastResult.detail"
+        :at="lastResult.at"
+        data-testid="settings-export-result"
+      />
+      <template #actions>
         <Button
           :label="t('settingsUi.importExport.exportTitle')"
           icon="pi pi-download"
-          class="p-button-outlined w-full"
+          outlined
           :loading="busy === 'export'"
           :disabled="busy !== null"
           @click="exportSettings"
         />
-        <div
-          v-if="busy === 'export'"
-          class="space-y-1.5"
-          role="status"
-          aria-live="polite"
-          data-testid="settings-export-status"
-        >
-          <ProgressBar mode="indeterminate" style="height: 0.375rem" />
-          <p class="text-xs text-moon/80">{{ statusText }}</p>
-        </div>
-        <div
-          v-if="lastResult?.kind === 'export'"
-          class="flex items-start gap-2 rounded-md px-3 py-2 text-xs"
-          :class="
-            lastResult.ok ? 'bg-emerald-500/10 text-emerald-200' : 'bg-red-500/10 text-red-200'
-          "
-          role="status"
-          data-testid="settings-export-result"
-        >
-          <i
-            :class="lastResult.ok ? 'pi pi-check-circle' : 'pi pi-exclamation-circle'"
-            class="mt-0.5"
-            aria-hidden="true"
-          />
-          <div class="min-w-0 space-y-0.5">
-            <p class="break-words">{{ lastResult.detail }}</p>
-            <p class="opacity-70">{{ finishedAt(lastResult.at) }}</p>
-          </div>
-        </div>
-      </div>
-    </div>
+      </template>
+    </SettingsSection>
 
     <!-- 隐藏的文件输入 -->
     <input
@@ -170,5 +131,20 @@ const handleFileSelect = createFileSelectHandler(importFromFile);
       class="hidden"
       @change="handleFileSelect"
     />
-  </div>
+  </SettingsPanel>
 </template>
+
+<style scoped>
+.import-current-data {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--white-opacity-6);
+  border-radius: 10px;
+  background: var(--white-opacity-3);
+}
+
+.import-current-data-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.76rem;
+  color: var(--color-warning);
+}
+</style>

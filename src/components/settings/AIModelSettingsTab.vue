@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import Select from 'primevue/select';
+import SettingsPanel from './form/SettingsPanel.vue';
+import SettingsSection from './form/SettingsSection.vue';
+import SettingsField from './form/SettingsField.vue';
 import { useAIModelsStore } from 'src/stores/ai-models';
 import { useSettingsStore } from 'src/stores/settings';
 import type { AIModelDefaultTasks } from 'src/services/ai/types/ai-model';
@@ -53,28 +56,28 @@ const setTaskModelId = (task: keyof AIModelDefaultTasks, modelId: string | null)
 </script>
 
 <template>
-  <div class="p-4 space-y-3">
-    <div>
-      <h3 class="text-sm font-medium text-moon/90 mb-1">{{ t('settingsUi.models.title') }}</h3>
-      <p class="text-xs text-moon/70">
-        {{ t('settingsUi.models.description') }}
-      </p>
-    </div>
-    <div class="space-y-3">
-      <template v-for="(label, task) in taskLabels" :key="task">
-        <div class="space-y-2">
-          <label class="text-xs text-moon/80">{{ label }}</label>
-          <Select
-            :model-value="getTaskModelId(task)"
-            :options="getModelOptionsForTask(task)"
-            option-label="label"
-            option-value="value"
-            :placeholder="t('settingsUi.models.select')"
-            class="w-full"
-            @update:model-value="(value) => setTaskModelId(task, value)"
-          />
-        </div>
-      </template>
-    </div>
-  </div>
+  <SettingsPanel>
+    <SettingsSection
+      :title="t('settingsUi.models.title')"
+      :description="t('settingsUi.models.description')"
+    >
+      <SettingsField
+        v-for="(label, task) in taskLabels"
+        :key="task"
+        :label="label"
+        :input-id="`default-model-${task}`"
+      >
+        <Select
+          :input-id="`default-model-${task}`"
+          :model-value="getTaskModelId(task)"
+          :options="getModelOptionsForTask(task)"
+          option-label="label"
+          option-value="value"
+          :placeholder="t('settingsUi.models.select')"
+          class="w-full"
+          @update:model-value="(value) => setTaskModelId(task, value)"
+        />
+      </SettingsField>
+    </SettingsSection>
+  </SettingsPanel>
 </template>

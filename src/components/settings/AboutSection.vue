@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import AssistantAvatar from 'src/components/layout/AssistantAvatar.vue';
 import DesktopUpdateSection from './DesktopUpdateSection.vue';
+import SettingsPanel from './form/SettingsPanel.vue';
+import SettingsSection from './form/SettingsSection.vue';
 import { APP_DISPLAY_VERSION } from 'src/constants/build-info';
 import { useI18n } from 'vue-i18n';
 
@@ -13,32 +15,36 @@ const author = 'Rozx';
 </script>
 
 <template>
-  <section class="about-section">
-    <AssistantAvatar :size="128" glowing class="about-avatar" />
-    <h2 class="about-title">月詠 · Tsukuyomi</h2>
-    <p class="about-tagline">{{ t('settingsUi.about.tagline') }}</p>
-    <p class="about-version">v{{ version }}</p>
-    <DesktopUpdateSection />
+  <SettingsPanel>
+    <SettingsSection>
+      <div class="about-section">
+        <AssistantAvatar :size="128" glowing class="about-avatar" />
+        <h2 class="about-title">月詠 · Tsukuyomi</h2>
+        <p class="about-tagline">{{ t('settingsUi.about.tagline') }}</p>
+        <p class="about-version">v{{ version }}</p>
+        <DesktopUpdateSection />
 
-    <div class="about-meta">
-      <div class="about-meta-row">
-        <span class="about-meta-label">{{ t('settingsUi.about.author') }}</span>
-        <a class="about-meta-link" :href="authorUrl" target="_blank" rel="noopener noreferrer">
-          <i class="pi pi-user" aria-hidden="true" />
-          <span>{{ author }}</span>
-          <i class="pi pi-external-link about-meta-extico" aria-hidden="true" />
-        </a>
+        <div class="about-meta">
+          <div class="about-meta-row">
+            <span class="about-meta-label">{{ t('settingsUi.about.author') }}</span>
+            <a class="about-meta-link" :href="authorUrl" target="_blank" rel="noopener noreferrer">
+              <i class="pi pi-user" aria-hidden="true" />
+              <span>{{ author }}</span>
+              <i class="pi pi-external-link about-meta-extico" aria-hidden="true" />
+            </a>
+          </div>
+          <div class="about-meta-row">
+            <span class="about-meta-label">{{ t('settingsUi.about.repository') }}</span>
+            <a class="about-meta-link" :href="githubUrl" target="_blank" rel="noopener noreferrer">
+              <i class="pi pi-github" aria-hidden="true" />
+              <span>github.com/rozx/Tsukuyomi</span>
+              <i class="pi pi-external-link about-meta-extico" aria-hidden="true" />
+            </a>
+          </div>
+        </div>
       </div>
-      <div class="about-meta-row">
-        <span class="about-meta-label">{{ t('settingsUi.about.repository') }}</span>
-        <a class="about-meta-link" :href="githubUrl" target="_blank" rel="noopener noreferrer">
-          <i class="pi pi-github" aria-hidden="true" />
-          <span>github.com/rozx/Tsukuyomi</span>
-          <i class="pi pi-external-link about-meta-extico" aria-hidden="true" />
-        </a>
-      </div>
-    </div>
-  </section>
+    </SettingsSection>
+  </SettingsPanel>
 </template>
 
 <style scoped>
@@ -48,7 +54,7 @@ const author = 'Rozx';
   align-items: center;
   justify-content: center;
   gap: 0.85rem;
-  padding: 2.4rem 1.2rem 2.8rem;
+  padding: 1.6rem 0.5rem 1.8rem;
   text-align: center;
   width: 100%;
 }
