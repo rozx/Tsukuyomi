@@ -146,10 +146,13 @@ describe('context-builder - getRelatedMemoriesForChunk (打分路径)', () => {
 
   test('注入预算包含标题、ID 和换行，超长首条不会挤掉后续短摘要', async () => {
     useSettingsStore().settings.memoryInjection!.charBudget = 500;
+    // 三条用同一时间戳：否则逐条 Date.now() 在慢机器上相差几毫秒，时间衰减让后建的 overflow
+    // 排到 fits 前面先占预算，测试随机失败（CI 上出现过）
+    const at = { createdAt: Date.now() - 10_000, lastAccessedAt: Date.now() };
     spyOn(MemoryService, 'getAllBookMemories').mockResolvedValue([
-      makeMemory('too-large', { summary: `魔法${'长'.repeat(600)}` }),
-      makeMemory('fits', { summary: `魔法${'短'.repeat(470)}` }),
-      makeMemory('overflow', { summary: '魔法补充' }),
+      makeMemory('too-large', { summary: `魔法${'长'.repeat(600)}`, ...at }),
+      makeMemory('fits', { summary: `魔法${'短'.repeat(470)}`, ...at }),
+      makeMemory('overflow', { summary: '魔法补充', ...at }),
     ]);
     spyOn(EmbeddingService, 'isReady').mockReturnValue(false);
     const prompt = await getRelatedMemoriesForChunk('book-1', '魔法', 15, undefined, terms);

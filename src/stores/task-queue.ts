@@ -39,6 +39,8 @@ import {
 } from 'src/services/chapter-task/task-queue-notifications';
 import type { ChapterTaskRunResult } from 'src/services/chapter-task/chapter-task-executor';
 import { BookExecutionGuard } from 'src/services/book-execution-guard';
+import { BookService } from 'src/services/book-service';
+import type { Novel } from 'src/models/novel';
 import { desktopRestartGuard } from 'src/services/desktop-restart-guard';
 import type { ToastMessageWithHistoryOptions } from 'src/composables/useToastHistory';
 import { recordToastInHistory } from 'src/composables/useToastHistory';
@@ -85,6 +87,8 @@ interface TaskQueueConfig {
    * （普通书籍编辑不经队列广播），执行者手里的 Pinia 副本与章节缓存可能已过期
    */
   refreshBook: (bookId: string, chapterId: string) => Promise<unknown>;
+  /** 只读地从存储读取书籍（不改动本标签页的书库副本），确认章节是否真的已删除 */
+  loadStoredBook: (bookId: string) => Promise<Novel | undefined>;
   /** 已结束项的历史保留上限 */
   finishedLimit: number;
   now: () => number;
@@ -111,6 +115,7 @@ function defaultConfig(): TaskQueueConfig {
     restartPending: () => desktopRestartGuard.isRestartPending(),
     watchLibrary: true,
     refreshBook: (bookId, chapterId) => useBooksStore().refreshBookFromStorage(bookId, chapterId),
+    loadStoredBook: (bookId) => BookService.getBookById(bookId),
     finishedLimit: TASK_QUEUE_FINISHED_LIMIT,
     now: () => Date.now(),
   };
@@ -379,11 +384,13 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
   }
 
   async function dropMissingChapters(existing: Set<string>): Promise<void> {
-    const missing = items.value.filter(
+    const suspects = items.value.filter(
       (item) =>
         isTaskQueueItemPending(item.status) &&
         !existing.has(`${item.bookId}\u0000${item.chapterId}`),
     );
+    if (suspects.length === 0) return;
+    const missing = await confirmMissingInStorage(suspects);
     if (missing.length === 0) return;
     await mutate((snapshot) => {
       const ids = new Set(missing.map((item) => item.id));
@@ -397,6 +404,29 @@ export const useTaskQueueStore = defineStore('taskQueue', () => {
       return { put, remove, result: null };
     });
     abortCancelRequested();
+  }
+
+  /**
+   * 本标签页的书库副本不一定有其他标签页新建的书籍或章节（书库变化不经队列广播），
+   * 不能把副本里没有的章节当成已删除：逐本从存储确认，只返回存储里确实不存在的章节；读取失败时不清理
+   */
+  async function confirmMissingInStorage(suspects: TaskQueueItem[]): Promise<TaskQueueItem[]> {
+    const missing: TaskQueueItem[] = [];
+    for (const bookId of new Set(suspects.map((item) => item.bookId))) {
+      let stored: Novel | undefined;
+      try {
+        stored = await config.loadStoredBook(bookId);
+      } catch {
+        continue;
+      }
+      const chapterIds = new Set(
+        (stored?.volumes ?? []).flatMap((volume) => volume.chapters ?? []).map((c) => c.id),
+      );
+      for (const item of suspects) {
+        if (item.bookId === bookId && !chapterIds.has(item.chapterId)) missing.push(item);
+      }
+    }
+    return missing;
   }
 
   // ---------- 调度与运行 ----------

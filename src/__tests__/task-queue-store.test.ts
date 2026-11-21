@@ -13,6 +13,7 @@ import {
 import { useSettingsStore } from 'src/stores/settings';
 import { useBooksStore } from 'src/stores/books';
 import { CodedLocalizedError } from 'src/utils/coded-localized-error';
+import { BookService } from 'src/services/book-service';
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -362,6 +363,38 @@ describe('任务队列 store · 删除联动', () => {
     });
     await settle();
     expect(store.items.map((i) => i.chapterId)).toEqual(['c1']);
+  });
+
+  it('其他标签页新建的书籍不在本地书库副本里：书库变化时先查存储，不会把它的任务当成已删除', async () => {
+    configureTaskQueue({ watchLibrary: true });
+    const books = useBooksStore();
+    await books.loadBooks();
+    const novel = (id: string, chapterId: string) =>
+      ({
+        id,
+        title: id,
+        createdAt: new Date(0),
+        lastEdited: new Date(0),
+        volumes: [
+          {
+            id: `${id}-v`,
+            title: '',
+            chapters: [
+              { id: chapterId, title: '', createdAt: new Date(0), lastEdited: new Date(0) },
+            ],
+          },
+        ],
+      }) as never;
+    const { runner } = controlledRunner();
+    const store = await startStore(runner, 1);
+    await store.pause();
+    // 另一标签页：书籍直接写入存储（不经本标签页的书库 store），并把它的章节入队
+    await BookService.saveBook(novel('other-tab-book', 'x1'));
+    await store.enqueue([req('x1', { bookId: 'other-tab-book' })], { position: 'back' });
+    // 本标签页新建另一本书，触发书库监听
+    await books.addBook(novel('local-book', 'y1'));
+    await settle(12);
+    expect(store.items.map((i) => i.chapterId)).toEqual(['x1']);
   });
 
   it('运行中的章节被删除时中止该项', async () => {
