@@ -154,6 +154,9 @@ export default {
     fillModelId: '请先填写模型标识',
     catalogFound: '已从 models.dev 模型目录获取上限',
     catalogMissing: 'models.dev 暂未收录此模型，已保留现有数值，请手动填写模型上限。',
+    catalogFoundOffline: '无法连接 models.dev，已使用内置模型目录快照中的上限（可能不是最新）。',
+    catalogUnreachable:
+      '无法连接 models.dev，内置模型目录快照也未收录此模型，已保留现有数值。请稍后重试或手动填写模型上限。',
     testPrompt: '请只回复 OK。',
     testSucceeded: '模型已成功响应，当前配置可用。',
     testCancelled: '测试已取消',

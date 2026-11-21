@@ -2,33 +2,21 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import {
   CATALOG_PROVIDERS,
+  MODELS_DEV_API_URL,
+  buildLimitsCatalog,
   normalizeModelId,
   positiveLimit,
 } from '../src/services/ai/model-limits/catalog-types';
-import type { CatalogEntry } from '../src/services/ai/model-limits/catalog-types';
+import type {
+  CatalogEntry,
+  ModelsDevDatabase,
+} from '../src/services/ai/model-limits/catalog-types';
 
-type Database = Record<
-  string,
-  { models?: Record<string, { limit?: { context?: number; output?: number; input?: number } }> }
->;
-const response = await fetch('https://models.dev/api.json');
+const response = await fetch(MODELS_DEV_API_URL);
 if (!response.ok) throw new Error(`模型目录下载失败：HTTP ${response.status}`);
-const data = (await response.json()) as Database;
-const catalog: Record<string, Record<string, CatalogEntry>> = {};
-for (const provider of Object.keys(data).sort()) {
-  const models: Record<string, CatalogEntry> = {};
-  for (const [id, model] of Object.entries(data[provider]?.models ?? {}).sort(([a], [b]) =>
-    a.localeCompare(b),
-  )) {
-    const context = positiveLimit(model.limit?.context);
-    if (!context) continue;
-    const input = positiveLimit(model.limit?.input);
-    models[id] = input
-      ? [context, positiveLimit(model.limit?.output) ?? 0, input]
-      : [context, positiveLimit(model.limit?.output) ?? 0];
-  }
-  if (Object.keys(models).length) catalog[provider] = models;
-}
+const catalog: Record<string, Record<string, CatalogEntry>> = buildLimitsCatalog(
+  (await response.json()) as ModelsDevDatabase,
+);
 if (JSON.stringify(catalog).length > 300_000) {
   const fallback: Record<string, CatalogEntry> = {};
   for (const [provider, models] of Object.entries(catalog)) {

@@ -7,7 +7,7 @@ import { getActivePinia } from 'pinia';
 import PrimeVue from 'primevue/config';
 import AIModelDialog from '../components/dialogs/AIModelDialog.vue';
 import { AIServiceFactory } from '../services/ai/ai-service-factory';
-import * as Limits from '../services/ai/model-limits/resolve';
+import * as Limits from '../services/ai/model-limits/live-catalog';
 import type { AIModel } from '../services/ai/types/ai-model';
 import type { AIService } from '../services/ai/types/ai-service';
 
@@ -85,9 +85,10 @@ function fill(selector: string, value: string) {
 
 describe('模型资料、测试与思考等级表单', () => {
   it.each([true, false])('只查询 models.dev，命中=%s，未命中保留原值', async (hit) => {
-    vi.spyOn(Limits, 'lookupModelLimits').mockResolvedValue(
-      hit ? { contextWindow: 128000, maxOutput: 8192 } : undefined,
-    );
+    vi.spyOn(Limits, 'lookupLatestModelLimits').mockResolvedValue({
+      limits: hit ? { contextWindow: 128000, maxOutput: 8192 } : undefined,
+      offline: false,
+    });
     const { save } = await mountDialog();
     click('获取模型资料');
     await vi.waitFor(() => expect(toast).toHaveBeenCalled());

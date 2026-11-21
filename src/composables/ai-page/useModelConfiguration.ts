@@ -53,9 +53,14 @@ export function useModelConfiguration(options: {
     cancel();
     const request = revision;
     const uiLocale = resolveAppLocale(locale.value);
+    // 在线目录较大，关闭或修改表单时中止下载
+    const activeController = new AbortController();
+    controller = activeController;
     isFetchingConfig.value = true;
     try {
-      const result = await ConfigService.getConfig(options.model(), uiLocale);
+      const result = await ConfigService.getConfig(options.model(), uiLocale, {
+        signal: activeController.signal,
+      });
       if (!current(request)) return;
       if (result.success) options.applyCatalog(result);
       toast.add({
@@ -76,7 +81,10 @@ export function useModelConfiguration(options: {
           life: 5000,
         });
     } finally {
-      if (current(request)) isFetchingConfig.value = false;
+      if (current(request)) {
+        isFetchingConfig.value = false;
+        controller = undefined;
+      }
     }
   };
 

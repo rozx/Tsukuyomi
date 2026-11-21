@@ -2,7 +2,7 @@ import './setup';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConfigService } from '../services/ai/tasks/config-service';
 import { AIServiceFactory } from '../services/ai/ai-service-factory';
-import * as Limits from '../services/ai/model-limits/resolve';
+import * as Limits from '../services/ai/model-limits/live-catalog';
 import type { AIModel } from '../services/ai/types/ai-model';
 import type { AIService } from '../services/ai/types/ai-service';
 
@@ -51,9 +51,9 @@ describe('models.dev 资料与独立可用性测试', () => {
     ).toMatchObject({ success: true });
   });
   it('目录命中不需要密钥，只返回 models.dev 数据', async () => {
-    vi.spyOn(Limits, 'lookupModelLimits').mockResolvedValue({
-      contextWindow: 128000,
-      maxOutput: 8192,
+    vi.spyOn(Limits, 'lookupLatestModelLimits').mockResolvedValue({
+      limits: { contextWindow: 128000, maxOutput: 8192 },
+      offline: false,
     });
     expect(await ConfigService.getConfig({ ...model, apiKey: '' })).toMatchObject({
       success: true,
@@ -66,7 +66,10 @@ describe('models.dev 资料与独立可用性测试', () => {
     expect(legacyProbe).not.toHaveBeenCalled();
   });
   it('目录未命中不询问模型，也不改写现有配置', async () => {
-    vi.spyOn(Limits, 'lookupModelLimits').mockResolvedValue(undefined);
+    vi.spyOn(Limits, 'lookupLatestModelLimits').mockResolvedValue({
+      limits: undefined,
+      offline: false,
+    });
     const before = JSON.stringify(model);
     expect(await ConfigService.getConfig(model)).toMatchObject({
       success: false,

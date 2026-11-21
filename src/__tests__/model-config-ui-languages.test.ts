@@ -110,10 +110,48 @@ describe('模型资料界面说明', () => {
       .use(createI18n({ legacy: false, locale: 'en-US', messages }))
       .mount(document.createElement('div'));
     await config.fetchModelInfo();
-    expect(service).toHaveBeenCalledWith({ model: 'original-id' }, 'en-US');
+    expect(service).toHaveBeenCalledWith({ model: 'original-id' }, 'en-US', {
+      signal: expect.any(AbortSignal),
+    });
     expect(feedback.add).toHaveBeenCalledWith(
       expect.objectContaining({ summary: 'No catalog entry', detail: 'Original catalog detail' }),
     );
     expect(source.value).toBe('用户模型草稿');
+  });
+
+  it('获取资料期间修改表单会中止在线目录请求且不提示', async () => {
+    let received: AbortSignal | undefined;
+    vi.spyOn(ConfigService, 'getConfig').mockImplementation(
+      (_model, _locale, options) =>
+        new Promise((_resolve, reject) => {
+          received = options?.signal;
+          received?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
+        }),
+    );
+    const source = ref('草稿');
+    let config!: ReturnType<typeof useModelConfiguration>;
+    app = createApp({
+      setup() {
+        config = useModelConfiguration({
+          source: () => source.value,
+          visible: () => true,
+          model: () => ({ model: 'm' }) as AIModel,
+          applyCatalog: vi.fn(),
+        });
+        return () => null;
+      },
+    });
+    app
+      .use(createI18n({ legacy: false, locale: 'en-US', messages }))
+      .mount(document.createElement('div'));
+    const pending = config.fetchModelInfo();
+    expect(config.isFetchingConfig.value).toBe(true);
+    source.value = '已修改';
+    await pending;
+    expect(received?.aborted).toBe(true);
+    expect(config.isFetchingConfig.value).toBe(false);
+    expect(feedback.add).not.toHaveBeenCalled();
   });
 });

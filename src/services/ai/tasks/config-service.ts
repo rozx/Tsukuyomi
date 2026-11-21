@@ -3,7 +3,7 @@ import type { AIModel } from 'src/services/ai/types/ai-model';
 import { requiresBaseUrl } from 'src/services/ai/types/ai-model';
 import type { AIConfigResult } from 'src/services/ai/types/ai-service';
 import { AIServiceFactory } from '../ai-service-factory';
-import { lookupModelLimits } from '../model-limits/resolve';
+import { lookupLatestModelLimits } from '../model-limits/live-catalog';
 import type { AppLocale } from 'src/models/locale';
 import type { MessageKey } from 'src/i18n/types';
 import { translateText } from 'src/i18n/translate';
@@ -20,22 +20,26 @@ export interface ModelAvailabilityResult {
 
 /** 目录资料与真实连通性测试分离，二者都不保存模型配置。 */
 export class ConfigService {
-  static async getConfig(model: AIModel, locale: AppLocale = 'zh-CN'): Promise<AIConfigResult> {
+  static async getConfig(
+    model: AIModel,
+    locale: AppLocale = 'zh-CN',
+    options: { signal?: AbortSignal } = {},
+  ): Promise<AIConfigResult> {
     if (!model.model.trim())
       return { success: false, message: translateText(locale, 'aiUi.fillModelId') };
-    const catalog = await lookupModelLimits(model);
-    return catalog
-      ? {
-          success: true,
-          message: translateText(locale, 'aiUi.catalogFound'),
-          limitsSource: 'catalog',
-          maxInputTokens: catalog.contextWindow,
-          maxOutputTokens: catalog.maxOutput ?? 0,
-        }
-      : {
-          success: false,
-          message: translateText(locale, 'aiUi.catalogMissing'),
-        };
+    const { limits, offline } = await lookupLatestModelLimits(model, options);
+    if (!limits)
+      return {
+        success: false,
+        message: translateText(locale, offline ? 'aiUi.catalogUnreachable' : 'aiUi.catalogMissing'),
+      };
+    return {
+      success: true,
+      message: translateText(locale, offline ? 'aiUi.catalogFoundOffline' : 'aiUi.catalogFound'),
+      limitsSource: 'catalog',
+      maxInputTokens: limits.contextWindow,
+      maxOutputTokens: limits.maxOutput ?? 0,
+    };
   }
 
   private static availabilityFailure(

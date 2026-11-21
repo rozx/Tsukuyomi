@@ -161,6 +161,10 @@ export default {
     catalogFound: 'Limits fetched from the models.dev catalog',
     catalogMissing:
       'models.dev has no entry for this model. Existing values were kept; enter limits manually.',
+    catalogFoundOffline:
+      'Could not reach models.dev; limits were taken from the built-in catalog snapshot and may be outdated.',
+    catalogUnreachable:
+      'Could not reach models.dev and the built-in catalog snapshot has no entry for this model. Existing values were kept; try again later or enter limits manually.',
     testPrompt: 'Reply only with OK.',
     testSucceeded: 'The model responded successfully. This configuration works.',
     testCancelled: 'Test cancelled',

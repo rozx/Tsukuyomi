@@ -3,7 +3,7 @@ import './setup';
 import { ConfigService } from '../services/ai/tasks/config-service';
 import type { AIModel } from '../services/ai/types/ai-model';
 import type { AppLocale } from '../models/locale';
-import * as Limits from '../services/ai/model-limits/resolve';
+import * as Limits from '../services/ai/model-limits/live-catalog';
 const off = { enabled: false, temperature: 0.7 };
 const model: AIModel = {
   id: 'm',
@@ -22,7 +22,10 @@ const model: AIModel = {
 afterEach(() => vi.restoreAllMocks());
 describe('模型资料和可用性服务语言', () => {
   it('目录未命中用显式英文且模型ID不被翻译', async () => {
-    vi.spyOn(Limits, 'lookupModelLimits').mockResolvedValue(undefined);
+    vi.spyOn(Limits, 'lookupLatestModelLimits').mockResolvedValue({
+      limits: undefined,
+      offline: false,
+    });
     const get = ConfigService.getConfig.bind(ConfigService) as (
       model: AIModel,
       locale?: AppLocale,

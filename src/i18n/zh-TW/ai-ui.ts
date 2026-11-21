@@ -154,6 +154,9 @@ export default {
     fillModelId: '請先填寫模型識別碼',
     catalogFound: '已從 models.dev 模型目錄取得上限',
     catalogMissing: 'models.dev 尚未收錄此模型，已保留現有數值，請手動填寫上限。',
+    catalogFoundOffline: '無法連線 models.dev，已使用內建模型目錄快照中的上限（可能不是最新）。',
+    catalogUnreachable:
+      '無法連線 models.dev，內建模型目錄快照也未收錄此模型，已保留現有數值。請稍後重試或手動填寫上限。',
     testPrompt: '請只回覆 OK。',
     testSucceeded: '模型已成功回應，目前設定可用。',
     testCancelled: '測試已取消',
