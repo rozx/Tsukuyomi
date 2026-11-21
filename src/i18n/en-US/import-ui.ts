@@ -330,6 +330,10 @@ export default {
       draft: 'Draft',
       planShort: 'Plan',
       sections: 'Import workbench sections',
+      workbench: 'Import workbench',
+      summary:
+        'Provide a URL or files and organize the volumes with Tsukuyomi. Nothing is written to the library until you confirm the plan.',
+      chapters: 'Chapters',
     },
     action: {
       currentTask: 'current task',

@@ -448,8 +448,27 @@ function createAIPageContext() {
     { deep: true },
   );
 
+  // 页头（PageHeader）：桌面与平板共用同一份标题、说明与统计
+  const pageHeader = computed(() => {
+    const enabled = aiModels.value.filter((model) => model.enabled).length;
+    const routed = taskRouting.value.filter((row) => row.modelId).length;
+    return {
+      eyebrow: t('aiUi.models'),
+      title: t('aiUi.workbench'),
+      description: searchQuery.value
+        ? t('aiUi.filteredSummary', { count: filteredModels.value.length })
+        : t('aiUi.pageSummary'),
+      stats: [
+        { label: t('aiUi.totalModels'), value: aiModels.value.length },
+        { label: t('aiUi.enabled'), value: enabled },
+        { label: t('aiUi.routing'), value: `${routed}/${taskRouting.value.length}` },
+      ],
+    };
+  });
+
   return {
     isPageLoading,
+    pageHeader,
     aiModels,
     providerGroups,
     taskRouting,

@@ -440,7 +440,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
       <div class="toolbar-row toolbar-expandable">
         <!-- 左侧：搜索栏 -->
         <div class="toolbar-search">
-          <InputGroup class="search-input-group min-w-0 flex-shrink">
+          <InputGroup class="ui-search search-input-group min-w-0 flex-shrink">
             <InputGroupAddon>
               <i class="pi pi-search text-base" />
             </InputGroupAddon>

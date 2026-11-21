@@ -199,7 +199,7 @@ const continueRun = () => void store.send('');
   flex-wrap: wrap;
   gap: 0.25rem 1rem;
   font-size: 0.75rem;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
 }
 
 .irb-msg {

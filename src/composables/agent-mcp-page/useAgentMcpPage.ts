@@ -207,6 +207,8 @@ export interface AgentMcpPageContext {
   selectSection: (section: AgentMcpSection) => void;
   /** 两栏布局里「接入」固定在左栏，右栏显示的分栏：选中「接入」时为调用活动 */
   secondarySection: ComputedRef<AgentMcpSection>;
+  /** 三栏布局里「接入」「调用活动」各占一栏，第三栏显示的分栏：未选中权限 / 能力 / 连接时为权限与写回 */
+  sideSection: ComputedRef<AgentMcpSection>;
   /** 页面顶部的概览：服务状态、当前权限、开放的工具数、本次会话的调用次数 */
   summaryMetrics: ComputedRef<Array<{ label: string; value: string | number; wide?: boolean }>>;
   /** 「手动添加 MCP」是否展开；把指南交给 Agent 时不需要它，默认收起 */
@@ -575,6 +577,11 @@ function createAgentMcpPageContext(): AgentMcpPageContext {
   const secondarySection = computed<AgentMcpSection>(() =>
     activeSection.value === 'connect' ? 'activity' : activeSection.value,
   );
+  const sideSection = computed<AgentMcpSection>(() =>
+    activeSection.value === 'connect' || activeSection.value === 'activity'
+      ? 'permission'
+      : activeSection.value,
+  );
   const sections = computed<AgentMcpSectionItem[]>(() => {
     const locale = settingsStore.uiLocale;
     return SECTION_META.filter((meta) => meta.key !== 'connection' || isElectronEnv.value).map(
@@ -761,6 +768,7 @@ function createAgentMcpPageContext(): AgentMcpPageContext {
     activeSection,
     selectSection,
     secondarySection,
+    sideSection,
     summaryMetrics,
     manualSetupOpen,
     toggleManualSetup,

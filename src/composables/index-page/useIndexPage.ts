@@ -4,6 +4,8 @@ import { useRouter } from 'vue-router';
 import { useBooksStore } from 'src/stores/books';
 import { useSettingsStore } from 'src/stores/settings';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
+import { useAIProcessingStore } from 'src/stores/ai-processing';
+import { APP_NAME } from 'src/constants/app';
 import { getTotalChapters, getAssetUrl } from 'src/utils';
 import { useLibraryFormatting } from 'src/composables/shared/useLibraryFormatting';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
@@ -88,6 +90,32 @@ function createIndexPageContext() {
 
   const { formatDate, formatWordCount } = useLibraryFormatting();
 
+  // 页头（PageHeader）：桌面与平板共用同一份标题、说明与统计
+  const aiProcessing = useAIProcessingStore();
+  const pageHeader = computed(() => {
+    const g = greeting.value;
+    const book = continueReadingBook.value;
+    const running = aiProcessing.hasActiveTasks;
+    let description = t('libraryUi.emptyDescription', { greeting: g });
+    if (running && book) {
+      description = t('libraryUi.activeDescription', { greeting: g, title: book.title });
+    } else if (book) {
+      description = t('libraryUi.recentDescription', { greeting: g, title: book.title });
+    }
+    return {
+      eyebrow: `${g} · ${APP_NAME.en} ${APP_NAME.zh}`,
+      title: running ? t('libraryUi.running') : t('libraryUi.welcome'),
+      description,
+      stats: [
+        { label: t('libraryUi.books'), value: totalBooks.value },
+        { label: t('libraryUi.chapters'), value: totalChapters.value },
+        { label: t('libraryUi.characters'), value: formatWordCount(totalWords.value) },
+        { label: t('libraryUi.terms'), value: totalTerms.value },
+        { label: t('libraryUi.favorites'), value: starredBooks.value },
+      ],
+    };
+  });
+
   const getCoverUrl = (book: Novel): string =>
     CoverService.getCoverUrl(book, settingsStore.uiLocale);
 
@@ -169,6 +197,7 @@ function createIndexPageContext() {
     isEmptyState,
     continueReadingBook,
     greeting,
+    pageHeader,
     formatDate,
     getCoverUrl,
     addBook,

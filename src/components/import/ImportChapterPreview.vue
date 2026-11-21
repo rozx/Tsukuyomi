@@ -128,7 +128,7 @@ const locateSource = (sourceId: string) => {
 
 .icp-title-icon {
   font-size: 0.8rem;
-  color: rgba(165, 180, 252, 0.9);
+  color: rgba(163, 183, 207, 0.9);
 }
 
 .icp-title {
@@ -147,7 +147,7 @@ const locateSource = (sourceId: string) => {
   display: grid;
   place-items: center;
   border-radius: 8px;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
 }
 
 .icp-loading {
@@ -158,7 +158,7 @@ const locateSource = (sourceId: string) => {
 
 .icp-note {
   font-size: 0.78rem;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
   margin: 0;
 }
 
@@ -175,15 +175,15 @@ const locateSource = (sourceId: string) => {
 
 .icp-label {
   font-size: 0.72rem;
-  color: rgba(226, 232, 240, 0.5);
+  color: rgba(247, 244, 236, 0.5);
 }
 
 .icp-source {
   font-size: 0.72rem;
   padding: 0.15rem 0.5rem;
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.14);
-  color: rgb(199, 210, 254);
+  background: rgba(109, 136, 168, 0.14);
+  color: var(--tsukuyomi-200);
 }
 
 .icp-body {
@@ -203,14 +203,14 @@ const locateSource = (sourceId: string) => {
 }
 
 .icp-paragraph--existing {
-  color: rgba(226, 232, 240, 0.7);
-  border-left: 2px solid rgba(129, 140, 248, 0.45);
+  color: rgba(247, 244, 236, 0.7);
+  border-left: 2px solid rgba(163, 183, 207, 0.45);
   padding-left: 0.5rem;
 }
 
 .icp-more {
   align-self: flex-start;
   font-size: 0.75rem;
-  color: rgb(165, 180, 252);
+  color: var(--tsukuyomi-300);
 }
 </style>

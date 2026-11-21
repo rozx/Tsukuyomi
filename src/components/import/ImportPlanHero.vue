@@ -100,7 +100,7 @@ const showApply = computed(() => Boolean(props.plan) && props.status.kind !== 'a
 
 <style scoped>
 .iph {
-  --iph-accent: rgb(148, 163, 184);
+  --iph-accent: var(--moon-50-opacity-55);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -127,7 +127,7 @@ const showApply = computed(() => Boolean(props.plan) && props.status.kind !== 'a
 }
 
 .iph--none {
-  --iph-accent: rgb(129, 140, 248);
+  --iph-accent: var(--tsukuyomi-400);
 }
 
 .iph-head {
@@ -166,7 +166,7 @@ const showApply = computed(() => Boolean(props.plan) && props.status.kind !== 'a
   gap: 0.5rem;
   font-size: 0.72rem;
   letter-spacing: 0.04em;
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
 }
 
 .iph-title {
@@ -180,14 +180,14 @@ const showApply = computed(() => Boolean(props.plan) && props.status.kind !== 'a
 .iph-meta {
   margin: 0;
   font-size: 0.74rem;
-  color: rgba(226, 232, 240, 0.5);
+  color: rgba(247, 244, 236, 0.5);
 }
 
 .iph-message {
   margin: 0;
   font-size: 0.8rem;
   line-height: 1.6;
-  color: rgba(226, 232, 240, 0.78);
+  color: rgba(247, 244, 236, 0.78);
 }
 
 .iph-actions {

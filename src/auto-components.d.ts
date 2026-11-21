@@ -182,6 +182,7 @@ declare module 'vue' {
     NewChapterGroupHead: typeof import('./components/book-sync/fragments/NewChapterGroupHead.vue')['default']
     NewChapterGroups: typeof import('./components/book-sync/fragments/NewChapterGroups.vue')['default']
     NotificationBadge: typeof import('./components/layout/NotificationBadge.vue')['default']
+    PageHeader: typeof import('./components/layout/PageHeader.vue')['default']
     ParagraphCard: typeof import('./components/novel/ParagraphCard.vue')['default']
     ParagraphCharacterPopoverList: typeof import('./components/novel/ParagraphCharacterPopoverList.vue')['default']
     ParagraphDiffView: typeof import('./components/book-sync/fragments/ParagraphDiffView.vue')['default']

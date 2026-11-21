@@ -505,6 +505,47 @@ const CUSTOM_CSS = `
   padding-right: 0;
   aspect-ratio: 1;
 }
+
+/*
+ * 搜索框：InputGroup（搜索图标 addon + InputText + 可选清除按钮 addon）加 class ui-search，
+ * 高度与 PrimeVue 默认按钮相同，ui-search--sm 与 p-button-sm 相同
+ * （按钮高度 = 字号 × 行高 1.5 + 上下内边距 + 1px 边框 × 2，取值见下方按钮 token）。
+ * PrimeVue 默认输入框 1rem 字号、约 42px 高，放在按钮旁明显偏大。
+ */
+.ui-search.p-inputgroup {
+  height: calc(0.875rem * 1.5 + 0.45rem * 2 + 2px);
+}
+.ui-search .p-inputtext {
+  height: 100%;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 0.875rem;
+}
+.ui-search .p-inputgroupaddon {
+  min-width: 2.25rem;
+  padding: 0 0.6rem;
+}
+.ui-search .p-inputgroupaddon .pi {
+  font-size: 0.85rem;
+}
+.ui-search .p-inputgroupaddon .p-button {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+.ui-search--sm.p-inputgroup {
+  height: calc(0.8rem * 1.5 + 0.3rem * 2 + 2px);
+}
+.ui-search--sm .p-inputtext {
+  font-size: 0.8rem;
+}
+.ui-search--sm .p-inputgroupaddon {
+  min-width: 2rem;
+  padding: 0 0.5rem;
+}
+.ui-search--sm .p-inputgroupaddon .p-button {
+  width: 1.5rem;
+  height: 1.5rem;
+}
 .ui-btn--primary {
   background: var(--btn-primary-bg);
   border-color: var(--btn-primary-border);

@@ -98,12 +98,12 @@ const status = computed(() => SOURCE_STATUS[props.source.status]);
 }
 
 .isr--referenced {
-  background: rgba(99, 102, 241, 0.08);
+  background: rgba(109, 136, 168, 0.08);
 }
 
 .isr--selected {
-  border-color: rgba(129, 140, 248, 0.45);
-  background: rgba(99, 102, 241, 0.14);
+  border-color: rgba(163, 183, 207, 0.45);
+  background: rgba(109, 136, 168, 0.14);
 }
 
 .isr-main {
@@ -123,8 +123,8 @@ const status = computed(() => SOURCE_STATUS[props.source.status]);
   display: grid;
   place-items: center;
   font-size: 0.85rem;
-  color: rgba(165, 180, 252, 0.9);
-  background: rgba(99, 102, 241, 0.12);
+  color: rgba(163, 183, 207, 0.9);
+  background: rgba(109, 136, 168, 0.12);
 }
 
 .isr-text {
@@ -147,7 +147,7 @@ const status = computed(() => SOURCE_STATUS[props.source.status]);
 
 .isr-detail {
   font-size: 0.7rem;
-  color: rgba(226, 232, 240, 0.45);
+  color: rgba(247, 244, 236, 0.45);
 }
 
 .isr-error {
@@ -169,13 +169,13 @@ const status = computed(() => SOURCE_STATUS[props.source.status]);
   border-radius: 6px;
   font-size: 0.66rem;
   line-height: 1.6;
-  color: rgba(226, 232, 240, 0.65);
+  color: rgba(247, 244, 236, 0.65);
   background: rgba(255, 255, 255, 0.07);
 }
 
 .isr-badge--agent {
-  color: rgb(199, 210, 254);
-  background: rgba(99, 102, 241, 0.16);
+  color: var(--tsukuyomi-200);
+  background: rgba(109, 136, 168, 0.16);
 }
 
 .isr-delete {
@@ -185,7 +185,7 @@ const status = computed(() => SOURCE_STATUS[props.source.status]);
   display: grid;
   place-items: center;
   border-radius: 6px;
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
 }
 
 .isr-delete:hover:not(:disabled) {

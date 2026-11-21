@@ -163,7 +163,7 @@ const suggestion = computed(() => {
   flex-direction: column;
   gap: 0.25rem;
   font-size: 0.72rem;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
   min-width: 0;
 }
 

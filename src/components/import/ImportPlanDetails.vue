@@ -111,7 +111,7 @@ const completeness = computed(() => {
 }
 
 .ipdt-meta dt {
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
 }
 
 .ipdt-meta dd {
@@ -132,7 +132,7 @@ const completeness = computed(() => {
 }
 
 .ipdt-before {
-  color: rgba(226, 232, 240, 0.4);
+  color: rgba(247, 244, 236, 0.4);
   text-decoration: line-through;
 }
 
@@ -161,7 +161,7 @@ const completeness = computed(() => {
 }
 
 .ipdt-missing .ipdt-more {
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
   background: transparent;
   border-style: dashed;
   border-color: rgba(255, 255, 255, 0.15);

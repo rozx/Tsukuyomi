@@ -25,12 +25,12 @@
   margin: 0;
   font-size: 0.84rem;
   font-weight: 600;
-  color: rgba(226, 232, 240, 0.9);
+  color: rgba(247, 244, 236, 0.9);
 }
 
 .ipl-card-title > i {
   font-size: 0.8rem;
-  color: rgba(165, 180, 252, 0.9);
+  color: rgba(163, 183, 207, 0.9);
 }
 
 .ipl-count {
@@ -39,7 +39,7 @@
   font-size: 0.7rem;
   font-weight: 500;
   line-height: 1.5;
-  color: rgba(226, 232, 240, 0.72);
+  color: rgba(247, 244, 236, 0.72);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -47,7 +47,7 @@
   margin: 0;
   font-size: 0.76rem;
   line-height: 1.6;
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
 }
 
 .ipl-filters {
@@ -60,14 +60,14 @@
   padding: 0.15rem 0.6rem;
   border-radius: 999px;
   font-size: 0.72rem;
-  color: rgba(226, 232, 240, 0.65);
+  color: rgba(247, 244, 236, 0.65);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .ipl-filter--active {
-  color: rgb(224, 231, 255);
-  background: rgba(99, 102, 241, 0.22);
-  border-color: rgba(129, 140, 248, 0.45);
+  color: var(--tsukuyomi-100);
+  background: rgba(109, 136, 168, 0.22);
+  border-color: rgba(163, 183, 207, 0.45);
 }
 
 .ipl-banner {
@@ -91,9 +91,9 @@
 }
 
 .ipl-banner--info {
-  color: rgb(199, 210, 254);
-  background: rgba(99, 102, 241, 0.1);
-  border: 1px solid rgba(129, 140, 248, 0.28);
+  color: var(--tsukuyomi-200);
+  background: rgba(109, 136, 168, 0.1);
+  border: 1px solid rgba(163, 183, 207, 0.28);
 }
 
 /* 状态色点：与标签同色系，列表中比整块标签更安静 */
@@ -103,7 +103,7 @@
   gap: 0.3rem;
   font-size: 0.7rem;
   white-space: nowrap;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
 }
 
 .ipl-status::before {
@@ -131,5 +131,5 @@
 }
 
 .ipl-status--secondary {
-  color: rgba(226, 232, 240, 0.5);
+  color: rgba(247, 244, 236, 0.5);
 }

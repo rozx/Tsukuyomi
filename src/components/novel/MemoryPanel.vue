@@ -595,7 +595,7 @@ const handleFileSelect = createFileSelectHandler(async (file) => {
         <!-- 左侧：搜索和筛选 -->
         <div class="toolbar-filters">
           <!-- 搜索栏 -->
-          <InputGroup class="search-input-group" style="width: 240px">
+          <InputGroup class="ui-search search-input-group" style="width: 240px">
             <InputGroupAddon>
               <i class="pi pi-search text-base" />
             </InputGroupAddon>

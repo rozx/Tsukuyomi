@@ -113,12 +113,12 @@ watch(
   white-space: nowrap;
   border-radius: 10px;
   font-size: 0.82rem;
-  color: rgba(226, 232, 240, 0.65);
+  color: rgba(247, 244, 236, 0.65);
 }
 
 .ipm-seg-btn--active {
-  background: rgba(99, 102, 241, 0.2);
-  color: rgb(224, 231, 255);
+  background: rgba(109, 136, 168, 0.2);
+  color: var(--tsukuyomi-100);
   font-weight: 600;
 }
 

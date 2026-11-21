@@ -1,251 +1,304 @@
 <template>
-  <div class="desktop-agent-mcp-page">
-    <DesktopWorkbenchHeader
+  <div class="agent-mcp-page">
+    <PageHeader
       :eyebrow="t('agentMcp.eyebrow')"
       :title="t('agentMcp.title')"
       :description="t('agentMcp.subtitle')"
-    >
-      <template #metrics>
-        <DesktopWorkbenchMetrics :items="ctx.summaryMetrics.value" />
-      </template>
-    </DesktopWorkbenchHeader>
+      :stats="ctx.summaryMetrics.value"
+    />
 
     <!--
-      按本页可用宽度分三档，页面本身都不滚动、只有栏内滚动：
-      - 宽：三栏并排（接入 / 调用活动 / 权限与能力）
-      - 中：两栏，左栏固定为接入，右栏用标签在其余分栏间切换
-      - 窄（含平板）：顶部分栏标签，一次显示一栏
+      按本页可用宽度（不是窗口宽度，侧边栏展开与否都能正确切换）分三档，页面本身不滚动、只有栏内滚动：
+      - 宽：「接入」「调用活动」各占一栏，右侧栏用标签切换权限与写回 / 开放的能力 / 连接
+      - 中（含平板横屏）：「接入」固定在左侧，右侧栏用标签切换其余分栏
+      - 窄（含平板竖屏）：标签在顶部，一次显示一栏
+      分栏选择存在页面 composable 里，宽度变化或断点切换后保留。
     -->
-    <div class="mcp-board">
-      <nav class="mcp-tabs" role="tablist" :aria-label="t('agentMcp.title')">
+    <div class="amp-body">
+      <nav class="amp-tabs" role="tablist" :aria-label="t('agentMcp.title')">
         <button
           v-for="section in ctx.sections.value"
           :key="section.key"
           type="button"
           role="tab"
-          class="amcp-chip mcp-tab"
-          :class="{
-            'mcp-tab--connect': section.key === 'connect',
-            'mcp-tab--current': ctx.activeSection.value === section.key,
-            'mcp-tab--secondary': ctx.secondarySection.value === section.key,
-          }"
+          class="amp-tab"
+          :class="[`amp-tab--${section.key}`, sectionState(section.key, 'amp-tab')]"
           @click="ctx.selectSection(section.key)"
         >
           {{ section.label }}
-          <span v-if="section.badge" class="mcp-tab-badge">{{ section.badge }}</span>
+          <span v-if="section.badge" class="amp-tab-badge">{{ section.badge }}</span>
         </button>
       </nav>
 
-      <DesktopWorkbenchSurface
-        class="mcp-col mcp-col--connect"
-        :class="{ 'mcp-col--current': ctx.activeSection.value === 'connect' }"
-        tone="muted"
+      <section
+        v-for="pane in panes"
+        :key="pane.key"
+        class="amp-pane"
+        :class="[`amp-pane--${pane.key}`, sectionState(pane.key, 'amp-pane')]"
       >
-        <AgentMcpSetupSteps />
-      </DesktopWorkbenchSurface>
-
-      <DesktopWorkbenchSurface
-        class="mcp-col mcp-col--activity"
-        :class="{
-          'mcp-col--current': ctx.activeSection.value === 'activity',
-          'mcp-col--secondary': ctx.secondarySection.value === 'activity',
-        }"
-        tone="muted"
-      >
-        <AgentMcpActivityLog />
-      </DesktopWorkbenchSurface>
-
-      <DesktopWorkbenchSurface
-        class="mcp-col mcp-col--side"
-        :class="{ 'mcp-col--current': sideActive, 'mcp-col--secondary': sideActive }"
-        tone="muted"
-      >
-        <div
-          class="mcp-side-item"
-          :class="{ 'mcp-side-item--current': ctx.activeSection.value === 'permission' }"
-        >
-          <AgentMcpPermissionPanel />
-        </div>
-        <div
-          class="mcp-side-item"
-          :class="{ 'mcp-side-item--current': ctx.activeSection.value === 'tools' }"
-        >
-          <AgentMcpToolCatalog />
-        </div>
-        <div
-          v-if="ctx.isElectronEnv.value"
-          class="mcp-side-item"
-          :class="{ 'mcp-side-item--current': ctx.activeSection.value === 'connection' }"
-        >
-          <AgentMcpConnectionSettings />
-        </div>
-      </DesktopWorkbenchSurface>
+        <component :is="pane.component" />
+      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, type Component } from 'vue';
 import { useI18n } from 'vue-i18n';
-import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
-import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
-import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import AgentMcpActivityLog from 'src/components/agent-mcp/AgentMcpActivityLog.vue';
 import AgentMcpConnectionSettings from 'src/components/agent-mcp/AgentMcpConnectionSettings.vue';
 import AgentMcpPermissionPanel from 'src/components/agent-mcp/AgentMcpPermissionPanel.vue';
 import AgentMcpSetupSteps from 'src/components/agent-mcp/AgentMcpSetupSteps.vue';
 import AgentMcpToolCatalog from 'src/components/agent-mcp/AgentMcpToolCatalog.vue';
+import PageHeader from 'src/components/layout/PageHeader.vue';
 import { provideFlatAgentMcpPanels } from 'src/components/agent-mcp/panel-surface';
-import { injectAgentMcpPage } from 'src/composables/agent-mcp-page/useAgentMcpPage';
+import {
+  injectAgentMcpPage,
+  type AgentMcpSection,
+} from 'src/composables/agent-mcp-page/useAgentMcpPage';
 
+/**
+ * 外部 Agent 工作台（桌面与平板共用）：统一页头（PageHeader），
+ * 内容用分隔线划分的平铺区域，不套卡片；三档宽度见模板注释。
+ */
 const { t } = useI18n();
 const ctx = injectAgentMcpPage();
-// 各栏的外框由本页提供，面板自身不再带卡片外框
+// 各区域由本页用分隔线划分，面板自身不带卡片外框
 provideFlatAgentMcpPanels();
 
-// 第三栏里的三块内容在中、窄两档下各是一个分栏标签
-const sideActive = computed(() =>
-  ['permission', 'tools', 'connection'].includes(ctx.activeSection.value),
+const PANE_COMPONENTS: Record<AgentMcpSection, Component> = {
+  connect: AgentMcpSetupSteps,
+  activity: AgentMcpActivityLog,
+  permission: AgentMcpPermissionPanel,
+  tools: AgentMcpToolCatalog,
+  connection: AgentMcpConnectionSettings,
+};
+
+// 分栏与标签一一对应（连接设置只在 Electron 中出现，由 ctx.sections 决定）
+const panes = computed(() =>
+  ctx.sections.value.map((section) => ({
+    key: section.key,
+    component: PANE_COMPONENTS[section.key],
+  })),
 );
+
+/**
+ * 标签与分栏在三档下各自的「当前」：窄档看 activeSection，中档右侧栏看 secondarySection，
+ * 宽档第三栏看 sideSection。三种状态都输出成修饰类，由 CSS 按档位决定用哪一个。
+ */
+const sectionState = (key: AgentMcpSection, prefix: string) => ({
+  [`${prefix}--current`]: ctx.activeSection.value === key,
+  [`${prefix}--secondary`]: ctx.secondarySection.value === key,
+  [`${prefix}--side`]: ctx.sideSection.value === key,
+});
 </script>
 
 <style scoped>
-.desktop-agent-mcp-page {
+.agent-mcp-page {
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.8rem;
-  padding: 0.85rem 1.1rem 1.25rem;
-  /* 按本页可用宽度（而不是窗口宽度）决定三栏还是分栏标签：侧边栏展开与否都能正确切换 */
   container-type: inline-size;
 }
 
-.mcp-board {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(18.5rem, 23rem);
-  gap: 0.8rem;
+/* ───────────── 标签 ───────────── */
+.amp-tabs {
+  display: flex;
+  gap: 20px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--white-opacity-6);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.mcp-tabs {
-  display: none;
-  flex-wrap: wrap;
-  gap: 8px;
+.amp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--moon-50-opacity-55);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    border-color 150ms ease;
 }
 
-.mcp-tab-badge {
-  margin-left: 0.35rem;
-  padding: 0 0.4rem;
+.amp-tab:hover {
+  color: var(--moon-50-opacity-85);
+}
+
+.amp-tab-badge {
+  padding: 0 6px;
   border-radius: 999px;
   background: var(--tsukuyomi-opacity-14);
-  font-size: 0.7rem;
+  font-size: 10.5px;
+  line-height: 16px;
   color: var(--tsukuyomi-200);
 }
 
-/* 每一栏占满看板高度，内容超出时在栏内滚动 */
-.mcp-col {
+/* ───────────── 分栏：默认（宽档）三栏 ───────────── */
+.amp-body {
+  flex: 1;
   min-height: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(320px, 380px);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* 右侧栏：标签条与分栏共用的底色与分隔线 */
+.amp-tabs,
+.amp-pane--side,
+.amp-pane--secondary {
+  border-left: 1px solid var(--white-opacity-6);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.amp-tabs {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+/* 宽档：接入、调用活动常驻，只在第三栏的分栏间切换 */
+.amp-tab--connect,
+.amp-tab--activity {
+  display: none;
+}
+
+.amp-tab--side {
+  color: var(--primary-200);
+  font-weight: 600;
+  border-bottom-color: var(--tsukuyomi-300);
+}
+
+.amp-pane {
+  display: none;
+  min-height: 0;
   flex-direction: column;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding: 18px 20px 24px;
 }
 
-/* 调用活动栏：标题固定，只有列表滚动 */
-.mcp-col--activity {
+.amp-pane--connect {
+  display: flex;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  padding: 20px 32px 28px;
+  background: none;
+  border-left: none;
+}
+
+/* 步骤说明不要被拉得太宽，便于阅读 */
+.amp-pane--connect > :deep(*) {
+  max-width: 760px;
+}
+
+/* 调用活动：标题固定，只有列表滚动 */
+.amp-pane--activity {
+  display: flex;
+  grid-column: 2;
+  grid-row: 1 / span 2;
   overflow: hidden;
+  padding: 20px 24px 24px;
+  border-left: 1px solid var(--white-opacity-6);
+  background: none;
 }
 
-.mcp-side-item + .mcp-side-item {
-  margin-top: 1.2rem;
-  padding-top: 1.2rem;
-  border-top: 1px solid var(--white-opacity-6);
+.amp-pane--side {
+  display: flex;
+  grid-column: 3;
+  grid-row: 2;
 }
 
-/* 中档：左栏接入，右栏按标签切换 */
-@container (min-width: 52.01rem) and (max-width: 78rem) {
-  .mcp-board {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+/* ───────────── 中档：接入 + 右侧栏 ───────────── */
+@container (max-width: 78rem) {
+  .amp-body {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
   }
 
-  .mcp-tabs {
-    display: flex;
+  .amp-tabs {
     grid-column: 2;
-    grid-row: 1;
   }
 
-  .mcp-tab--connect {
+  .amp-tab--activity {
+    display: inline-flex;
+  }
+
+  .amp-tabs .amp-tab--side {
+    color: var(--moon-50-opacity-55);
+    font-weight: 500;
+    border-bottom-color: transparent;
+  }
+
+  .amp-tabs .amp-tab--secondary {
+    color: var(--primary-200);
+    font-weight: 600;
+    border-bottom-color: var(--tsukuyomi-300);
+  }
+
+  .amp-body .amp-pane--activity,
+  .amp-body .amp-pane--side {
     display: none;
   }
 
-  .mcp-tab--secondary {
-    background: var(--tsukuyomi-opacity-14);
-    border-color: var(--tsukuyomi-opacity-40);
-    color: var(--moon-50-opacity-100);
-  }
-
-  .mcp-col--connect {
-    grid-column: 1;
-    grid-row: 1 / span 2;
-  }
-
-  .mcp-col--activity,
-  .mcp-col--side {
-    display: none;
+  .amp-body .amp-pane.amp-pane--secondary {
+    display: flex;
     grid-column: 2;
     grid-row: 2;
-  }
-
-  .mcp-col--secondary {
-    display: flex;
+    padding: 18px 20px 24px;
+    border-left: 1px solid var(--white-opacity-6);
+    background: rgba(0, 0, 0, 0.18);
   }
 }
 
-/* 窄档：一次一栏 */
+/* ───────────── 窄档：顶部标签，一次一栏 ───────────── */
 @container (max-width: 52rem) {
-  .mcp-board {
+  .amp-body {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
   }
 
-  .mcp-tabs {
-    display: flex;
+  .amp-tabs {
+    grid-column: 1;
+    border-left: none;
+    background: none;
   }
 
-  .mcp-tab--current {
-    background: var(--tsukuyomi-opacity-14);
-    border-color: var(--tsukuyomi-opacity-40);
-    color: var(--moon-50-opacity-100);
+  .amp-tabs .amp-tab--connect {
+    display: inline-flex;
   }
 
-  .mcp-col {
+  .amp-tabs .amp-tab--secondary {
+    color: var(--moon-50-opacity-55);
+    font-weight: 500;
+    border-bottom-color: transparent;
+  }
+
+  .amp-tabs .amp-tab--current {
+    color: var(--primary-200);
+    font-weight: 600;
+    border-bottom-color: var(--tsukuyomi-300);
+  }
+
+  .amp-body .amp-pane,
+  .amp-body .amp-pane.amp-pane--secondary {
     display: none;
+    grid-column: 1;
+    grid-row: 2;
+    padding: 18px 20px 24px;
+    border-left: none;
+    background: none;
   }
 
-  .mcp-col--current {
+  .amp-body .amp-pane.amp-pane--current {
     display: flex;
-  }
-}
-
-/* 中、窄两档下第三栏一次只显示一块 */
-@container (max-width: 78rem) {
-  .mcp-side-item {
-    display: none;
-  }
-
-  .mcp-side-item--current {
-    display: block;
-    margin-top: 0;
-    padding-top: 0;
-    border-top: 0;
-  }
-}
-
-@media (max-width: 820px) {
-  .desktop-agent-mcp-page {
-    padding-inline: 0.85rem;
   }
 }
 </style>

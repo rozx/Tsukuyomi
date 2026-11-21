@@ -2,75 +2,28 @@
 import { useI18n } from 'vue-i18n';
 const { t: i18nT } = useI18n();
 
-import { computed } from 'vue';
 import Button from 'primevue/button';
 import ProgressSpinner from 'primevue/progressspinner';
 import Skeleton from 'primevue/skeleton';
 import { injectIndexPage } from 'src/composables/index-page/useIndexPage';
-import { APP_NAME } from 'src/constants/app';
 import IndexTabletHero from './IndexTabletHero.vue';
+import PageHeader from 'src/components/layout/PageHeader.vue';
 
 const ctx = injectIndexPage();
-
-// 把模板内的三元 / 比较收进脚本侧，降低段落认知与圈复杂度
-const greetingSub = computed(() =>
-  ctx.continueReadingBook.value
-    ? i18nT('libraryUi.lastBook', { title: ctx.continueReadingBook.value.title })
-    : i18nT('libraryUi.goodNight'),
-);
 </script>
 
 <template>
   <div class="tablet-home w-full h-full overflow-y-auto">
-    <div class="th-inner">
-      <!-- 问候语 -->
-      <section class="th-greeting">
-        <img :src="ctx.logoPath" :alt="APP_NAME.full" class="th-logo" />
-        <div class="th-greeting-body">
-          <div class="th-eyebrow">
-            {{ ctx.greeting.value }} · {{ APP_NAME.en }} {{ APP_NAME.zh }}
-          </div>
-          <h1 class="th-greeting-title">
-            {{ ctx.greeting.value }} ·
-            <span class="th-accent">{{ i18nT('libraryUi.welcome') }}</span>
-          </h1>
-          <p class="th-greeting-sub">
-            {{ greetingSub }}
-          </p>
-        </div>
-      </section>
+    <PageHeader
+      :eyebrow="ctx.pageHeader.value.eyebrow"
+      :title="ctx.pageHeader.value.title"
+      :description="ctx.pageHeader.value.description"
+      :stats="ctx.pageHeader.value.stats"
+    />
 
+    <div class="th-inner">
       <!-- Hero 卡片：活跃任务 + 继续阅读（抽出到 IndexTabletHero） -->
       <IndexTabletHero />
-
-      <!-- 统计条 —— 5 列（书籍 · 章节 · 字数 · 收藏 · AI 模型） -->
-      <section class="th-stats">
-        <div class="th-stat-cell">
-          <i class="pi pi-book th-stat-icon th-stat-icon--tsukuyomi" aria-hidden="true" />
-          <div class="th-stat-value">{{ ctx.totalBooks.value }}</div>
-          <div class="th-stat-label">{{ i18nT('libraryUi.totalBooks') }}</div>
-        </div>
-        <div class="th-stat-cell">
-          <i class="pi pi-list th-stat-icon th-stat-icon--green" aria-hidden="true" />
-          <div class="th-stat-value">{{ ctx.totalChapters.value }}</div>
-          <div class="th-stat-label">{{ i18nT('libraryUi.totalChapters') }}</div>
-        </div>
-        <div class="th-stat-cell">
-          <i class="pi pi-file-edit th-stat-icon th-stat-icon--moon" aria-hidden="true" />
-          <div class="th-stat-value">{{ ctx.formatWordCount(ctx.totalWords.value) }}</div>
-          <div class="th-stat-label">{{ i18nT('libraryUi.totalCharacters') }}</div>
-        </div>
-        <div class="th-stat-cell">
-          <i class="pi pi-star-fill th-stat-icon th-stat-icon--warning" aria-hidden="true" />
-          <div class="th-stat-value">{{ ctx.starredBooks.value }}</div>
-          <div class="th-stat-label">{{ i18nT('libraryUi.favorites') }}</div>
-        </div>
-        <div class="th-stat-cell th-stat-cell--last">
-          <i class="pi pi-tags th-stat-icon th-stat-icon--sage" aria-hidden="true" />
-          <div class="th-stat-value">{{ ctx.totalTerms.value }}</div>
-          <div class="th-stat-label">{{ i18nT('libraryUi.terms') }}</div>
-        </div>
-      </section>
 
       <!-- 快速操作 —— 4 列 -->
       <section class="th-section">
@@ -187,125 +140,14 @@ const greetingSub = computed(() =>
     sans-serif;
 }
 
+/* 页头（PageHeader）通栏，正文居中限宽 */
 .th-inner {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 32px 40px 48px;
+  padding: 24px 40px 48px;
   display: flex;
   flex-direction: column;
   gap: 28px;
-}
-
-.th-greeting {
-  display: flex;
-  align-items: flex-end;
-  gap: 18px;
-}
-
-.th-logo {
-  width: 68px;
-  height: 68px;
-  border-radius: 16px;
-  flex-shrink: 0;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-}
-
-.th-greeting-body {
-  flex: 1;
-  min-width: 0;
-}
-
-.th-eyebrow {
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  color: var(--accent-opacity-85); /* token: accent-silver @ 85% — not tokenized */
-  text-transform: uppercase;
-  font-weight: 500;
-}
-
-.th-greeting-title {
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: 30px;
-  font-weight: 600;
-  color: var(--moon-50-opacity-100);
-  letter-spacing: -0.015em;
-  line-height: 1.15;
-  margin: 8px 0 0;
-}
-
-.th-accent {
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-}
-
-.th-greeting-sub {
-  font-size: 13px;
-  color: var(--moon-50-opacity-70);
-  margin: 6px 0 0;
-  line-height: 1.5;
-}
-
-/* Hero grid 样式随 IndexTabletHero 组件迁出 */
-
-/* Stats strip */
-.th-stats {
-  padding: 18px 24px;
-  background: var(--white-opacity-2-5); /* token: white @ 2.5% — not tokenized */
-  border: 1px solid var(--white-opacity-8);
-  border-radius: 14px;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-
-.th-stat-cell {
-  text-align: center;
-  border-right: 1px solid var(--white-opacity-6);
-  padding: 0 12px;
-}
-
-.th-stat-cell--last {
-  border-right: none;
-}
-
-.th-stat-icon {
-  font-size: 14px;
-  display: block;
-  margin-bottom: 8px;
-}
-
-.th-stat-icon--tsukuyomi {
-  color: var(--tsukuyomi-300); /* token: tsukuyomi-300 */
-}
-
-.th-stat-icon--green {
-  color: var(--color-success-300);
-}
-
-.th-stat-icon--moon {
-  color: var(--primary-200);
-}
-
-.th-stat-icon--warning {
-  color: var(--color-warning);
-}
-
-.th-stat-icon--sage {
-  color: var(--color-success);
-}
-
-.th-stat-value {
-  font-family: 'Noto Serif JP', 'Songti SC', serif;
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--moon-50-opacity-100);
-  letter-spacing: -0.01em;
-}
-
-.th-stat-label {
-  font-size: 10px;
-  color: var(--moon-50-opacity-60);
-  margin-top: 4px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
 }
 
 /* Sections */

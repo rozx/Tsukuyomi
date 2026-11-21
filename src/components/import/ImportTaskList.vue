@@ -117,13 +117,13 @@ const confirmDelete = (task: ImportTask) => {
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: var(--moon-50-opacity-70, rgba(226, 232, 240, 0.7));
+  color: var(--moon-50-opacity-70, rgba(247, 244, 236, 0.7));
 }
 
 .itl-empty {
   font-size: 0.8rem;
   line-height: 1.6;
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
   padding: 0.5rem 0.25rem;
 }
 
@@ -156,8 +156,8 @@ const confirmDelete = (task: ImportTask) => {
 }
 
 .itl-item--active {
-  background: rgba(99, 102, 241, 0.14);
-  border-color: rgba(129, 140, 248, 0.35);
+  background: rgba(109, 136, 168, 0.14);
+  border-color: rgba(163, 183, 207, 0.35);
 }
 
 .itl-item-main {
@@ -178,7 +178,7 @@ const confirmDelete = (task: ImportTask) => {
 
 .itl-item-meta {
   font-size: 0.7rem;
-  color: rgba(226, 232, 240, 0.5);
+  color: rgba(247, 244, 236, 0.5);
 }
 
 .itl-item-side {
@@ -195,7 +195,7 @@ const confirmDelete = (task: ImportTask) => {
 
 .itl-running {
   font-size: 0.8rem;
-  color: rgb(165, 180, 252);
+  color: var(--tsukuyomi-300);
 }
 
 .itl-delete {
@@ -204,7 +204,7 @@ const confirmDelete = (task: ImportTask) => {
   border-radius: 8px;
   display: grid;
   place-items: center;
-  color: rgba(226, 232, 240, 0.45);
+  color: rgba(247, 244, 236, 0.45);
   opacity: 0;
   transition: opacity 160ms ease;
 }

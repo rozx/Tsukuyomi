@@ -108,7 +108,7 @@ const toggle = (field: Field, adopted: boolean) => void store.setMetadataAdoptio
 }
 
 .imc-field {
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
 }
 
 .imc-value {
@@ -137,7 +137,7 @@ const toggle = (field: Field, adopted: boolean) => void store.setMetadataAdoptio
 
 .imc-adopt-title {
   font-size: 0.74rem;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(247, 244, 236, 0.6);
 }
 
 .imc-check {

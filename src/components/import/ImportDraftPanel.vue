@@ -213,7 +213,7 @@ const addVolume = () =>
   align-items: center;
   gap: 0.35rem 0.9rem;
   font-size: 0.74rem;
-  color: rgba(226, 232, 240, 0.7);
+  color: rgba(247, 244, 236, 0.7);
 }
 
 .idp-toolbar {
@@ -231,11 +231,11 @@ const addVolume = () =>
   padding: 1.25rem 0.5rem;
   font-size: 0.78rem;
   text-align: center;
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
 }
 
 .idp-empty i {
   font-size: 1.4rem;
-  color: rgba(165, 180, 252, 0.6);
+  color: rgba(163, 183, 207, 0.6);
 }
 </style>

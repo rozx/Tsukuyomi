@@ -480,6 +480,22 @@ describe('useAgentMcpPage composable', () => {
     harness.unmount();
   });
 
+  it('三栏布局的第三栏：选中权限、能力或连接时跟随选中项，否则显示权限与写回', () => {
+    const harness = mountHarness();
+    const ctx = harness.getCtx();
+    expect(ctx.sideSection.value).toBe('permission');
+
+    ctx.selectSection('tools');
+    expect(ctx.sideSection.value).toBe('tools');
+    ctx.selectSection('activity');
+    expect(ctx.sideSection.value).toBe('permission');
+    ctx.selectSection('connection');
+    expect(ctx.sideSection.value).toBe('connection');
+    ctx.selectSection('connect');
+    expect(ctx.sideSection.value).toBe('permission');
+    harness.unmount();
+  });
+
   it('调用活动分栏带上本次会话的调用次数；没有调用时不显示数字', async () => {
     const harness = mountHarness();
     const ctx = harness.getCtx();

@@ -139,7 +139,7 @@ const sendBindings = computed(() => ({
   margin: auto;
   text-align: center;
   font-size: 0.8rem;
-  color: rgba(226, 232, 240, 0.55);
+  color: rgba(247, 244, 236, 0.55);
   padding: 2rem 1rem;
 }
 

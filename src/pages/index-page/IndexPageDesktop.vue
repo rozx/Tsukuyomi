@@ -4,42 +4,15 @@ const { t: i18nT } = useI18n();
 
 import { computed } from 'vue';
 import ProgressSpinner from 'primevue/progressspinner';
-import DesktopWorkbenchHeader from 'src/components/desktop/DesktopWorkbenchHeader.vue';
-import DesktopWorkbenchMetrics from 'src/components/desktop/DesktopWorkbenchMetrics.vue';
+import PageHeader from 'src/components/layout/PageHeader.vue';
 import DesktopWorkbenchSurface from 'src/components/desktop/DesktopWorkbenchSurface.vue';
 import { injectIndexPage } from 'src/composables/index-page/useIndexPage';
-import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { APP_NAME } from 'src/constants/app';
 import IndexDesktopHero from './IndexDesktopHero.vue';
 import IndexDesktopRecent from './IndexDesktopRecent.vue';
 
 const ctx = injectIndexPage();
-const aiProcessing = useAIProcessingStore();
 
-const hasActiveJob = computed(() => aiProcessing.hasActiveTasks);
-
-const headerTitle = computed(() =>
-  hasActiveJob.value ? i18nT('libraryUi.running') : i18nT('libraryUi.welcome'),
-);
-const headerDescription = computed(() => {
-  const greeting = ctx.greeting.value;
-  const book = ctx.continueReadingBook.value;
-  if (hasActiveJob.value && book) {
-    return i18nT('libraryUi.activeDescription', { greeting, title: book.title });
-  }
-  if (book) {
-    return i18nT('libraryUi.recentDescription', { greeting, title: book.title });
-  }
-  return i18nT('libraryUi.emptyDescription', { greeting });
-});
-
-const workbenchMetrics = computed(() => [
-  { label: i18nT('libraryUi.books'), value: ctx.totalBooks.value },
-  { label: i18nT('libraryUi.chapters'), value: ctx.totalChapters.value },
-  { label: i18nT('libraryUi.characters'), value: ctx.formatWordCount(ctx.totalWords.value) },
-  { label: i18nT('libraryUi.terms'), value: ctx.totalTerms.value },
-  { label: i18nT('libraryUi.favorites'), value: ctx.starredBooks.value },
-]);
 const quickActions = computed(() => [
   {
     key: 'add',
@@ -75,105 +48,110 @@ const quickActions = computed(() => [
 
 <template>
   <div class="desktop-index">
-    <DesktopWorkbenchHeader
-      :eyebrow="`${ctx.greeting.value} · ${APP_NAME.en} ${APP_NAME.zh}`"
-      :title="headerTitle"
-      :description="headerDescription"
-    >
-      <template #metrics>
-        <DesktopWorkbenchMetrics :items="workbenchMetrics" />
-      </template>
-    </DesktopWorkbenchHeader>
+    <PageHeader
+      :eyebrow="ctx.pageHeader.value.eyebrow"
+      :title="ctx.pageHeader.value.title"
+      :description="ctx.pageHeader.value.description"
+      :stats="ctx.pageHeader.value.stats"
+    />
 
-    <!-- 继续阅读 Hero（抽出到 IndexDesktopHero） -->
-    <IndexDesktopHero />
+    <div class="desktop-index-body">
+      <!-- 继续阅读 Hero（抽出到 IndexDesktopHero） -->
+      <IndexDesktopHero />
 
-    <!-- 快速操作 -->
-    <section class="quick-actions">
-      <header class="section-head">
-        <span class="section-eyebrow">{{ i18nT('libraryUi.quickActions') }}</span>
-        <h2 class="section-title">{{ i18nT('libraryUi.quickActions') }}</h2>
-      </header>
-      <div class="quick-actions-grid">
-        <button
-          v-for="action in quickActions"
-          :key="action.key"
-          type="button"
-          class="quick-action"
-          :class="{ 'quick-action--primary': action.primary }"
-          @click="action.handler"
-        >
-          <span class="quick-action-icon">
-            <i :class="action.icon" aria-hidden="true" />
-          </span>
-          <span class="quick-action-label">{{ action.label }}</span>
-          <span class="quick-action-hint">{{ action.hint }}</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- 最近编辑 -->
-    <section v-if="ctx.hasRecent.value" class="recent-books">
-      <header class="section-head section-head--with-action">
-        <div class="section-head-copy">
-          <span class="section-eyebrow">{{ i18nT('libraryUi.recent') }}</span>
-          <h2 class="section-title">{{ i18nT('libraryUi.recentlyEdited') }}</h2>
+      <!-- 快速操作 -->
+      <section class="quick-actions">
+        <header class="section-head">
+          <span class="section-eyebrow">{{ i18nT('libraryUi.quickActions') }}</span>
+          <h2 class="section-title">{{ i18nT('libraryUi.quickActions') }}</h2>
+        </header>
+        <div class="quick-actions-grid">
+          <button
+            v-for="action in quickActions"
+            :key="action.key"
+            type="button"
+            class="quick-action"
+            :class="{ 'quick-action--primary': action.primary }"
+            @click="action.handler"
+          >
+            <span class="quick-action-icon">
+              <i :class="action.icon" aria-hidden="true" />
+            </span>
+            <span class="quick-action-label">{{ action.label }}</span>
+            <span class="quick-action-hint">{{ action.hint }}</span>
+          </button>
         </div>
-        <button type="button" class="section-head-action" @click="ctx.navigateToBooks">
-          <span>{{ i18nT('libraryUi.viewAll') }}</span>
-          <i class="pi pi-arrow-right" aria-hidden="true" />
-        </button>
-      </header>
-      <IndexDesktopRecent />
-    </section>
+      </section>
 
-    <!-- 加载 / 空状态 -->
-    <section v-else-if="ctx.isLoadingState.value" class="state-surface">
-      <ProgressSpinner
-        style="width: 42px; height: 42px"
-        stroke-width="3"
-        animation-duration=".8s"
-        :aria-label="i18nT('libraryUi.loading')"
-      />
-      <p class="state-surface-text">{{ i18nT('libraryUi.loadingData') }}</p>
-    </section>
+      <!-- 最近编辑 -->
+      <section v-if="ctx.hasRecent.value" class="recent-books">
+        <header class="section-head section-head--with-action">
+          <div class="section-head-copy">
+            <span class="section-eyebrow">{{ i18nT('libraryUi.recent') }}</span>
+            <h2 class="section-title">{{ i18nT('libraryUi.recentlyEdited') }}</h2>
+          </div>
+          <button type="button" class="section-head-action" @click="ctx.navigateToBooks">
+            <span>{{ i18nT('libraryUi.viewAll') }}</span>
+            <i class="pi pi-arrow-right" aria-hidden="true" />
+          </button>
+        </header>
+        <IndexDesktopRecent />
+      </section>
 
-    <section v-else-if="ctx.isEmptyState.value" class="state-surface">
-      <div class="state-empty-art">
-        <img :src="ctx.logoPath" :alt="APP_NAME.full" class="state-empty-logo" />
-      </div>
-      <div class="state-empty-copy">
-        <span class="section-eyebrow">{{ i18nT('libraryUi.getStarted') }}</span>
-        <h2 class="state-empty-title">{{ i18nT('libraryUi.firstBook') }}</h2>
-        <p class="state-empty-desc">
-          {{ i18nT('libraryUi.firstBookDescription') }}
-        </p>
-      </div>
-      <div class="state-empty-actions">
-        <button type="button" class="quick-action quick-action--primary" @click="ctx.addBook">
-          <span class="quick-action-icon">
-            <i class="pi pi-plus" aria-hidden="true" />
-          </span>
-          <span class="quick-action-label">{{ i18nT('libraryUi.addBook') }}</span>
-          <span class="quick-action-hint">{{ i18nT('libraryUi.manualHint') }}</span>
-        </button>
-        <button type="button" class="quick-action" @click="ctx.importBookFromWeb">
-          <span class="quick-action-icon">
-            <i class="pi pi-globe" aria-hidden="true" />
-          </span>
-          <span class="quick-action-label">{{ i18nT('libraryUi.importWeb') }}</span>
-          <span class="quick-action-hint">Syosetu / Kakuyomu</span>
-        </button>
-      </div>
-    </section>
+      <!-- 加载 / 空状态 -->
+      <section v-else-if="ctx.isLoadingState.value" class="state-surface">
+        <ProgressSpinner
+          style="width: 42px; height: 42px"
+          stroke-width="3"
+          animation-duration=".8s"
+          :aria-label="i18nT('libraryUi.loading')"
+        />
+        <p class="state-surface-text">{{ i18nT('libraryUi.loadingData') }}</p>
+      </section>
+
+      <section v-else-if="ctx.isEmptyState.value" class="state-surface">
+        <div class="state-empty-art">
+          <img :src="ctx.logoPath" :alt="APP_NAME.full" class="state-empty-logo" />
+        </div>
+        <div class="state-empty-copy">
+          <span class="section-eyebrow">{{ i18nT('libraryUi.getStarted') }}</span>
+          <h2 class="state-empty-title">{{ i18nT('libraryUi.firstBook') }}</h2>
+          <p class="state-empty-desc">
+            {{ i18nT('libraryUi.firstBookDescription') }}
+          </p>
+        </div>
+        <div class="state-empty-actions">
+          <button type="button" class="quick-action quick-action--primary" @click="ctx.addBook">
+            <span class="quick-action-icon">
+              <i class="pi pi-plus" aria-hidden="true" />
+            </span>
+            <span class="quick-action-label">{{ i18nT('libraryUi.addBook') }}</span>
+            <span class="quick-action-hint">{{ i18nT('libraryUi.manualHint') }}</span>
+          </button>
+          <button type="button" class="quick-action" @click="ctx.importBookFromWeb">
+            <span class="quick-action-icon">
+              <i class="pi pi-globe" aria-hidden="true" />
+            </span>
+            <span class="quick-action-label">{{ i18nT('libraryUi.importWeb') }}</span>
+            <span class="quick-action-hint">Syosetu / Kakuyomu</span>
+          </button>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
+/* 页头（PageHeader）通栏，正文居中限宽 */
 .desktop-index {
   height: 100%;
   overflow-y: auto;
-  padding: 1rem 1.5rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.desktop-index-body {
+  padding: 1.25rem 1.5rem 2.5rem;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -397,7 +375,7 @@ const quickActions = computed(() => [
 }
 
 @media (max-width: 720px) {
-  .desktop-index {
+  .desktop-index-body {
     padding: 0.9rem 1rem 2rem;
   }
 
