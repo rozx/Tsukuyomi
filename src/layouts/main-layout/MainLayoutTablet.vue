@@ -17,10 +17,12 @@ import ImportChatPanel from 'src/components/import/ImportChatPanel.vue';
 import { useImportRouteScope } from 'src/composables/import-page/useImportRouteScope';
 import { useUiStore } from 'src/stores/ui';
 import { useOverlayCloseStack } from 'src/composables/useOverlayCloseStack';
+import { usePortrait } from 'src/composables/usePortrait';
 
 const ui = useUiStore();
 // 导入路由的对话常驻停靠在右侧（不是侧滑浮层），其他路由的聊天槽位挂普通月詠
 const isImportRoute = useImportRouteScope();
+const portrait = usePortrait();
 const importDockStyle = computed(() => ({
   width: `clamp(18rem, 38vw, ${ui.rightPanelWidth}px)`,
 }));
@@ -51,11 +53,7 @@ useOverlayCloseStack({
       <TabletNavRail />
 
       <main class="flex-1 overflow-y-auto overflow-x-hidden min-h-0 bg-night-900/60 relative">
-        <div
-          v-if="isChatOpen"
-          class="layout-overlay-mask z-40"
-          @click="closeRightPanel"
-        />
+        <div v-if="isChatOpen" class="layout-overlay-mask z-40" @click="closeRightPanel" />
 
         <!-- 页面由 MainLayout 渲染并 Teleport 到这里，断点切换时不重新挂载 -->
         <div id="route-outlet-tablet" class="route-outlet" />
@@ -76,7 +74,8 @@ useOverlayCloseStack({
         </div>
       </main>
 
-      <aside v-if="isImportRoute" class="tablet-import-chat" :style="importDockStyle">
+      <!-- 竖屏宽度不够停靠：导入页把对话改为页内的「对话」标签 -->
+      <aside v-if="isImportRoute && !portrait" class="tablet-import-chat" :style="importDockStyle">
         <ImportChatPanel />
       </aside>
     </div>

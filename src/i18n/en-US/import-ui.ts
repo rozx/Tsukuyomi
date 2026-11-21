@@ -334,6 +334,8 @@ export default {
       summary:
         'Provide a URL or files and organize the volumes with Tsukuyomi. Nothing is written to the library until you confirm the plan.',
       chapters: 'Chapters',
+      allTasks: 'All tasks',
+      back: 'Back',
     },
     action: {
       currentTask: 'current task',

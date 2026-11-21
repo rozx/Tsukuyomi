@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * 导入任务列表：创建、切换与删除任务。桌面作为左侧栏，手机作为「任务」分段。
+ * 导入任务列表：创建、切换与删除任务。
+ * 桌面作为左侧栏（紧凑的可选中行）；平板 / 手机是独立的任务列表页（navigable：卡片行 + 进入箭头）。
  * 删除只清理任务自身的来源、对话和撤销记录，不删除已导入的小说。
  */
 import { computed } from 'vue';
@@ -14,6 +15,7 @@ import { useImportWorkspaceStore } from 'src/stores/import-workspace';
 import type { ImportTask } from 'src/models/import';
 import { TASK_STATE, formatTime } from './import-labels';
 
+withDefaults(defineProps<{ navigable?: boolean }>(), { navigable: false });
 const ctx = injectImportPage();
 const store = useImportWorkspaceStore();
 const { t, locale } = useI18n();
@@ -37,9 +39,12 @@ const confirmDelete = (task: ImportTask) => {
 </script>
 
 <template>
-  <section class="itl" :aria-label="t('importUi.tasks.title')">
+  <section class="itl" :class="{ 'itl--nav': navigable }" :aria-label="t('importUi.tasks.title')">
     <header class="itl-head">
-      <span class="itl-title">{{ t('importUi.tasks.title') }}</span>
+      <span class="itl-title">
+        {{ t('importUi.tasks.title') }}
+        <span v-if="store.tasks.length" class="itl-count">{{ store.tasks.length }}</span>
+      </span>
       <Button
         icon="pi pi-plus"
         :label="t('importUi.tasks.new')"
@@ -90,6 +95,7 @@ const confirmDelete = (task: ImportTask) => {
             >
               <i class="pi pi-trash" aria-hidden="true" />
             </button>
+            <i v-if="navigable" class="pi pi-angle-right itl-chevron" aria-hidden="true" />
           </div>
         </div>
       </li>
@@ -114,10 +120,26 @@ const confirmDelete = (task: ImportTask) => {
 }
 
 .itl-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
   font-size: 0.8rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--moon-50-opacity-70, rgba(247, 244, 236, 0.7));
+}
+
+.itl-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--white-opacity-8);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .itl-empty {
@@ -224,5 +246,52 @@ const confirmDelete = (task: ImportTask) => {
   .itl-delete {
     opacity: 1;
   }
+}
+
+/* ───────────── 任务列表页（平板 / 手机）：卡片行，点击进入任务 ───────────── */
+.itl--nav .itl-head {
+  padding: 0 0 0.85rem;
+}
+
+.itl--nav .itl-list {
+  gap: 0.6rem;
+  overflow: visible;
+}
+
+.itl--nav .itl-item {
+  gap: 0.75rem;
+  padding: 0.85rem 0.75rem 0.85rem 1rem;
+  border-color: var(--white-opacity-6);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.itl--nav .itl-item:hover,
+.itl--nav .itl-item:focus-visible {
+  border-color: rgba(163, 183, 207, 0.3);
+  background: rgba(109, 136, 168, 0.08);
+}
+
+.itl--nav .itl-item-main {
+  gap: 0.3rem;
+}
+
+.itl--nav .itl-item-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.itl--nav .itl-item-meta {
+  font-size: 0.75rem;
+}
+
+.itl--nav .itl-delete {
+  opacity: 1;
+  width: 2rem;
+  height: 2rem;
+}
+
+.itl-chevron {
+  font-size: 0.9rem;
+  color: var(--moon-50-opacity-50);
 }
 </style>

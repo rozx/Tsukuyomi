@@ -1,7 +1,11 @@
 <script setup lang="ts">
 /**
- * 手机导入工作台：分段切换任务／对话／来源／草稿／方案，章节正文检查以整屏替代列表。
- * 月詠对话是常驻分区（打开任务默认停在对话）；底部栏的「月詠」在导入路由下切到该分区。
+ * 手机导入工作台：分两层——
+ * - 任务列表：未打开任务时整页显示（返回 + 标题 + 任务列表），选择或新建任务后进入任务；
+ *   导入页不在底部栏，返回回到进入前的页面（直接打开时回到首页）；
+ * - 任务内：顶部「‹」返回任务列表，旁边是对话／来源／草稿／方案四段切换；
+ *   对话占满两栏之间的高度（输入框贴底），章节正文检查以整屏替代列表。
+ * 底部栏的「月詠」在导入路由下切到对话分区。
  */
 import { computed, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -22,16 +26,17 @@ const store = useImportWorkspaceStore();
 const ui = useUiStore();
 const { t } = useI18n();
 
+// 任务内的分区（「任务」不是任务内的分区，用返回按钮回到列表）
 const sections: { id: ImportSection; label: MessageKey }[] = [
-  { id: 'tasks', label: 'importUi.page.tasks' },
   { id: 'chat', label: 'importUi.page.chat' },
   { id: 'sources', label: 'importUi.page.sources' },
   { id: 'draft', label: 'importUi.page.draft' },
   { id: 'plan', label: 'importUi.page.planShort' },
 ];
 
-// 没有选中任务时只显示任务分区
-const current = computed<ImportSection>(() => (store.task ? ctx.section.value : 'tasks'));
+const current = computed<ImportSection>(() =>
+  ctx.section.value === 'tasks' ? 'chat' : ctx.section.value,
+);
 const select = (id: ImportSection) => {
   ctx.section.value = id;
 };
@@ -49,36 +54,65 @@ watch(
 </script>
 
 <template>
-  <div class="ipm" :class="{ 'ipm--chat': current === 'chat' }">
-    <nav class="ipm-seg" :aria-label="t('importUi.page.sections')">
+  <div v-if="!store.task" class="ipm">
+    <header class="ipm-head">
       <button
-        v-for="item in sections"
-        :key="item.id"
         type="button"
-        class="ipm-seg-btn"
-        :class="{ 'ipm-seg-btn--active': current === item.id }"
-        :disabled="item.id !== 'tasks' && !store.task"
-        :aria-pressed="current === item.id"
-        @click="select(item.id)"
+        class="ipm-back"
+        :title="t('importUi.page.back')"
+        :aria-label="t('importUi.page.back')"
+        @click="ctx.leave()"
       >
-        {{ t(item.label) }}
+        <i class="pi pi-chevron-left" aria-hidden="true" />
       </button>
+      <div class="ipm-head-text">
+        <div class="ipm-eyebrow">{{ t('importUi.page.title') }}</div>
+        <h1 class="ipm-title">{{ t('importUi.page.workbench') }}</h1>
+        <p class="ipm-sub">{{ t('importUi.page.summary') }}</p>
+      </div>
+    </header>
+    <div class="ipm-body">
+      <ImportTaskList navigable />
+    </div>
+  </div>
+
+  <div v-else class="ipm" :class="{ 'ipm--chat': current === 'chat' }">
+    <nav class="ipm-bar" :aria-label="t('importUi.page.sections')">
+      <button
+        type="button"
+        class="ipm-back"
+        :title="t('importUi.page.allTasks')"
+        :aria-label="t('importUi.page.allTasks')"
+        @click="ctx.closeTask()"
+      >
+        <i class="pi pi-chevron-left" aria-hidden="true" />
+      </button>
+      <div class="ipm-seg">
+        <button
+          v-for="item in sections"
+          :key="item.id"
+          type="button"
+          class="ipm-seg-btn"
+          :class="{ 'ipm-seg-btn--active': current === item.id }"
+          :aria-pressed="current === item.id"
+          @click="select(item.id)"
+        >
+          {{ t(item.label) }}
+        </button>
+      </div>
     </nav>
 
     <div v-if="current === 'chat'" class="ipm-chat">
       <ImportChatPanel />
     </div>
     <div v-else class="ipm-body">
-      <ImportTaskList v-if="current === 'tasks'" />
-      <template v-else>
-        <ImportRunBar />
-        <ImportSourcePanel v-if="current === 'sources'" />
-        <template v-else-if="current === 'draft'">
-          <ImportChapterPreview v-if="ctx.selectedChapterId.value" />
-          <ImportDraftPanel v-else />
-        </template>
-        <ImportPlanPanel v-else />
+      <ImportRunBar />
+      <ImportSourcePanel v-if="current === 'sources'" />
+      <template v-else-if="current === 'draft'">
+        <ImportChapterPreview v-if="ctx.selectedChapterId.value" />
+        <ImportDraftPanel v-else />
       </template>
+      <ImportPlanPanel v-else />
     </div>
   </div>
 </template>
@@ -90,44 +124,109 @@ watch(
   flex-direction: column;
 }
 
-.ipm-seg {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
+/* ───────────── 任务列表 ───────────── */
+.ipm-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px 4px;
+}
+
+.ipm-head-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
-  padding: 10px 16px;
+}
+
+.ipm-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--tsukuyomi-300-opacity-75);
+  text-transform: uppercase;
+}
+
+.ipm-title {
+  margin: 0;
+  font-family: 'Noto Serif JP', 'Songti SC', serif;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--moon-50-opacity-100);
+}
+
+.ipm-sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--moon-50-opacity-60);
+}
+
+/* ───────────── 任务内：返回 + 分区切换 ───────────── */
+.ipm-bar {
+  position: sticky;
+  top: var(--mobile-sysbar-height, 0px);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
   background: rgba(10, 12, 15, 0.86);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--white-opacity-6);
+}
+
+.ipm-back {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--btn-ghost-border);
+  border-radius: var(--btn-radius);
+  background: transparent;
+  color: var(--btn-ghost-color);
+}
+
+.ipm-back i {
+  font-size: 13px;
+}
+
+.ipm-seg {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--white-opacity-4);
 }
 
 .ipm-seg-btn {
   min-width: 0;
-  min-height: 36px;
+  min-height: 30px;
   padding: 0 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 0.82rem;
-  color: rgba(247, 244, 236, 0.65);
+  color: var(--moon-50-opacity-60);
 }
 
 .ipm-seg-btn--active {
-  background: rgba(109, 136, 168, 0.2);
-  color: var(--tsukuyomi-100);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-color);
   font-weight: 600;
 }
 
-.ipm-seg-btn:disabled {
-  opacity: 0.35;
-}
-
+/* 对话：占满顶栏与底部栏之间的高度，输入框贴底 */
 .ipm--chat {
-  height: 100%;
+  height: calc(100dvh - var(--mobile-sysbar-height, 0px) - var(--mobile-tabbar-height, 0px));
   min-height: 0;
 }
 

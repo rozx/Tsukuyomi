@@ -6,6 +6,7 @@ export default {
     library: '书库',
     booksList: '书籍列表',
     aiImport: 'AI 导入',
+    aiImportDescription: '提供网址或文件，由月詠整理卷章后再写入书库',
     aiModels: 'AI 模型',
     aiList: 'AI 列表',
     agentMcp: '外部 Agent',

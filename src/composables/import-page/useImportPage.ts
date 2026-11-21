@@ -71,6 +71,18 @@ function createImportPage() {
     void router.push(`/import/${taskId}`);
   }
 
+  /** 平板 / 手机：从任务内返回任务列表（桌面任务列表常驻左侧，不需要） */
+  async function closeTask(): Promise<void> {
+    section.value = 'tasks';
+    await router.push('/import');
+  }
+
+  /** 手机：离开导入页——有上一页（应用内）时返回，直接打开导入页时回到首页 */
+  function leave(): void {
+    if (router.options.history.state.back) router.back();
+    else void router.push('/');
+  }
+
   async function createTask(): Promise<void> {
     const task = await store.createTask();
     if (!task) return;
@@ -177,6 +189,8 @@ function createImportPage() {
     sourceText,
     sourceTextError,
     openTask,
+    closeTask,
+    leave,
     createTask,
     deleteTask,
     selectChapter,

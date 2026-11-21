@@ -67,6 +67,8 @@ useOverlayCloseStack({
 <style scoped>
 .mobile-shell {
   --mobile-tabbar-height: calc(77px + env(safe-area-inset-bottom, 0px));
+  /* 与 MobileSysBar 实际高度一致（上下内边距 6px×2 + 内容 24px + 底边 1px），需要占满两栏之间高度的页面用 */
+  --mobile-sysbar-height: 37px;
   display: flex;
   flex-direction: column;
   min-height: 100dvh;
@@ -79,9 +81,12 @@ useOverlayCloseStack({
   z-index: 6;
 }
 
+/* 内容区与主区都撑满两栏之间：页面内容较短时，主区底色仍铺到底部栏 */
 .mobile-shell-content {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .mobile-shell-tabbar {
@@ -104,7 +109,7 @@ useOverlayCloseStack({
 
 .phone-sidebar-wrapper {
   position: fixed;
-  top: 37px;
+  top: var(--mobile-sysbar-height);
   left: 0;
   bottom: var(--mobile-tabbar-height);
   width: 16rem;
@@ -118,6 +123,7 @@ useOverlayCloseStack({
 }
 
 main {
+  flex: 1;
   min-width: 0;
   overflow: visible;
 }

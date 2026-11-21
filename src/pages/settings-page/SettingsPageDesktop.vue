@@ -40,19 +40,9 @@ const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.val
       :title="t('settingsUi.page.workbench')"
       :description="pageSummary"
       :stats="settingsMetrics"
-    >
-      <template #leading>
-        <button
-          type="button"
-          class="settings-back-chip"
-          :aria-label="t('settingsUi.page.back')"
-          @click="ctx.goBack"
-        >
-          <i class="pi pi-chevron-left" aria-hidden="true" />
-          <span>{{ t('settingsUi.page.back') }}</span>
-        </button>
-      </template>
-    </PageHeader>
+      :back-label="t('settingsUi.page.back')"
+      @back="ctx.goBack"
+    />
 
     <DesktopWorkbenchSurface class="settings-workbench" tone="muted" :padded="false">
       <aside class="settings-nav">
@@ -82,45 +72,6 @@ const panelFor = (value: string) => getSettingsPanelComponent(ctx.isElectron.val
   height: 100%;
   display: flex;
   flex-direction: column;
-}
-
-.settings-back-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  height: 22px;
-  padding: 0 0.55rem 0 0.45rem;
-  border-radius: 6px;
-  background: transparent;
-  border: 1px solid var(--white-opacity-8);
-  color: var(--accent-silver);
-  cursor: pointer;
-  font-family:
-    'Noto Sans SC',
-    'PingFang SC',
-    -apple-system,
-    sans-serif;
-  font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  line-height: 1;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.settings-back-chip:hover {
-  background: var(--white-opacity-4);
-  border-color: var(--tsukuyomi-200-opacity-22); /* token: tsukuyomi-200 @ 22% */
-  color: var(--moon-opacity-100);
-}
-
-.settings-back-chip:active {
-  background: var(--white-opacity-6);
-}
-
-.settings-back-chip .pi {
-  font-size: 0.68rem;
-  line-height: 1;
 }
 
 .settings-workbench {

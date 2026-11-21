@@ -1327,6 +1327,27 @@ const TsukuyomiPreset = definePreset(Aura, {
         },
       },
     },
+    // 状态标签（Tag）：与按钮同一套「淡底 + 有色文字」，不用 Aura 默认的实心灰块
+    tag: {
+      root: {
+        fontSize: '0.7rem',
+        fontWeight: '600',
+        padding: '0.15rem 0.5rem',
+        gap: '0.25rem',
+        borderRadius: '6px',
+      },
+      colorScheme: {
+        dark: {
+          primary: { background: 'rgba(109, 136, 168, 0.18)', color: ACCENT_TEAL[100] },
+          secondary: { background: 'rgba(255, 255, 255, 0.06)', color: 'rgba(247, 244, 236, 0.7)' },
+          success: { background: 'rgba(127, 194, 155, 0.14)', color: '#9fd3b4' },
+          info: { background: 'rgba(163, 183, 207, 0.16)', color: '#c9d6e4' },
+          warn: { background: 'rgba(231, 201, 138, 0.14)', color: '#e7c98a' },
+          danger: { background: 'rgba(240, 163, 163, 0.14)', color: '#f0a3a3' },
+          contrast: { background: 'rgba(247, 244, 236, 0.9)', color: '#1c1f26' },
+        },
+      },
+    },
     badge: {
       root: {
         borderRadius: '{border.radius.full}',

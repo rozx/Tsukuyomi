@@ -317,6 +317,8 @@ export default {
       workbench: '匯入工作台',
       summary: '提供網址或檔案，與月詠一起整理卷章；確認匯入方案後才寫入書庫。',
       chapters: '章節',
+      allTasks: '全部任務',
+      back: '返回',
     },
     action: {
       currentTask: '目前任務',

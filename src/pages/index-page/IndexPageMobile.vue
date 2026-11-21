@@ -165,6 +165,13 @@ const greetingSub = computed(() =>
           @click="ctx.addBook"
         />
         <Button
+          v-if="ctx.canAiImport"
+          :label="i18nT('libraryUi.aiImport')"
+          icon="pi pi-sparkles"
+          class="p-button-outlined mh-action-btn"
+          @click="ctx.navigateToImport"
+        />
+        <Button
           :label="i18nT('libraryUi.importWeb')"
           icon="pi pi-globe"
           class="p-button-outlined mh-action-btn"

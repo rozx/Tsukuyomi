@@ -27,7 +27,7 @@ const libraryMetaText = computed(() => {
     : base;
 });
 
-// 添加书籍 picker（底部抽屉）：展开手动 / 从网站 / 从 JSON 三个入口
+// 添加书籍 picker（底部抽屉）：手动 / AI 导入 / 从网站 / 从 JSON（手机底部栏没有导入入口，靠这里进入）
 const showAddPicker = ref(false);
 const openAddPicker = () => {
   showAddPicker.value = true;
@@ -46,6 +46,10 @@ const pickImportFromWeb = () => {
 const pickImportFromJson = () => {
   closeAddPicker();
   ctx.importBookFromJson();
+};
+const pickAiImport = () => {
+  closeAddPicker();
+  ctx.openAiImport();
 };
 </script>
 
@@ -202,6 +206,19 @@ const pickImportFromJson = () => {
         <div class="ml-add-picker-option-main">
           <div class="ml-add-picker-option-name">{{ i18nT('libraryUi.manualAdd') }}</div>
           <div class="ml-add-picker-option-meta">{{ i18nT('libraryUi.manualDescription') }}</div>
+        </div>
+        <i class="pi pi-chevron-right ml-add-picker-chev" aria-hidden="true" />
+      </button>
+      <button
+        v-if="ctx.canAiImport"
+        type="button"
+        class="ml-add-picker-option"
+        @click="pickAiImport"
+      >
+        <i class="pi pi-sparkles ml-add-picker-option-icon" aria-hidden="true" />
+        <div class="ml-add-picker-option-main">
+          <div class="ml-add-picker-option-name">{{ i18nT('libraryUi.aiImport') }}</div>
+          <div class="ml-add-picker-option-meta">{{ i18nT('libraryUi.aiImportDescription') }}</div>
         </div>
         <i class="pi pi-chevron-right ml-add-picker-chev" aria-hidden="true" />
       </button>

@@ -3,7 +3,7 @@
  * 桌面 / 平板页面的统一页头：
  * 眉标 + 衬线标题 + 说明在左，状态摘要（分格统计条）在右，底部一条通栏分隔线；
  * 页面级操作（搜索、新建等）放进 #toolbar 插槽，渲染为页头下方的一行工具栏；
- * 返回之类的导航放进 #leading 插槽，与眉标同一行显示在眉标左侧。
+ * 传 backLabel 时在眉标左侧显示「‹ 返回」小标签（点击触发 back），用于设置页、导入任务等下钻页面。
  *
  * 页头自带左右内边距并通栏显示，页面根节点不要再给它套内边距。
  * 按页头自身宽度（而不是窗口宽度）在窄时改为上下排列。
@@ -14,17 +14,29 @@ withDefaults(
     title: string;
     description?: string;
     stats?: Array<{ label: string; value: string | number }>;
+    /** 返回标签的文字；为空时不显示 */
+    backLabel?: string;
   }>(),
-  { eyebrow: '', description: '', stats: () => [] },
+  { eyebrow: '', description: '', stats: () => [], backLabel: '' },
 );
+const emit = defineEmits<{ back: [] }>();
 </script>
 
 <template>
   <div class="page-header">
     <header class="ph-head">
       <div class="ph-copy">
-        <div v-if="eyebrow || $slots.leading" class="ph-eyebrow-row">
-          <slot name="leading" />
+        <div v-if="eyebrow || backLabel" class="ph-eyebrow-row">
+          <button
+            v-if="backLabel"
+            type="button"
+            class="ph-back"
+            :aria-label="backLabel"
+            @click="emit('back')"
+          >
+            <i class="pi pi-chevron-left" aria-hidden="true" />
+            <span>{{ backLabel }}</span>
+          </button>
           <span v-if="eyebrow" class="ph-eyebrow">{{ eyebrow }}</span>
         </div>
         <h1 class="ph-title">{{ title }}</h1>
@@ -67,6 +79,42 @@ withDefaults(
   align-items: center;
   gap: 10px;
   margin-bottom: 4px;
+}
+
+/* 返回：眉标左侧的小标签按钮 */
+.ph-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 22px;
+  padding: 0 0.55rem 0 0.45rem;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--white-opacity-8);
+  color: var(--accent-silver);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ph-back:hover {
+  background: var(--white-opacity-4);
+  border-color: var(--tsukuyomi-200-opacity-22); /* token: tsukuyomi-200 @ 22% */
+  color: var(--moon-opacity-100);
+}
+
+.ph-back:active {
+  background: var(--white-opacity-6);
+}
+
+.ph-back .pi {
+  font-size: 0.68rem;
+  line-height: 1;
 }
 
 .ph-eyebrow {

@@ -6,6 +6,7 @@ import { useSettingsStore } from 'src/stores/settings';
 import { useCoverHistoryStore } from 'src/stores/cover-history';
 import { useAIProcessingStore } from 'src/stores/ai-processing';
 import { APP_NAME } from 'src/constants/app';
+import { isNavTabEnabled } from 'src/constants/features';
 import { getTotalChapters, getAssetUrl } from 'src/utils';
 import { useLibraryFormatting } from 'src/composables/shared/useLibraryFormatting';
 import { useNovelCharCount } from 'src/composables/useNovelCharCount';
@@ -153,6 +154,12 @@ function createIndexPageContext() {
     void router.push('/mcp');
   };
 
+  /** AI 导入工作台（受回退开关控制）：手机底部栏没有它，从首页快速操作进入 */
+  const canAiImport = isNavTabEnabled('import');
+  const navigateToImport = () => {
+    void router.push('/import');
+  };
+
   const loadAllBookCharCounts = async () => {
     const books = recentBooks.value;
     const loadPromises = books.map((book) => loadBookCharCount(book));
@@ -207,5 +214,7 @@ function createIndexPageContext() {
     navigateToBooks,
     navigateToAI,
     navigateToMcp,
+    canAiImport,
+    navigateToImport,
   };
 }

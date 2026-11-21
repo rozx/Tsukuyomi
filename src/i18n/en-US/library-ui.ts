@@ -6,6 +6,8 @@ export default {
     library: 'Library',
     booksList: 'Books',
     aiImport: 'AI import',
+    aiImportDescription:
+      'Provide a URL or files; Tsukuyomi organizes the volumes before anything is added',
     aiModels: 'AI models',
     aiList: 'AI models',
     agentMcp: 'External Agent',

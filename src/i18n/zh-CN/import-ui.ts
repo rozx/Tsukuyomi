@@ -319,6 +319,8 @@ export default {
       workbench: '导入工作台',
       summary: '提供网址或文件，与月詠一起整理卷章；确认导入方案后才写入书库。',
       chapters: '章节',
+      allTasks: '全部任务',
+      back: '返回',
     },
     action: {
       currentTask: '当前任务',

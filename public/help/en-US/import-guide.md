@@ -10,13 +10,13 @@ Set an **Assistant** default under [AI models](/help/ai-models-guide). The impor
 
 Open **AI import** (`/import`):
 
-| Device  | Entry                                                                                                         |
-| :------ | :------------------------------------------------------------------------------------------------------------ |
-| Desktop | AI import in the left rail                                                                                    |
-| Tablet  | AI import in the left rail; task list in the workspace's Tasks tab                                            |
-| Mobile  | AI import in the side menu; opening a task starts in Chat, also reachable through the bottom Tsukuyomi button |
+| Device  | Entry                                                                                                                                                                                               |
+| :------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Desktop | AI import in the left rail                                                                                                                                                                          |
+| Tablet  | AI import in the left rail. Pick or create a task in the task list; inside a task, All tasks (top left) returns to the list                                                                         |
+| Mobile  | AI import under Quick actions on Home, or in the + menu of the Library. Opening a task starts in Chat; ‹ (top left) returns to the task list, and the bottom Tsukuyomi button also switches to Chat |
 
-Desktop/tablet chat appears on the right, with Sources, Volume/chapter draft, and Import plan in the workspace. Mobile calls them Sources, Draft, and Plan. This guide uses the desktop names.
+On desktop and on a tablet in landscape, chat appears on the right, with Sources, Volume/chapter draft, and Import plan in the workspace. A tablet in portrait has no room to dock the chat, so it becomes the first tab, Chat, in the workspace. Mobile calls the sections Chat, Sources, Draft, and Plan. This guide uses the desktop names.
 
 ## First import: an EPUB {#import-guide-section-3}
 
