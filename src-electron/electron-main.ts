@@ -13,6 +13,7 @@ import { getCookieHeaderValue, omitCookieHeader, parseCookieHeader } from './pup
 import { trackMainFrameStatus } from './main-frame-status';
 import { findPageWithRetry } from './puppeteer-page-lookup';
 import { claimSingleInstance } from './single-instance';
+import { routeNewWindowsToSystemBrowser } from './external-links';
 import { VelopackApp } from 'velopack';
 import { registerDesktopUpdates } from './desktop-update-ipc';
 import { registerElectronMcpIpc } from './mcp-ipc';
@@ -302,6 +303,9 @@ function createWindow() {
       webSecurity: false,
     },
   });
+
+  // 外部链接（target="_blank" / window.open）改用系统默认浏览器打开，不再开应用内窗口
+  routeNewWindowsToSystemBrowser(mainWindow.webContents, (url) => shell.openExternal(url));
 
   if (isDev) loadDevServer();
   else loadProductionBuild();
