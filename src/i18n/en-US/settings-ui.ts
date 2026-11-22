@@ -227,6 +227,9 @@ export default {
       tagline: 'A translation companion for fiction',
       author: 'Author',
       repository: 'Repository',
+      feedback: 'Feedback',
+      starPrompt: 'If Tsukuyomi helps you, a star on GitHub is the best way to support the author.',
+      starAction: 'Star on GitHub',
     },
     page: {
       summary: 'You are in “{tab}”. Browse and adjust settings continuously in this workspace.',

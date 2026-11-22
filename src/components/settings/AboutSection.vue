@@ -5,11 +5,14 @@ import SettingsPanel from './form/SettingsPanel.vue';
 import SettingsSection from './form/SettingsSection.vue';
 import { APP_DISPLAY_VERSION } from 'src/constants/build-info';
 import { useI18n } from 'vue-i18n';
+import { useIssueReportUrl } from 'src/composables/useIssueReportUrl';
+import { PROJECT_REPO_URL } from 'src/utils/project-links';
 
 const { t } = useI18n();
 
 const version = APP_DISPLAY_VERSION;
-const githubUrl = 'https://github.com/rozx/Tsukuyomi';
+const githubUrl = PROJECT_REPO_URL;
+const issueReportUrl = useIssueReportUrl();
 const authorUrl = 'https://github.com/rozx';
 const author = 'Rozx';
 </script>
@@ -41,6 +44,27 @@ const author = 'Rozx';
               <i class="pi pi-external-link about-meta-extico" aria-hidden="true" />
             </a>
           </div>
+          <div class="about-meta-row">
+            <span class="about-meta-label">{{ t('settingsUi.about.feedback') }}</span>
+            <a
+              class="about-meta-link"
+              :href="issueReportUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <i class="pi pi-megaphone" aria-hidden="true" />
+              <span>{{ t('libraryUi.reportIssue') }}</span>
+              <i class="pi pi-external-link about-meta-extico" aria-hidden="true" />
+            </a>
+          </div>
+        </div>
+
+        <div class="about-star">
+          <p class="about-star-text">{{ t('settingsUi.about.starPrompt') }}</p>
+          <a class="about-star-action" :href="githubUrl" target="_blank" rel="noopener noreferrer">
+            <i class="pi pi-star" aria-hidden="true" />
+            <span>{{ t('settingsUi.about.starAction') }}</span>
+          </a>
         </div>
       </div>
     </SettingsSection>
@@ -153,5 +177,51 @@ const author = 'Rozx';
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+.about-star {
+  margin-top: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  width: min(100%, 320px);
+  padding: 1rem 1rem 1.1rem;
+  background: rgba(234, 192, 123, 0.05);
+  border: 1px solid rgba(234, 192, 123, 0.16);
+  border-radius: 12px;
+}
+
+.about-star-text {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.65;
+  color: var(--moon-50-opacity-70);
+}
+
+.about-star-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 1rem;
+  border-radius: 999px;
+  border: 1px solid rgba(234, 192, 123, 0.35);
+  background: rgba(234, 192, 123, 0.1);
+  color: rgba(234, 192, 123, 0.95);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.about-star-action:hover {
+  background: rgba(234, 192, 123, 0.18);
+  border-color: rgba(234, 192, 123, 0.55);
+}
+
+.about-star-action .pi-star {
+  font-size: 0.85rem;
 }
 </style>

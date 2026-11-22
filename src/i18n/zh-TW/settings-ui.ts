@@ -220,6 +220,9 @@ export default {
       tagline: '月之神官，伴君譯筆',
       author: '作者',
       repository: '儲存庫',
+      feedback: '回饋',
+      starPrompt: '如果月詠對你有幫助，歡迎到 GitHub 點個 Star，這是對作者最大的鼓勵。',
+      starAction: '在 GitHub 上點 Star',
     },
     page: {
       summary: '目前位於「{tab}」分區，可在桌面工具頁中連續瀏覽與調整設定。',

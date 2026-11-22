@@ -13,6 +13,9 @@ export default {
     agentMcp: 'External Agent',
     settings: 'Settings',
     help: 'Help',
+    reportIssue: 'Report an issue',
+    reportIssueHint:
+      'Describe the problem, the steps to reproduce it, and what you expected. Screenshots help.',
     assistant: 'Tsukuyomi',
     assistantLabel: 'Tsukuyomi AI assistant',
     favoriteBooks: 'Favorite books',

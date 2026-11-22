@@ -1,0 +1,69 @@
+/**
+ * 纯图标竖排导航栏共享样式。
+ *
+ * TabletNavRail.vue 与 AppSideMenu.vue（折叠态）通过 `<style scoped src="./nav-rail.css">`
+ * 各自引入；scoped 会给规则里每个选择器分别追加各组件的 data-v 属性重新作用域，
+ * 互不泄漏（同 chat-panel.css）。
+ *
+ * 两端模板保留各自类名（rail- / side-rail-），这里用分组选择器同时命中两套类名。
+ * 仅收纳两端逐字相同的规则（图标项容器 / 图标项 / 激活态 / 弹性占位）；
+ * 外壳与 logo 等有差异的规则保留在各自组件的 `<style scoped>` 里。
+ */
+
+.rail-items,
+.side-rail-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+/* 图标项：路由导航用 <button>，外链（反馈问题）用 <a>，两者外观一致 */
+.rail-item,
+.side-rail-item {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: rgba(174, 183, 198, 0.75);
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 0;
+  text-decoration: none;
+}
+
+.rail-item i,
+.side-rail-item i {
+  font-size: 16px;
+  line-height: 1;
+  transition:
+    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+    text-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.rail-item:hover,
+.side-rail-item:hover {
+  background: var(--white-opacity-4);
+  color: rgba(247, 244, 236, 1);
+}
+
+.rail-item.active,
+.side-rail-item.active {
+  background: rgba(109, 136, 168, 0.18);
+  border-color: rgba(109, 136, 168, 0.3);
+  color: #a3b7cf;
+}
+
+.rail-item.active i,
+.side-rail-item.active i {
+  text-shadow: 0 0 12px rgba(109, 136, 168, 0.55);
+}
+
+.rail-spacer,
+.side-rail-spacer {
+  flex: 1;
+}

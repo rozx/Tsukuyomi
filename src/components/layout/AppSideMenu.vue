@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n';
 const { t: i18nT } = useI18n();
 
+import Menu from 'primevue/menu';
 import type { MenuItem } from 'primevue/menuitem';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -9,6 +10,7 @@ import { useBooksStore } from 'src/stores/books';
 import type { Novel } from 'src/models/novel';
 import { useMainNavActive, type MainNavTab } from 'src/composables/useMainNavActive';
 import { isNavTabEnabled } from 'src/constants/features';
+import { useIssueReportUrl } from 'src/composables/useIssueReportUrl';
 
 interface Props {
   collapsed?: boolean;
@@ -125,8 +127,20 @@ const toMenuItems = (entries: NavEntry[]): MenuItem[] =>
     command: () => navigate(entry.path),
   }));
 
+// 反馈问题：外链到 GitHub 新建 Issue，不属于路由导航，没有激活态
+const issueReportUrl = useIssueReportUrl();
+const issueReportIcon = 'pi pi-megaphone';
+
 const topItems = computed<MenuItem[]>(() => toMenuItems(topNav.value));
-const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav.value));
+const bottomItems = computed<MenuItem[]>(() => [
+  ...toMenuItems(bottomNav.value),
+  {
+    label: i18nT('libraryUi.reportIssue'),
+    icon: issueReportIcon,
+    url: issueReportUrl.value,
+    target: '_blank',
+  },
+]);
 </script>
 
 <template>
@@ -166,6 +180,16 @@ const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav.value));
       >
         <i :class="item.icon" aria-hidden="true" />
       </button>
+      <a
+        class="side-rail-item"
+        :href="issueReportUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        :aria-label="i18nT('libraryUi.reportIssue')"
+        :title="i18nT('libraryUi.reportIssue')"
+      >
+        <i :class="issueReportIcon" aria-hidden="true" />
+      </a>
     </div>
   </aside>
 
@@ -508,53 +532,7 @@ const bottomItems = computed<MenuItem[]>(() => toMenuItems(bottomNav.value));
     -apple-system,
     sans-serif;
 }
-
-.side-rail-items {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
-}
-
-.side-rail-item {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid transparent;
-  color: rgba(174, 183, 198, 0.75);
-  cursor: pointer;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
-  padding: 0;
-}
-
-.side-rail-item i {
-  font-size: 16px;
-  line-height: 1;
-  transition:
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    text-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.side-rail-item:hover {
-  background: var(--white-opacity-4);
-  color: rgba(247, 244, 236, 1);
-}
-
-.side-rail-item.active {
-  background: rgba(109, 136, 168, 0.18);
-  border-color: rgba(109, 136, 168, 0.3);
-  color: #a3b7cf;
-}
-
-.side-rail-item.active i {
-  text-shadow: 0 0 12px rgba(109, 136, 168, 0.55);
-}
-
-.side-rail-spacer {
-  flex: 1;
-}
 </style>
+
+<!-- 图标项 / 激活态等与另一套图标导航逐字相同的规则见 nav-rail.css -->
+<style scoped src="./nav-rail.css"></style>

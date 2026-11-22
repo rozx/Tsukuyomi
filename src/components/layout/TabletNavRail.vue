@@ -8,10 +8,11 @@ import { useMainNavDispatch } from 'src/composables/layout/useMainNavDispatch';
 import { getAssetUrl } from 'src/utils';
 import { APP_NAME } from 'src/constants/app';
 import { isNavTabEnabled } from 'src/constants/features';
+import { useIssueReportUrl } from 'src/composables/useIssueReportUrl';
 
 type Item = { id: MainNavTab; icon: string; label: string };
 
-// 主导航（首页 · 书库 · AI 导入 · AI 模型）在顶部，帮助 / 设置固定在底部。
+// 主导航（首页 · 书库 · AI 导入 · AI 模型）在顶部，反馈问题 / 帮助 / 设置固定在底部。
 const primaryItems = computed(() =>
   (
     [
@@ -35,6 +36,9 @@ const activeTab = useMainNavActive();
 const logoPath = getAssetUrl('icons/android-chrome-512x512.png');
 
 const { dispatch: onItemClick } = useMainNavDispatch();
+
+// 反馈问题：外链到 GitHub 新建 Issue，不属于路由导航，没有激活态
+const issueReportUrl = useIssueReportUrl();
 </script>
 
 <template>
@@ -60,6 +64,16 @@ const { dispatch: onItemClick } = useMainNavDispatch();
     <div class="rail-spacer" />
 
     <div class="rail-items">
+      <a
+        class="rail-item"
+        :href="issueReportUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        :aria-label="i18nT('libraryUi.reportIssue')"
+        :title="i18nT('libraryUi.reportIssue')"
+      >
+        <i class="pi pi-megaphone" aria-hidden="true" />
+      </a>
       <button
         v-for="item in secondaryItems"
         :key="item.id"
@@ -116,53 +130,7 @@ const { dispatch: onItemClick } = useMainNavDispatch();
 .rail-logo:hover {
   transform: scale(1.05);
 }
-
-.rail-items {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
-}
-
-.rail-item {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: 1px solid transparent;
-  color: rgba(174, 183, 198, 0.75);
-  cursor: pointer;
-  transition: all 160ms cubic-bezier(0.4, 0, 0.2, 1);
-  padding: 0;
-}
-
-.rail-item i {
-  font-size: 16px;
-  line-height: 1;
-  transition:
-    color 150ms cubic-bezier(0.4, 0, 0.2, 1),
-    text-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.rail-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(247, 244, 236, 1);
-}
-
-.rail-item.active {
-  background: rgba(109, 136, 168, 0.18);
-  border-color: rgba(109, 136, 168, 0.3);
-  color: #a3b7cf;
-}
-
-.rail-item.active i {
-  text-shadow: 0 0 12px rgba(109, 136, 168, 0.55);
-}
-
-.rail-spacer {
-  flex: 1;
-}
 </style>
+
+<!-- 图标项 / 激活态等与另一套图标导航逐字相同的规则见 nav-rail.css -->
+<style scoped src="./nav-rail.css"></style>

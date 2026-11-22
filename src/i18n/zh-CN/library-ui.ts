@@ -12,6 +12,8 @@ export default {
     agentMcp: '外部 Agent',
     settings: '设置',
     help: '帮助',
+    reportIssue: '反馈问题',
+    reportIssueHint: '请描述遇到的问题、复现步骤和期望结果，可附上截图。',
     assistant: '月詠',
     assistantLabel: '月詠 AI 助手',
     favoriteBooks: '收藏小说',
