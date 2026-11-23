@@ -54,3 +54,34 @@ ad-hoc 签名不会让 Apple 验证开发者身份，也不会消除 Gatekeeper 
 ## Windows 启动没有主窗口
 
 从 PowerShell 运行解压目录中的启动 EXE，检查 `[Electron]` 日志和 Puppeteer 初始化输出。保留整个便携目录，确认杀毒软件没有隔离更新组件或原生模块；不要使用历史单文件 portable 的文件布局替换新目录。
+
+## 依赖安全更新
+
+每周的 `.github/workflows/security-updates.yml` 会跑 `bun audit fix`，但它只能在上游声明的版本范围内升级。被上游范围卡住的漏洞要手动处理，本地用 `bun audit` 查看现状。
+
+- **直接依赖**：`bun update <包>` 或 `bun add <包>@<版本>`。
+- **传递依赖、修复版本在上游范围内**：`bun update <包>` 同样有效（例如 `bun update express glob minimatch`），不会写进 `package.json`。
+- **传递依赖、修复版本超出上游范围**：在 `package.json` 的 `overrides` 里按依赖方单独指定（Bun 支持嵌套写法）。不要写成顶层 `"glob": "..."`：同一个包在依赖树里常有多个大版本并存（如 `rimraf` 仍用 glob 7 的回调 API），顶层覆盖会把它们一起换掉。
+
+目前的 overrides 及可以删除的时机：
+
+| 依赖方 › 包                                          | 覆盖为                | 原因                                            | 何时删除                              |
+| ---------------------------------------------------- | --------------------- | ----------------------------------------------- | ------------------------------------- |
+| `puppeteer-in-electron` › `uuid`                     | `^11.1.1`             | 上游声明 `^8.3.2`（GHSA-w5hq-g745-h8pq）        | 上游放宽范围后                        |
+| `@electron/asar` › `glob` / `minimatch`              | `^14.0.2` / `^11.0.1` | GHSA-3g3m-2fjr-6pw4 / GHSA-g3hv-75wg-m249       | `@electron/asar` 自己升到这两个版本后 |
+| `sucrase` › `glob`                                   | `^14.0.2`             | 同上（经 `tailwindcss` 3 引入）                 | 升级 Tailwind 4 后                    |
+| `archiver-utils` › `glob`                            | `^14.0.2`             | 同上（经 `@quasar/app-vite` 2 引入，仅 BEX 用） | 升级 `@quasar/app-vite` 3 后          |
+| `@typescript-eslint/typescript-estree` › `minimatch` | `^11.0.1`             | GHSA-g3hv-75wg-m249                             | typescript-eslint 自己升级后          |
+| `@quasar/app-vite` › `esbuild`                       | `^0.28.1`             | 上游声明 `^0.27.4`（GHSA-g7r4-m6w7-qqqr）       | 升级 `@quasar/app-vite` 3 后          |
+
+覆盖到的包都同时提供 CommonJS 与 ESM 入口，不要求 Node 22 的 `require(esm)`。删除某条 override 后跑一次 `bun install && bun audit` 确认没有回退。
+
+**尚未修复**：`@quasar/app-vite` 2.x 及其 `@quasar/render-ssr-error`、`@quasar/ssl-certificate`（GHSA-fh39-c73x-5pjv、GHSA-r5mf-4r5x-q78f、GHSA-5m6h-8g35-p3m7、GHSA-q9mq-245r-4g93），修复版本只在 3.x。这几条涉及开发服务器的 HTTPS 证书缓存、SSR/SSG 的开发错误页与 nonce、以及构建时清理输出目录，本项目不使用 SSR/SSG，也没有开启开发服务器 HTTPS。升级到 3.x 是一次独立的迁移：Electron 主进程改用 Rolldown 打包、`process.env` 改为 `import.meta.env`、各模式的依赖移到 `/src-<mode>` 目录、路径别名只保留 `@/`、要求 vue-router 5。
+
+**升级 Electron 抓取相关依赖后的验证**（`puppeteer`、`puppeteer-extra`、`puppeteer-in-electron`、`electron`）：类型检查和单元测试覆盖不到主进程里的抓取链路，需要实际跑一次。
+
+```bash
+PUPPETEER_SKIP_DOWNLOAD=true bun run build:electron:app
+```
+
+启动 `dist/electron/Packaged/` 下的应用，在开发者工具里执行 `await window.electronAPI.fetch('https://example.com')`，返回 `status: 200` 且 `data` 是页面 HTML 即为正常；无界面的 Linux 环境用 `xvfb-run` 启动，并经调试端口 8315 连接主窗口。
