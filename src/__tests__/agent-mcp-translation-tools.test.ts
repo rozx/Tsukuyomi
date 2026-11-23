@@ -831,6 +831,56 @@ describe('AgentMcp translation tools', () => {
     expect((await chunk({ mode: 'all', chunk_size: 1 })).paragraphs).toHaveLength(1);
   });
 
+  it('get_translation_chunk 的默认字符预算不超过 4000：长段落的文体不会因为书籍分块大小设得大而返回过大的块', async () => {
+    const base = createTestBook();
+    const longChapter = (translationChunkSize: number | undefined) =>
+      createTestBook({
+        translationChunkSize,
+        volumes: [
+          {
+            ...base.volumes![0]!,
+            chapters: [
+              {
+                ...base.volumes![0]!.chapters![0]!,
+                // 40 段，每段 300 字，共 12000 字
+                content: Array.from({ length: 40 }, (_, i) => ({
+                  id: `L${String(i).padStart(7, '0')}`,
+                  text: `${String(i).padStart(2, '0')}${'長'.repeat(298)}`,
+                  selectedTranslationId: '',
+                  translations: [],
+                })),
+              },
+            ],
+          },
+        ],
+      });
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const count = async (args: Record<string, unknown>) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: base.id, chapter_id: 'ch-1', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return (res.data as { paragraphs: unknown[] }).paragraphs.length;
+    };
+
+    // 书籍没有设置分块大小（站内默认 6000）：按 4000 收口，13 段 × 300 字 = 3900
+    await useBooksStore().addBook(longChapter(undefined));
+    expect(await count({})).toBe(13);
+    expect(await count({ mode: 'all' })).toBe(13);
+    // 明确传入 chunk_size 时按传入的值
+    expect(await count({ chunk_size: 20000 })).toBe(40);
+
+    // 书籍的分块大小是给站内翻译定的，设得再大也不放大外部 Agent 的块
+    await useBooksStore().updateBook(base.id, { translationChunkSize: 20000 });
+    expect(await count({})).toBe(13);
+
+    // 书籍设得更小时按书籍的来
+    await useBooksStore().updateBook(base.id, { translationChunkSize: 2000 });
+    expect(await count({})).toBe(6);
+  });
+
   it('get_translation_chunk 带出与前文同文的已译段落，回忆与首尾呼应的句子可以沿用原来的译法', async () => {
     const base = createTestBook();
     const firstChapter = base.volumes![0]!.chapters![0]!;

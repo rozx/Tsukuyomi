@@ -117,7 +117,7 @@ export default {
       workflowsNote: '下面是每类任务的步骤，照着执行即可。',
       wfTranslateTitle: '翻译一章',
       wfTranslate1:
-        '调用 get_translation_chunk，传入 chapter_id，mode 设为 "untranslated"。一块最多 50 段（可用 max_paragraphs 调整），正好一次译完、一次提交；续取同一章的后续块时加上 compact: true，省略重复的标题与术语、角色说明。',
+        '调用 get_translation_chunk，传入 chapter_id，mode 设为 "untranslated"。一块最多 50 段、约 4000 字原文（可用 max_paragraphs、chunk_size 调整），正好一次译完、一次提交；续取同一章的后续块时加上 compact: true，省略重复的标题与术语、角色说明。',
       wfTranslate2:
         '返回的 paragraphs 是待翻译段落（含 id 与原文）；context_before 是本章前文已有的译文，用来衔接语气；本章还没有译文时改看 previous_chapter_tail，它是上一章末尾的原文与译文，标点习惯和章末固定用语要与它保持一致；recent_chapter_titles 是最近几章的标题原文与译名，新章节的标题格式要与它们一致。matched_terms、matched_characters 是这一块命中的术语和角色；possible_terms、possible_characters 是原文写法略有出入的近似命中（text_in_source 是原文里的写法），可能是原文的错字或异写，确认是同一个词后再使用。repeated_passages 列出本块里与前文同文的段落（本章前文或之前 30 章里原文完全相同、已有译文）和当时的译法：回忆、首尾呼应的句子沿用它，语境不同时再调整；更早的章节和只是相近的句子不会列出，遇到前后篇、回忆、复述前文的段落时用 search_paragraphs 查前文的译法。memories 是相关记忆，special_instructions 是特殊指令，target_language 是目标语言。',
       wfTranslate3:
