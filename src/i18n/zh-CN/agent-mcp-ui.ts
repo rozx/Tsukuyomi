@@ -108,32 +108,35 @@ export default {
       overviewTitle: '先了解现状',
       toolsTitle: '工具一览',
       toolsNote:
-        '标注「写入」的工具会修改用户的数据；标注「危险」的工具不可撤销，并且只在用户开启完全控制权限时可用。',
+        '标注「写入」的工具会修改用户的数据；标注「危险」的工具不可撤销，并且只在用户开启完全控制权限时可用。各工具的参数与完整说明见它自带的描述。',
       toolWriteMark: '（写入）',
       toolDangerMark: '（危险）',
       toolSeparator: '：',
+      toolListJoin: '、',
       workflowsTitle: '工作流',
       workflowsNote: '下面是每类任务的步骤，照着执行即可。',
       wfTranslateTitle: '翻译一章',
-      wfTranslate1: '调用 get_translation_chunk，传入 chapter_id，mode 设为 "untranslated"。',
+      wfTranslate1:
+        '调用 get_translation_chunk，传入 chapter_id，mode 设为 "untranslated"。一块最多 50 段（可用 max_paragraphs 调整），正好一次译完、一次提交；续取同一章的后续块时加上 compact: true，省略重复的标题与术语、角色说明。',
       wfTranslate2:
-        '返回的 paragraphs 是待翻译段落（含 id 与原文）；context_before 是本章前文已有的译文，用来衔接语气；本章还没有译文时改看 previous_chapter_tail，它是上一章末尾的原文与译文，标点习惯和章末固定用语要与它保持一致；recent_chapter_titles 是最近几章的标题原文与译名，新章节的标题格式要与它们一致。matched_terms、matched_characters 是这一块命中的术语和角色；possible_terms、possible_characters 是原文写法略有出入的近似命中（text_in_source 是原文里的写法），可能是原文的错字或异写，确认是同一个词后再使用。memories 是相关记忆，special_instructions 是特殊指令，target_language 是目标语言。',
+        '返回的 paragraphs 是待翻译段落（含 id 与原文）；context_before 是本章前文已有的译文，用来衔接语气；本章还没有译文时改看 previous_chapter_tail，它是上一章末尾的原文与译文，标点习惯和章末固定用语要与它保持一致；recent_chapter_titles 是最近几章的标题原文与译名，新章节的标题格式要与它们一致。matched_terms、matched_characters 是这一块命中的术语和角色；possible_terms、possible_characters 是原文写法略有出入的近似命中（text_in_source 是原文里的写法），可能是原文的错字或异写，确认是同一个词后再使用。repeated_passages 列出本块里与前文同文的段落（本章前文或之前 30 章里原文完全相同、已有译文）和当时的译法：回忆、首尾呼应的句子沿用它，语境不同时再调整；更早的章节和只是相近的句子不会列出，遇到前后篇、回忆、复述前文的段落时用 search_paragraphs 查前文的译法。memories 是相关记忆，special_instructions 是特殊指令，target_language 是目标语言。',
       wfTranslate3:
         '逐段翻译：一个原文段落对应一个译文段落，不合并、不拆分、不省略；术语和角色名使用给出的译法。',
       wfTranslate4:
-        '调用 submit_translations，paragraphs 里每项包含 paragraph_id 和 translated_text。书籍启用了原文前缀校验时，还要带上 original_text_prefix（对应原文开头 3~20 个字符）。翻译章节第一块时可以同时用 chapter_title_translation 提交章节标题译文；model_label 填你使用的模型名称。每次提交 30~50 段左右；段落更多时分成几批，等上一批返回后再提交下一批，同一章不要并行提交。',
+        '调用 submit_translations，paragraphs 里每项包含 paragraph_id 和 translated_text。书籍启用了原文前缀校验时，还要带上 original_text_prefix（对应原文开头 3~20 个字符）。翻译章节第一块时可以同时用 chapter_title_translation 提交章节标题译文；model_label 填你使用的模型名称。取到的一块一次提交完，等它返回后再处理下一块，同一章不要并行提交。',
       wfTranslate5:
-        '查看返回的 failed_items：只修正并重提失败的段落。remaining_untranslated_count 大于 0 时取下一块继续，等于 0 时本章完成。',
+        '查看返回的 failed_items：只修正并重提失败的段落。remaining_untranslated_count 大于 0 时取下一块继续，等于 0 时本章完成。连续翻译多章时，每一章都做完复核再开始下一章，不要为了赶进度省略。',
       wfTranslatePlan:
         '提交译文之前先做准备，与内置翻译的规划阶段相同。新术语、新角色和可复用的翻译决定在这一步就建好，不要留到译完之后：',
-      wfTranslateReview: '这一块提交之后复核，与内置翻译的复核阶段相同：',
+      wfTranslateReview:
+        '这一块提交之后复核，与内置翻译的复核阶段相同。修正自己刚提交的译文时把 write_mode 设为 "overwrite"，就地改写这份草稿，不多占一个版本：',
       wfTranslateBrief: '之后的每一块只需简短准备，然后同样翻译、提交、复核：',
       wfPolishTitle: '润色校对',
       wfPolish1:
         '调用 get_translation_chunk，mode 设为 "all"，task_type 设为 "polish"（校对用 "proofreading"）；不写 task_type 时拿到的是翻译用的特殊指令。每个段落会带上 current_translation。',
       wfPolish2: '只对确实需要改进的段落调用 submit_translations，没有改动的段落不要提交。',
       wfPolish3:
-        '默认会新增一个译文版本并选用它；只有用户明确要求直接改写当前版本时才把 write_mode 设为 "overwrite"。',
+        '润色校对的对象是已有的译文：默认会新增一个译文版本并选用它，只有用户明确要求直接改写当前版本时才把 write_mode 设为 "overwrite"。',
       wfPolish4:
         '用返回的 next_cursor 作为下一次调用的 cursor；has_more 为 false 时这一块已经到章末，处理完就结束。续取同一章的后续块时可以加上 compact: true，省略重复的标题与术语、角色说明。',
       wfPolishPlan: '修改之前先做准备，与内置润色、校对的规划阶段相同（润色与校对没有复核阶段）：',
@@ -202,7 +205,7 @@ export default {
         '其他客户端：在它的项目级 MCP 配置里添加一个 HTTP 服务，地址为 {url}，请求头为 Authorization: Bearer {token}。',
       setupMcpOtherRelay: '其他客户端：把下面的内容写入它的项目级 MCP 配置：',
       setupSave:
-        "**把这份指南保存为该文件夹里的 AGENTS.md。** 原样保存全部内容。如果你是 Claude Code，再建一个 CLAUDE.md，内容只写一行 `{'@'}AGENTS.md`。文件已经存在时，把这份指南作为单独一节追加进去，不要覆盖已有内容；以后拿到新版本时只替换这一节。",
+        "**把这份指南保存为该文件夹里的 AGENTS.md。** 「首次设置」这一节只用一次，不用保存；其余内容（标题、开头的说明与版本，以及「数据模型」起的各节）原样保存。如果你是 Claude Code，再建一个 CLAUDE.md，内容只写一行 `{'@'}AGENTS.md`。文件已经存在时，把这份指南作为单独一节追加进去，不要覆盖已有内容；以后拿到新版本时只替换这一节。",
       setupFinish:
         '**告诉用户接下来怎么做。** 说明项目文件夹的位置，并请他在这个文件夹里重启或重新加载你，让 MCP 生效。以后只要在这个文件夹里启动，就不用再粘贴这份指南。',
       setupPrereqDesktop:
@@ -210,7 +213,7 @@ export default {
       setupPrereqWeb:
         '前提：用户已在浏览器里打开 Tsukuyomi 的「外部 Agent」页面并开启 WebMCP，且保持该页面打开；运行中继需要 Node.js 22 或更高版本。连不上时先请用户确认这几点。',
       setupTokenWarning:
-        '注意：上面的命令和保存下来的文件里包含访问令牌，不要把这个文件夹提交到公开仓库。',
+        '注意：上面的命令和写入的 MCP 配置里包含访问令牌，不要把这个文件夹提交到公开仓库。',
       overviewRelay:
         '先调用 webmcp_list_sources 确认 Tsukuyomi 页面已连接。如果在工具列表里看不到下面提到的工具，用 webmcp_list_tools 列出它们，再用 webmcp_call_tool 按名称调用。工具名带有类似 `_a1b2` 的后缀时，说明用户同时开着多个 Tsukuyomi 页面：请用户只保留一个，或者调用时使用带后缀的完整名称。',
     },

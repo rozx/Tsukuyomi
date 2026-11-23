@@ -303,7 +303,7 @@ export const agentMcpContextTools: AgentMcpToolSpec[] = [
   {
     name: 'get_quick_start_guide',
     description:
-      'Return the quick start guide for the running Tsukuyomi version (the same text the user copies from the app), together with app_version. Call it when app_version from get_app_context differs from the version written at the top of your saved guide (AGENTS.md), then replace the saved copy with the returned guide. Keep the MCP configuration you already have: the setup section of the returned guide shows a placeholder instead of the access token.',
+      'Return the quick start guide for the running Tsukuyomi version, together with app_version. Call it when app_version from get_app_context differs from the version written at the top of your saved guide (AGENTS.md), then replace the saved copy with the returned guide as is. It is the guide the user copies from the app without the first-time setup section, so keep the MCP configuration you already have.',
     category: 'context',
     permission: 'read_only',
     readOnlyHint: true,
@@ -314,19 +314,11 @@ export const agentMcpContextTools: AgentMcpToolSpec[] = [
       return {
         app_version: APP_VERSION,
         locale: settingsStore.uiLocale,
+        // Agent 已经在用现有的配置连接：返回保存用的版本，不带「首次设置」（连接命令与令牌）
         guide: buildAgentQuickStartGuide({
           locale: settingsStore.uiLocale,
           channel: ctx.channel,
           tools: ctx.tools,
-          connection:
-            ctx.channel === 'webmcp'
-              ? { kind: 'relay', pageOrigin: window.location.origin }
-              : {
-                  kind: 'desktop',
-                  endpointUrl: `http://127.0.0.1:${settingsStore.agentMcp.desktopPort}/mcp`,
-                  // 令牌不经工具返回：Agent 已经在用现有的配置连接，不需要它
-                  token: '',
-                },
         }),
       };
     },

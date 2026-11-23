@@ -754,6 +754,201 @@ describe('AgentMcp translation tools', () => {
     expect(compact.special_instructions).toBe(full.special_instructions);
   });
 
+  it('get_translation_chunk 每块最多 50 段，正好对应一次提交；max_paragraphs 可以调整', async () => {
+    const base = createTestBook();
+    const book = createTestBook({
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            {
+              ...base.volumes![0]!.chapters![0]!,
+              content: Array.from({ length: 120 }, (_, i) => ({
+                id: `q${String(i).padStart(7, '0')}`,
+                text: `これは${i}行目の短い文です。`,
+                selectedTranslationId: '',
+                translations: [],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    type Chunk = {
+      has_more: boolean;
+      next_cursor: number | null;
+      paragraphs: Array<{ id: string; index: number }>;
+    };
+    const chunk = async (args: Record<string, unknown>) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-1', chunk_size: 50000, ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as Chunk;
+    };
+
+    // 字符预算再大，一块也不超过 50 段
+    const first = await chunk({});
+    expect(first.paragraphs).toHaveLength(50);
+    expect(first.has_more).toBe(true);
+
+    // 整块一次提交后，下一块从第 51 段开始
+    const submitted = await kernel.callTool(
+      'submit_translations',
+      {
+        book_id: book.id,
+        chapter_id: 'ch-1',
+        paragraphs: first.paragraphs.map((p) => ({
+          paragraph_id: p.id,
+          translated_text: `译文${p.index}`,
+        })),
+      },
+      { channel: 'desktop-mcp' },
+    );
+    expect((submitted.data as { saved_count: number }).saved_count).toBe(50);
+    const second = await chunk({});
+    expect(second.paragraphs[0]!.index).toBe(50);
+    expect(second.paragraphs).toHaveLength(50);
+
+    // mode="all" 同样受限，next_cursor 指向下一块的起点
+    const review = await chunk({ mode: 'all' });
+    expect(review.paragraphs).toHaveLength(50);
+    expect(review.next_cursor).toBe(50);
+    expect(review.has_more).toBe(true);
+
+    // 可以调小或调大；超过上限时按 200 处理，非法值用默认值
+    expect((await chunk({ mode: 'all', max_paragraphs: 20 })).paragraphs).toHaveLength(20);
+    expect((await chunk({ mode: 'all', max_paragraphs: 80 })).paragraphs).toHaveLength(80);
+    expect((await chunk({ mode: 'all', max_paragraphs: 9999 })).paragraphs).toHaveLength(120);
+    expect((await chunk({ mode: 'all', max_paragraphs: 0 })).paragraphs).toHaveLength(50);
+    expect((await chunk({ mode: 'all', max_paragraphs: 'abc' })).paragraphs).toHaveLength(50);
+
+    // 字符预算更紧时仍以字符预算为准
+    expect((await chunk({ mode: 'all', chunk_size: 1 })).paragraphs).toHaveLength(1);
+  });
+
+  it('get_translation_chunk 带出与前文同文的已译段落，回忆与首尾呼应的句子可以沿用原来的译法', async () => {
+    const base = createTestBook();
+    const firstChapter = base.volumes![0]!.chapters![0]!;
+    const translated = (id: string, text: string, translation: string) => ({
+      id,
+      text,
+      selectedTranslationId: `tr-${id}`,
+      translations: [
+        { id: `tr-${id}`, translation, aiModelId: 'builtin-model-1', language: 'zh-CN' as const },
+      ],
+    });
+    const untranslated = (id: string, text: string) => ({
+      id,
+      text,
+      selectedTranslationId: '',
+      translations: [],
+    });
+    const vow = '父さんは言った。「剣は人を守るためにある」と。';
+    const vowZh = '父亲说过：「剑是为了守护他人而存在的」。';
+    const book = createTestBook({
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            {
+              ...firstChapter,
+              id: 'ch-19',
+              title: {
+                original: '第19話 前篇',
+                translation: { id: 'cht-19', translation: '第19话 前篇', aiModelId: '' },
+              },
+              content: [
+                translated('pa000001', vow, vowZh),
+                translated('pa000002', '「はい」', '「是」'),
+                translated('pa000003', '夜明け前の空はまだ暗かった。', '黎明前的天空依然昏暗。'),
+              ],
+            },
+            {
+              ...firstChapter,
+              id: 'ch-20',
+              title: {
+                original: '第20話 後篇',
+                translation: { id: 'cht-20', translation: '', aiModelId: '' },
+              },
+              content: [
+                untranslated('pb000001', '戦いは終わった。'),
+                untranslated('pb000002', '「はい」'),
+                // 行首缩进不同也算同文
+                untranslated('pb000003', `\u3000${vow}`),
+                translated('pb000004', '夜明け前の空はまだ暗かった。', '破晓前的天色仍旧漆黑。'),
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    type Chunk = {
+      repeated_passages: Array<{
+        paragraph_id: string;
+        chapter_id: string;
+        title_original: string;
+        index: number;
+        translation: string;
+      }>;
+    };
+    const chunk = async (args: Record<string, unknown>) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-20', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as Chunk;
+    };
+
+    // 翻译：只有够长的同文段落被列出，短句「はい」不算
+    expect((await chunk({})).repeated_passages).toEqual([
+      {
+        paragraph_id: 'pb000003',
+        chapter_id: 'ch-19',
+        title_original: '第19話 前篇',
+        index: 0,
+        translation: vowZh,
+      },
+    ]);
+
+    // 润色校对：同文段落现在的译文与前文不一致时列出，便于统一
+    expect((await chunk({ mode: 'all' })).repeated_passages).toEqual([
+      {
+        paragraph_id: 'pb000003',
+        chapter_id: 'ch-19',
+        title_original: '第19話 前篇',
+        index: 0,
+        translation: vowZh,
+      },
+      {
+        paragraph_id: 'pb000004',
+        chapter_id: 'ch-19',
+        title_original: '第19話 前篇',
+        index: 2,
+        translation: '黎明前的天空依然昏暗。',
+      },
+    ]);
+
+    // 没有可取的段落时也带上这个字段
+    const done = (
+      await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-19' },
+        { channel: 'desktop-mcp' },
+      )
+    ).data as Chunk & { completed: boolean };
+    expect(done.completed).toBe(true);
+    expect(done.repeated_passages).toEqual([]);
+  });
+
   it('get_chapter_paragraphs 与 update_chapter_title 正常工作', async () => {
     const book = createTestBook();
     await useBooksStore().addBook(book);

@@ -132,15 +132,16 @@ describe('外部 Agent 的工作流：指南、MCP 模板与站内流程是同�
       );
       const data = desktop.data as { app_version: string; locale: string; guide: string };
       expect(data.app_version).toBe(APP_VERSION);
-      // 与界面上复制的是同一份：连接地址来自当前设置，但令牌不经工具返回
+      // 返回的是保存用的版本：Agent 已经连上了，不带「首次设置」一节，也就没有连接命令和令牌
       expect(data.guide).toBe(
         buildAgentQuickStartGuide({
           locale: useSettingsStore().uiLocale,
           channel: 'desktop-mcp',
           tools: agentMcpContextTools,
-          connection: { kind: 'desktop', endpointUrl: 'http://127.0.0.1:48321/mcp', token: '' },
         }),
       );
+      expect(data.guide).not.toContain('claude mcp add');
+      expect(data.guide).not.toContain('48321');
       expect(data.guide).not.toContain('real-secret-token');
       expect(desktop.text).not.toContain('real-secret-token');
 
@@ -150,9 +151,9 @@ describe('外部 Agent 的工作流：指南、MCP 模板与站内流程是同�
           locale: useSettingsStore().uiLocale,
           channel: 'webmcp',
           tools: agentMcpContextTools,
-          connection: { kind: 'relay', pageOrigin: window.location.origin },
         }),
       );
+      expect((web.data as { guide: string }).guide).not.toContain('claude mcp add');
       // 指南开头告诉 Agent 版本不一致时用这个工具更新
       expect(guide()).toMatch(/app_version[\s\S]{0,80}get_quick_start_guide/);
     });

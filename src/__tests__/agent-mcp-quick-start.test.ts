@@ -25,6 +25,19 @@ const webGuide = (locale: 'zh-CN' | 'zh-TW' | 'en-US' = 'zh-CN') =>
     tools: ALL_AGENT_MCP_TOOLS,
     connection: WEB,
   });
+/** Agent 保存下来的版本：不带「首次设置」一节 */
+const savedGuide = (
+  locale: 'zh-CN' | 'zh-TW' | 'en-US' = 'zh-CN',
+  channel: 'desktop-mcp' | 'webmcp' = 'desktop-mcp',
+) => buildAgentQuickStartGuide({ locale, channel, tools: ALL_AGENT_MCP_TOOLS });
+
+/**
+ * 保存下来的指南的大小上限（UTF-8 字节）。Antigravity 自动注入单个规则文件时最多读 24,000 字节，
+ * 超出的部分会被截掉（实际发生过：指南末尾的「出错时」被截断）；这里留出 500 字节余量。
+ * 超限时请精简指南的文字，不要调高这个数。
+ */
+const SAVED_GUIDE_MAX_BYTES = 23_500;
+const byteLength = (text: string) => new TextEncoder().encode(text).length;
 
 describe('buildAgentQuickStartGuide', () => {
   it('是一份快速上手指南，开头让 Agent 替用户完成首次设置：建项目文件夹、配置 MCP、把指南存为 AGENTS.md', () => {
@@ -40,6 +53,8 @@ describe('buildAgentQuickStartGuide', () => {
     expect(setup).toMatch(/询问|问用户/);
     // 存好之后用户不用每次再粘贴
     expect(setup).toMatch(/不(用|需要)再粘贴/);
+    // 「首次设置」只用一次，保存时不带它
+    expect(setup).toMatch(/^3\. .*首次设置.*不用保存/m);
     // Claude Code 读取 CLAUDE.md；已有文件时追加而不是覆盖
     expect(setup).toContain('CLAUDE.md');
     expect(setup).toMatch(/追加/);
@@ -80,7 +95,37 @@ describe('buildAgentQuickStartGuide', () => {
     expect(guide).not.toMatch(/令牌/);
   });
 
-  it('工具一览列出该通道的全部工具及说明，并标出会写入的工具', () => {
+  it('保存下来的指南不带「首次设置」一节，也就不带连接命令与访问令牌', () => {
+    for (const channel of ['desktop-mcp', 'webmcp'] as const) {
+      const saved = savedGuide('zh-CN', channel);
+      expect(saved).toMatch(/^# Tsukuyomi 快速上手指南/);
+      expect(saved).toMatch(/^本指南对应 Tsukuyomi /m);
+      expect(saved).not.toContain('## 首次设置');
+      expect(saved).not.toContain('claude mcp add');
+      expect(saved).not.toContain('Authorization: Bearer');
+      // 其余各节与完整的指南一字不差
+      const full = channel === 'webmcp' ? webGuide() : desktopGuide();
+      expect(saved.slice(saved.indexOf('## 数据模型'))).toBe(
+        full.slice(full.indexOf('## 数据模型')),
+      );
+      expect(saved.slice(0, saved.indexOf('## 数据模型'))).toBe(
+        full.slice(0, full.indexOf('## 首次设置')),
+      );
+    }
+  });
+
+  it('保存下来的指南在三种语言、两种通道下都不超过 Agent 规则文件的大小上限', () => {
+    for (const locale of ['zh-CN', 'zh-TW', 'en-US'] as const) {
+      for (const channel of ['desktop-mcp', 'webmcp'] as const) {
+        expect(
+          byteLength(savedGuide(locale, channel)),
+          `${locale} / ${channel} 的指南过长`,
+        ).toBeLessThanOrEqual(SAVED_GUIDE_MAX_BYTES);
+      }
+    }
+  });
+
+  it('工具一览按类别列出该通道的全部工具名，并标出会写入的工具', () => {
     const desktop = desktopGuide();
     const web = webGuide();
     for (const tool of ALL_AGENT_MCP_TOOLS) {
@@ -92,15 +137,42 @@ describe('buildAgentQuickStartGuide', () => {
         expect(web).toContain(`\`${tool.name}\``);
       }
     }
-    // 工具一览中每一行的工具名都是真实注册的工具
+    // 工具一览里的工具名都是真实注册的工具，每个只出现一次；每个类别一行
+    const reference = desktop.slice(desktop.indexOf('## 工具一览'), desktop.indexOf('## 工作流'));
     const known = new Set(ALL_AGENT_MCP_TOOLS.map((tool) => tool.name));
-    const listed = [...desktop.matchAll(/^- `([a-z_]+)`/gm)].map((match) => match[1]!);
+    const listed = [...reference.matchAll(/`([a-z_]+)`/g)].map((match) => match[1]!);
     expect(listed.length).toBe(ALL_AGENT_MCP_TOOLS.filter((tool) => !tool.webMcpOnly).length);
+    expect(new Set(listed).size).toBe(listed.length);
     for (const name of listed) expect(known.has(name), `${name} 不是已注册的工具`).toBe(true);
-    // 写入类与危险类工具有标注
-    expect(desktop).toMatch(/- `submit_translations`（写入）/);
-    expect(desktop).toMatch(/- `delete_book`（危险）/);
-    expect(desktop).toMatch(/- `list_books`：/);
+    expect(reference.match(/^- \*\*/gm)).toHaveLength(4);
+    expect(reference).toMatch(/^- \*\*翻译\*\*：`get_translation_chunk`、/m);
+    // 写入类与危险类工具有标注，只读工具没有
+    expect(reference).toContain('`submit_translations`（写入）');
+    expect(reference).toContain('`delete_book`（危险）');
+    expect(reference).toMatch(/`list_books`(、|$)/m);
+    // 参数与完整说明在工具自带的描述里，指南不重复
+    expect(reference).toMatch(/参数[^\n]*自带的(描述|说明)/);
+  });
+
+  it('翻译一章：一块对应一次提交，复核时就地改写自己的草稿，前文同文的句子沿用原来的译法', () => {
+    const guide = desktopGuide();
+    const translate = guide.slice(guide.indexOf('### 翻译一章'), guide.indexOf('### 润色校对'));
+    // 一块最多 50 段，取到的一块一次提交完，不再另行分批
+    expect(translate).toMatch(/最多 50 段[^\n]*max_paragraphs/);
+    expect(translate).toMatch(/一块[^\n]*一次提交/);
+    expect(guide).not.toMatch(/30\s*~\s*50/);
+    // 续取同一章的后续块用 compact 省略重复的说明
+    expect(translate).toContain('compact: true');
+    // 与前文同文的段落带有当时的译法；更早或只是相近的句子自己去搜
+    expect(translate).toMatch(/repeated_passages[^\n]*同文/);
+    expect(translate).toMatch(/回忆[^\n]*search_paragraphs/);
+    // 复核时修正自己刚提交的草稿：就地改写，不多留一个版本
+    expect(translate).toMatch(/复核[^\n]*write_mode[^\n]*"overwrite"/);
+    // 连续翻译多章时不能省略复核
+    expect(translate).toMatch(/多章[^\n]*复核/);
+    // 润色校对已有的译文仍然默认追加新版本
+    const polish = guide.slice(guide.indexOf('### 润色校对'), guide.indexOf('### 导入新书'));
+    expect(polish).toMatch(/默认[^\n]*新增[^\n]*只有用户明确要求[^\n]*"overwrite"/);
   });
 
   it('包含数据模型、分步骤的工作流与出错处理，细到参数与返回字段', () => {
@@ -245,6 +317,8 @@ describe('buildAgentQuickStartGuide', () => {
     for (const locale of ['zh-CN', 'zh-TW', 'en-US'] as const) {
       expect(sections(desktopGuide(locale))).toEqual(reference);
       expect(sections(webGuide(locale))).toEqual(reference);
+      // 保存的版本只少「首次设置」一节
+      expect(sections(savedGuide(locale))).toEqual({ h2: 7, h3: 6 });
       expect(desktopGuide(locale)).toContain('get_translation_chunk');
       expect(desktopGuide(locale)).toContain('AGENTS.md');
     }

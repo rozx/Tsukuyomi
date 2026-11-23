@@ -108,32 +108,35 @@ export default {
       overviewTitle: '先了解現狀',
       toolsTitle: '工具一覽',
       toolsNote:
-        '標註「寫入」的工具會修改使用者的資料；標註「危險」的工具無法復原，並且只在使用者開啟完全控制權限時可用。',
+        '標註「寫入」的工具會修改使用者的資料；標註「危險」的工具無法復原，並且只在使用者開啟完全控制權限時可用。各工具的參數與完整說明見它自帶的描述。',
       toolWriteMark: '（寫入）',
       toolDangerMark: '（危險）',
       toolSeparator: '：',
+      toolListJoin: '、',
       workflowsTitle: '工作流程',
       workflowsNote: '下面是每類任務的步驟，照著執行即可。',
       wfTranslateTitle: '翻譯一章',
-      wfTranslate1: '呼叫 get_translation_chunk，傳入 chapter_id，mode 設為 "untranslated"。',
+      wfTranslate1:
+        '呼叫 get_translation_chunk，傳入 chapter_id，mode 設為 "untranslated"。一塊最多 50 段（可用 max_paragraphs 調整），正好一次譯完、一次提交；續取同一章的後續塊時加上 compact: true，省略重複的標題與術語、角色說明。',
       wfTranslate2:
-        '回傳的 paragraphs 是待翻譯段落（含 id 與原文）；context_before 是本章前文已有的譯文，用來銜接語氣；本章還沒有譯文時改看 previous_chapter_tail，它是上一章末尾的原文與譯文，標點習慣和章末固定用語要與它保持一致；recent_chapter_titles 是最近幾章的標題原文與譯名，新章節的標題格式要與它們一致。matched_terms、matched_characters 是這一塊命中的術語和角色；possible_terms、possible_characters 是原文寫法略有出入的近似命中（text_in_source 是原文裡的寫法），可能是原文的錯字或異寫，確認是同一個詞後再使用。memories 是相關記憶，special_instructions 是特殊指令，target_language 是目標語言。',
+        '回傳的 paragraphs 是待翻譯段落（含 id 與原文）；context_before 是本章前文已有的譯文，用來銜接語氣；本章還沒有譯文時改看 previous_chapter_tail，它是上一章末尾的原文與譯文，標點習慣和章末固定用語要與它保持一致；recent_chapter_titles 是最近幾章的標題原文與譯名，新章節的標題格式要與它們一致。matched_terms、matched_characters 是這一塊命中的術語和角色；possible_terms、possible_characters 是原文寫法略有出入的近似命中（text_in_source 是原文裡的寫法），可能是原文的錯字或異寫，確認是同一個詞後再使用。repeated_passages 列出本塊裡與前文同文的段落（本章前文或之前 30 章裡原文完全相同、已有譯文）和當時的譯法：回憶、首尾呼應的句子沿用它，語境不同時再調整；更早的章節和只是相近的句子不會列出，遇到前後篇、回憶、複述前文的段落時用 search_paragraphs 查前文的譯法。memories 是相關記憶，special_instructions 是特殊指令，target_language 是目標語言。',
       wfTranslate3:
         '逐段翻譯：一個原文段落對應一個譯文段落，不合併、不拆分、不省略；術語和角色名使用給出的譯法。',
       wfTranslate4:
-        '呼叫 submit_translations，paragraphs 裡每項包含 paragraph_id 和 translated_text。書籍啟用了原文前綴校驗時，還要帶上 original_text_prefix（對應原文開頭 3~20 個字元）。翻譯章節第一塊時可以同時用 chapter_title_translation 提交章節標題譯文；model_label 填你使用的模型名稱。每次提交 30~50 段左右；段落更多時分成幾批，等上一批回傳後再提交下一批，同一章不要並行提交。',
+        '呼叫 submit_translations，paragraphs 裡每項包含 paragraph_id 和 translated_text。書籍啟用了原文前綴校驗時，還要帶上 original_text_prefix（對應原文開頭 3~20 個字元）。翻譯章節第一塊時可以同時用 chapter_title_translation 提交章節標題譯文；model_label 填你使用的模型名稱。取到的一塊一次提交完，等它回傳後再處理下一塊，同一章不要並行提交。',
       wfTranslate5:
-        '查看回傳的 failed_items：只修正並重提失敗的段落。remaining_untranslated_count 大於 0 時回到第 1 步，等於 0 時本章完成。',
+        '查看回傳的 failed_items：只修正並重提失敗的段落。remaining_untranslated_count 大於 0 時回到第 1 步，等於 0 時本章完成。連續翻譯多章時，每一章都做完複核再開始下一章，不要為了趕進度省略。',
       wfTranslatePlan:
         '提交譯文之前先做準備，與內建翻譯的規劃階段相同。新術語、新角色和可重複使用的翻譯決定在這一步就建好，不要留到譯完之後：',
-      wfTranslateReview: '這一塊提交之後複核，與內建翻譯的複核階段相同：',
+      wfTranslateReview:
+        '這一塊提交之後複核，與內建翻譯的複核階段相同。修正自己剛提交的譯文時把 write_mode 設為 "overwrite"，就地改寫這份草稿，不多佔一個版本：',
       wfTranslateBrief: '之後的每一塊只需簡短準備，然後同樣翻譯、提交、複核：',
       wfPolishTitle: '潤飾校對',
       wfPolish1:
         '呼叫 get_translation_chunk，mode 設為 "all"，task_type 設為 "polish"（校對用 "proofreading"）；不寫 task_type 時拿到的是翻譯用的特殊指令。每個段落會帶上 current_translation。',
       wfPolish2: '只對確實需要改進的段落呼叫 submit_translations，沒有改動的段落不要提交。',
       wfPolish3:
-        '預設會新增一個譯文版本並選用它；只有使用者明確要求直接改寫目前版本時才把 write_mode 設為 "overwrite"。',
+        '潤飾校對的對象是已有的譯文：預設會新增一個譯文版本並選用它，只有使用者明確要求直接改寫目前版本時才把 write_mode 設為 "overwrite"。',
       wfPolish4:
         '用回傳的 next_cursor 作為下一次呼叫的 cursor；has_more 為 false 時這一塊已經到章末，處理完就結束。續取同一章的後續塊時可以加上 compact: true，省略重複的標題與術語、角色說明。',
       wfPolishPlan: '修改之前先做準備，與內建潤色、校對的規劃階段相同（潤色與校對沒有複核階段）：',
@@ -202,7 +205,7 @@ export default {
         '其他用戶端：在它的專案層級 MCP 設定裡加入一個 HTTP 服務，位址為 {url}，請求標頭為 Authorization: Bearer {token}。',
       setupMcpOtherRelay: '其他用戶端：把下面的內容寫入它的專案層級 MCP 設定：',
       setupSave:
-        "**把這份指南保存為該資料夾裡的 AGENTS.md。** 原樣保存全部內容。如果你是 Claude Code，再建一個 CLAUDE.md，內容只寫一行 `{'@'}AGENTS.md`。檔案已經存在時，把這份指南作為單獨一節追加進去，不要覆蓋已有內容；以後拿到新版本時只替換這一節。",
+        "**把這份指南保存為該資料夾裡的 AGENTS.md。** 「首次設定」這一節只用一次，不用保存；其餘內容（標題、開頭的說明與版本，以及「資料模型」起的各節）原樣保存。如果你是 Claude Code，再建一個 CLAUDE.md，內容只寫一行 `{'@'}AGENTS.md`。檔案已經存在時，把這份指南作為單獨一節追加進去，不要覆蓋已有內容；以後拿到新版本時只替換這一節。",
       setupFinish:
         '**告訴使用者接下來怎麼做。** 說明專案資料夾的位置，並請他在這個資料夾裡重新啟動或重新載入你，讓 MCP 生效。以後只要在這個資料夾裡啟動，就不用再貼上這份指南。',
       setupPrereqDesktop:
@@ -210,7 +213,7 @@ export default {
       setupPrereqWeb:
         '前提：使用者已在瀏覽器裡開啟 Tsukuyomi 的「外部 Agent」頁面並開啟 WebMCP，且保持該頁面開啟；執行中繼需要 Node.js 22 或更高版本。連不上時先請使用者確認這幾點。',
       setupTokenWarning:
-        '注意：上面的指令和保存下來的檔案裡包含存取權杖，不要把這個資料夾提交到公開儲存庫。',
+        '注意：上面的指令和寫入的 MCP 設定裡包含存取權杖，不要把這個資料夾提交到公開儲存庫。',
       overviewRelay:
         '先呼叫 webmcp_list_sources 確認 Tsukuyomi 頁面已連線。如果在工具列表裡看不到下面提到的工具，用 webmcp_list_tools 列出它們，再用 webmcp_call_tool 按名稱呼叫。工具名帶有類似 `_a1b2` 的後綴時，表示使用者同時開著多個 Tsukuyomi 頁面：請使用者只保留一個，或者呼叫時使用帶後綴的完整名稱。',
     },

@@ -21,7 +21,11 @@ export type AgentQuickStartConnection =
 export interface AgentQuickStartOptions {
   locale: AppLocale;
   channel: ExternalAgentChannel;
-  connection: AgentQuickStartConnection;
+  /**
+   * 连接信息，用来写「首次设置」一节。省略时不带这一节：这是 Agent 保存下来的版本，
+   * 它已经连上了，设置步骤（以及其中的连接命令与令牌）不需要每次会话都读一遍。
+   */
+  connection?: AgentQuickStartConnection;
   /** 指南的工具一览列出这些工具；界面与内核传入的都是已注册的全部工具 */
   tools: readonly AgentMcpToolSpec[];
 }
@@ -61,20 +65,11 @@ function codeBlock(language: string, code: string): string[] {
 }
 
 /**
- * 生成给外部 Agent 的快速上手指南（Markdown）。开头的「首次设置」让 Agent 替用户建好项目
- * 文件夹、在其中配置 MCP、把指南存为该文件夹里的 AGENTS.md，之后用户不用再粘贴；随后
- * 依次是数据模型、如何了解现状、全部工具、分步工作流、规则与出错处理。
- * 它是通用说明而不是某个具体任务。
- *
- * 桌面通道直连本地 MCP 服务并引用 Prompt；浏览器通道经 webmcp-local-relay 连接，
- * 改用工作流指南工具，并说明中继自带的管理工具。工具一览直接由已注册的工具生成。
+ * 「首次设置」一节（含标题与末尾的空行）：让 Agent 替用户建好项目文件夹、在其中配置 MCP、
+ * 把指南的其余部分存为 AGENTS.md。
  */
-export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): string {
-  const { locale, channel, connection } = options;
-  const isWeb = channel === 'webmcp';
+function buildSetupSection(locale: AppLocale, connection: AgentQuickStartConnection): string[] {
   const text = (key: MessageKey): string => translateText(locale, key);
-  const bullets = (keys: readonly MessageKey[]): string[] => keys.map((key) => `- ${text(key)}`);
-  // 首次设置：让 Agent 替用户建好项目文件夹、在其中配置 MCP、把本指南存为 AGENTS.md
   // 列表项内的续行与代码块缩进三格；多行内容逐行缩进
   const indent = (lines: string[]): string[] =>
     lines.flatMap((entry) => entry.split('\n')).map((line) => (line ? `   ${line}` : line));
@@ -100,7 +95,8 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
           text('agentMcp.guide.setupMcpOtherRelay'),
           ...codeBlock('json', buildRelayJsonConfig(connection.pageOrigin)),
         ];
-  const setup = [
+  return [
+    `## ${text('agentMcp.guide.setupTitle')}`,
     text('agentMcp.guide.setupIntro'),
     '',
     `1. ${text('agentMcp.guide.setupFolder')}`,
@@ -116,27 +112,47 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
     ),
     // 桌面端的连接命令里带有访问令牌
     ...(connection.kind === 'desktop' ? ['', text('agentMcp.guide.setupTokenWarning')] : []),
+    '',
   ];
+}
 
-  // 工具一览：按类别列出该通道的全部工具，说明取自界面文案，标出写入与危险工具
+/**
+ * 生成给外部 Agent 的快速上手指南（Markdown）。开头的「首次设置」让 Agent 替用户建好项目
+ * 文件夹、在其中配置 MCP、把指南的其余部分存为该文件夹里的 AGENTS.md，之后用户不用再粘贴；
+ * 随后依次是数据模型、如何了解现状、全部工具、分步工作流、规则与出错处理。
+ * 它是通用说明而不是某个具体任务。
+ *
+ * 保存下来的指南每次会话都会整份注入，而且部分客户端对规则文件有大小上限（Antigravity 为
+ * 24,000 字节，超出的部分被截掉）。所以「首次设置」不进保存的版本，工具一览只列工具名
+ * （参数与说明在工具自带的描述里）；大小由 agent-mcp-quick-start.test.ts 把关。
+ *
+ * 桌面通道直连本地 MCP 服务并引用 Prompt；浏览器通道经 webmcp-local-relay 连接，
+ * 改用工作流指南工具，并说明中继自带的管理工具。工具一览直接由已注册的工具生成。
+ */
+export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): string {
+  const { locale, channel, connection } = options;
+  const isWeb = channel === 'webmcp';
+  const text = (key: MessageKey): string => translateText(locale, key);
+  const bullets = (keys: readonly MessageKey[]): string[] => keys.map((key) => `- ${text(key)}`);
+  const setup = connection ? buildSetupSection(locale, connection) : [];
+
+  // 工具一览：每个类别一行，列出该通道的全部工具名，标出写入与危险工具
   const channelTools = options.tools.filter((tool) => !tool.webMcpOnly || isWeb);
   const toolReference = CATEGORY_ORDER.flatMap(({ category, labelKey }) => {
-    const tools = channelTools.filter((tool) => tool.category === category);
-    if (tools.length === 0) return [];
-    return [
-      '',
-      `**${text(labelKey)}**`,
-      ...tools.map((tool) => {
+    const names = channelTools
+      .filter((tool) => tool.category === category)
+      .map((tool) => {
         const mark =
           tool.permission === 'full'
             ? text('agentMcp.guide.toolDangerMark')
             : tool.readOnlyHint
               ? ''
               : text('agentMcp.guide.toolWriteMark');
-        const description = translateText(locale, `agentMcp.tools.${tool.name}` as MessageKey);
-        return `- \`${tool.name}\`${mark}${text('agentMcp.guide.toolSeparator')}${description}`;
-      }),
-    ];
+        return `\`${tool.name}\`${mark}`;
+      });
+    if (names.length === 0) return [];
+    const list = names.join(text('agentMcp.guide.toolListJoin'));
+    return [`- **${text(labelKey)}**${text('agentMcp.guide.toolSeparator')}${list}`];
   });
 
   // 步骤与 MCP 工作流模板共用 workflows.ts 里的同一份
@@ -154,9 +170,7 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
     // 保存下来的指南不会随应用更新：带上版本，Agent 才能发现手里的是旧版
     translateText(locale, 'agentMcp.guide.versionNote', { version: APP_VERSION }),
     '',
-    `## ${text('agentMcp.guide.setupTitle')}`,
     ...setup,
-    '',
     `## ${text('agentMcp.guide.conceptsTitle')}`,
     ...bullets(CONCEPT_KEYS),
     '',
@@ -169,6 +183,7 @@ export function buildAgentQuickStartGuide(options: AgentQuickStartOptions): stri
     '',
     `## ${text('agentMcp.guide.toolsTitle')}`,
     text('agentMcp.guide.toolsNote'),
+    '',
     ...toolReference,
     '',
     `## ${text('agentMcp.guide.workflowsTitle')}`,

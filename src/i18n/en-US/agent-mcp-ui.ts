@@ -116,27 +116,28 @@ export default {
       overviewTitle: 'Get your bearings',
       toolsTitle: 'Tool reference',
       toolsNote:
-        'Tools marked "write" modify the user\'s data. Tools marked "danger" cannot be undone and are only available when the user has enabled full control.',
+        'Tools marked "write" modify the user\'s data. Tools marked "danger" cannot be undone and are only available when the user has enabled full control. Each tool\'s own description covers its parameters and details.',
       toolWriteMark: ' (write)',
       toolDangerMark: ' (danger)',
       toolSeparator: ': ',
+      toolListJoin: ', ',
       workflowsTitle: 'Workflows',
       workflowsNote: 'These are the steps for each kind of task; follow them as written.',
       wfTranslateTitle: 'Translate a chapter',
       wfTranslate1:
-        'Call get_translation_chunk with the chapter_id and mode set to "untranslated".',
+        'Call get_translation_chunk with the chapter_id and mode set to "untranslated". A chunk holds at most 50 paragraphs (adjust with max_paragraphs): translate and submit it in one go. For later chunks of the same chapter pass compact: true to leave out the repeated titles and term/character descriptions.',
       wfTranslate2:
-        'In the result, paragraphs are the paragraphs to translate (with id and source text); context_before is the existing translation of the preceding text in this chapter, for continuity; when this chapter has none yet, use previous_chapter_tail instead: the source and translation of the end of the previous chapter, whose punctuation habits and fixed closing phrases you should follow; recent_chapter_titles are the source titles and translated titles of the latest chapters, and a new chapter title should follow their format. matched_terms and matched_characters are the terms and characters that occur in this chunk; possible_terms and possible_characters are near matches where the source spelling differs slightly (text_in_source shows it), likely a typo or variant in the source: use them only after confirming it is the same word. memories are related notes; special_instructions are the special instructions; target_language is the target language.',
+        'In the result, paragraphs are the paragraphs to translate (with id and source text); context_before is the existing translation of the preceding text in this chapter, for continuity; when this chapter has none yet, use previous_chapter_tail instead: the source and translation of the end of the previous chapter, whose punctuation habits and fixed closing phrases you should follow; recent_chapter_titles are the source titles and translated titles of the latest chapters, and a new chapter title should follow their format. matched_terms and matched_characters are the terms and characters that occur in this chunk; possible_terms and possible_characters are near matches where the source spelling differs slightly (text_in_source shows it), likely a typo or variant in the source: use them only after confirming it is the same word. repeated_passages lists the paragraphs of this chunk whose identical source was already translated earlier in this chapter or in the previous 30 chapters, with that translation: reuse it for flashbacks and callbacks unless the context differs. Older or merely similar lines are not listed; for two-part chapters, flashbacks or retold passages, look up the earlier wording with search_paragraphs. memories are related notes; special_instructions are the special instructions; target_language is the target language.',
       wfTranslate3:
         'Translate paragraph by paragraph: one translated paragraph per source paragraph, with no merging, splitting or omission. Use the given renderings for terms and character names.',
       wfTranslate4:
-        'Call submit_translations; each item in paragraphs has paragraph_id and translated_text. If the book has source-prefix validation enabled, also include original_text_prefix (the first 3 to 20 characters of the source paragraph). With the first chunk of a chapter you can also submit the translated chapter title as chapter_title_translation; put the name of the model you are using in model_label. Submit about 30 to 50 paragraphs per call; split longer chapters into batches and send the next batch only after the previous one returns. Do not submit batches for the same chapter in parallel.',
+        'Call submit_translations; each item in paragraphs has paragraph_id and translated_text. If the book has source-prefix validation enabled, also include original_text_prefix (the first 3 to 20 characters of the source paragraph). With the first chunk of a chapter you can also submit the translated chapter title as chapter_title_translation; put the name of the model you are using in model_label. Submit the whole chunk in one call and wait for the result before starting the next chunk; do not submit to the same chapter in parallel.',
       wfTranslate5:
-        'Check failed_items in the result and fix and resubmit only those paragraphs. While remaining_untranslated_count is greater than 0, go back to step 1; when it reaches 0 the chapter is done.',
+        'Check failed_items in the result and fix and resubmit only those paragraphs. While remaining_untranslated_count is greater than 0, go back to step 1; when it reaches 0 the chapter is done. When translating several chapters in a row, finish the review of each chapter before starting the next; do not skip it to save time.',
       wfTranslatePlan:
         'Before submitting any translation, prepare the same way the built-in translation does in its planning phase. Create new terms, new characters and reusable translation decisions at this point instead of leaving them until afterwards:',
       wfTranslateReview:
-        'After submitting this chunk, review it the same way the built-in translation does in its review phase:',
+        'After submitting this chunk, review it the same way the built-in translation does in its review phase. When correcting a translation you just submitted, set write_mode to "overwrite" to revise that draft in place instead of using up another version:',
       wfTranslateBrief:
         'For every later chunk a short preparation is enough, followed by the same translate, submit and review steps:',
       wfPolishTitle: 'Polish and proofread',
@@ -145,7 +146,7 @@ export default {
       wfPolish2:
         'Call submit_translations only for paragraphs that really need improvement; do not submit unchanged paragraphs.',
       wfPolish3:
-        'By default a new version is added and selected. Set write_mode to "overwrite" only when the user explicitly asks to rewrite the current version in place.',
+        'Polishing and proofreading work on existing translations: by default a new version is added and selected. Set write_mode to "overwrite" only when the user explicitly asks to rewrite the current version in place.',
       wfPolish4:
         'Use the returned next_cursor as the cursor of the next call. When has_more is false, this chunk already reaches the end of the chapter: process it and stop. For later chunks of the same chapter you can pass compact: true to leave out the repeated titles and term/character descriptions.',
       wfPolishPlan:
@@ -224,7 +225,7 @@ export default {
       setupMcpOtherRelay:
         'Other clients: write the following into the project-level MCP configuration:',
       setupSave:
-        "**Save this guide as AGENTS.md in that folder.** Save the full contents unchanged. If you are Claude Code, also create a CLAUDE.md containing the single line `{'@'}AGENTS.md`. If the file already exists, append this guide as its own section and do not overwrite what is there; when you receive a newer version, replace only this section.",
+        "**Save this guide as AGENTS.md in that folder.** The first-time setup section is needed only once, so leave it out; save everything else (the title, the introduction and version at the top, and every section from the data model on) unchanged. If you are Claude Code, also create a CLAUDE.md containing the single line `{'@'}AGENTS.md`. If the file already exists, append this guide as its own section and do not overwrite what is there; when you receive a newer version, replace only this section.",
       setupFinish:
         '**Tell the user what to do next.** Say where the project folder is, and ask them to restart or reload you inside that folder so the MCP takes effect. From then on, starting you in that folder is enough and the guide does not need to be pasted again.',
       setupPrereqDesktop:
@@ -232,7 +233,7 @@ export default {
       setupPrereqWeb:
         'Prerequisite: the user has the External Agent page of Tsukuyomi open in a browser with WebMCP turned on, and keeps that page open. Running the relay requires Node.js 22 or later. If you cannot connect, ask the user to confirm these points first.',
       setupTokenWarning:
-        'Note: the command above and the saved file contain an access token. Do not commit this folder to a public repository.',
+        'Note: the command above and the MCP configuration it writes contain an access token. Do not commit this folder to a public repository.',
       overviewRelay:
         'Call webmcp_list_sources first to confirm the Tsukuyomi page is connected. If the tools mentioned below are missing from your tool list, list them with webmcp_list_tools and call them by name with webmcp_call_tool. Tool names with a suffix such as `_a1b2` mean the user has several Tsukuyomi pages open: ask them to keep only one, or call the tools by their full suffixed names.',
     },
