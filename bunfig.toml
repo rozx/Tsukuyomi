@@ -1,0 +1,5 @@
+[install]
+# 根目录与 src-electron 是同一个 workspace。Bun 对 workspace 默认用隔离式安装（每个包只能解析到
+# 自己声明的依赖），而测试需要从 src/__tests__ 里 mock 主进程用到的包（electron、velopack），
+# vite-plugins/ 与 scripts/ 也直接引用构建工具带来的包，所以固定为提升式安装。
+linker = "hoisted"

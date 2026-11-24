@@ -4,7 +4,7 @@
 
 ## 构建
 
-构建机需要 Bun、Node 和 .NET SDK 10。`velopack` npm 包与 `vpk` CLI 固定为同一版本（目前 1.2.158）。
+构建机需要 Bun、Node（`@quasar/app-vite` 3 要求 22.22 及以上，版本见 `.nvmrc`）和 .NET SDK 10。`velopack` npm 包与 `vpk` CLI 固定为同一版本（目前 1.2.158）。
 
 ```bash
 bun install --frozen-lockfile
@@ -55,6 +55,18 @@ ad-hoc 签名不会让 Apple 验证开发者身份，也不会消除 Gatekeeper 
 
 从 PowerShell 运行解压目录中的启动 EXE，检查 `[Electron]` 日志和 Puppeteer 初始化输出。保留整个便携目录，确认杀毒软件没有隔离更新组件或原生模块；不要使用历史单文件 portable 的文件布局替换新目录。
 
+## 依赖放在哪里
+
+`@quasar/app-vite` 3 要求各模式的依赖放在各自的 `/src-<mode>` 目录。本项目把根目录与 `src-electron` 组成同一个 Bun workspace：
+
+- **根 `package.json`**：渲染进程（`src/`）与构建工具的依赖。渲染进程的依赖由 Vite 打进 bundle，不会安装到打包后的应用里。
+- **`src-electron/package.json`**：`dependencies` 是主进程在运行时 `import` 的包（puppeteer 系列、velopack），构建时不进 bundle，由 Quasar 按解析到的确切版本安装到 `dist/electron/UnPackaged`；`devDependencies` 是只在构建时用的 `electron` 与 `@electron/packager`。主进程新增运行时依赖时用 `bun add --cwd src-electron <包>`，否则它会被打进 `electron-main.js`，原生模块会因此加载失败。
+- **锁文件只有根目录的 `bun.lock`**，`bun install`、`bun audit`、CI 和安全更新工作流都只需在根目录运行。
+- **`bunfig.toml` 把安装方式固定为提升式**（`linker = "hoisted"`）。Bun 对 workspace 默认用隔离式安装，那样测试无法从 `src/__tests__` 里 mock `electron`、`velopack`。提升式安装下 `src-electron/node_modules` 通常不存在，Quasar 每次构建会在该目录补跑一次 `bun install`（无变化，不到一秒）。
+- **`UnPackaged/package.json` 以根 `package.json` 为底**，所以根目录的 `overrides` 对打包后的应用同样生效；`quasar.config.ts` 的 `extendElectronPackageJson` 去掉了在那里用不上的 `workspaces` 与 `patchedDependencies`。
+
+构建时注入的常量走 `import.meta.env`：Quasar 自己的是 `import.meta.env.QUASAR_*`（如 `QUASAR_DEV`、`QUASAR_APP_URL`），项目自己的在 `quasar.config.ts` 的 `build.defineEnv` 里加，并在 `src/env.d.ts` 的 `ImportMetaEnv` 里声明类型。主进程里读取运行时环境变量（如 `ELECTRON_DEBUG`）仍用 `process.env`。
+
 ## 依赖安全更新
 
 每周的 `.github/workflows/security-updates.yml` 会跑 `bun audit fix`，但它只能在上游声明的版本范围内升级。被上游范围卡住的漏洞要手动处理，本地用 `bun audit` 查看现状。
@@ -65,18 +77,14 @@ ad-hoc 签名不会让 Apple 验证开发者身份，也不会消除 Gatekeeper 
 
 目前的 overrides 及可以删除的时机：
 
-| 依赖方 › 包                                          | 覆盖为                | 原因                                            | 何时删除                              |
-| ---------------------------------------------------- | --------------------- | ----------------------------------------------- | ------------------------------------- |
-| `puppeteer-in-electron` › `uuid`                     | `^11.1.1`             | 上游声明 `^8.3.2`（GHSA-w5hq-g745-h8pq）        | 上游放宽范围后                        |
-| `@electron/asar` › `glob` / `minimatch`              | `^14.0.2` / `^11.0.1` | GHSA-3g3m-2fjr-6pw4 / GHSA-g3hv-75wg-m249       | `@electron/asar` 自己升到这两个版本后 |
-| `sucrase` › `glob`                                   | `^14.0.2`             | 同上（经 `tailwindcss` 3 引入）                 | 升级 Tailwind 4 后                    |
-| `archiver-utils` › `glob`                            | `^14.0.2`             | 同上（经 `@quasar/app-vite` 2 引入，仅 BEX 用） | 升级 `@quasar/app-vite` 3 后          |
-| `@typescript-eslint/typescript-estree` › `minimatch` | `^11.0.1`             | GHSA-g3hv-75wg-m249                             | typescript-eslint 自己升级后          |
-| `@quasar/app-vite` › `esbuild`                       | `^0.28.1`             | 上游声明 `^0.27.4`（GHSA-g7r4-m6w7-qqqr）       | 升级 `@quasar/app-vite` 3 后          |
+| 依赖方 › 包                                          | 覆盖为                | 原因                                      | 何时删除                              |
+| ---------------------------------------------------- | --------------------- | ----------------------------------------- | ------------------------------------- |
+| `puppeteer-in-electron` › `uuid`                     | `^11.1.1`             | 上游声明 `^8.3.2`（GHSA-w5hq-g745-h8pq）  | 上游放宽范围后                        |
+| `@electron/asar` › `glob` / `minimatch`              | `^14.0.2` / `^11.0.1` | GHSA-3g3m-2fjr-6pw4 / GHSA-g3hv-75wg-m249 | `@electron/asar` 自己升到这两个版本后 |
+| `sucrase` › `glob`                                   | `^14.0.2`             | 同上（经 `tailwindcss` 3 引入）           | 升级 Tailwind 4 后                    |
+| `@typescript-eslint/typescript-estree` › `minimatch` | `^11.0.1`             | GHSA-g3hv-75wg-m249                       | typescript-eslint 自己升级后          |
 
 覆盖到的包都同时提供 CommonJS 与 ESM 入口，不要求 Node 22 的 `require(esm)`。删除某条 override 后跑一次 `bun install && bun audit` 确认没有回退。
-
-**尚未修复**：`@quasar/app-vite` 2.x 及其 `@quasar/render-ssr-error`、`@quasar/ssl-certificate`（GHSA-fh39-c73x-5pjv、GHSA-r5mf-4r5x-q78f、GHSA-5m6h-8g35-p3m7、GHSA-q9mq-245r-4g93），修复版本只在 3.x。这几条涉及开发服务器的 HTTPS 证书缓存、SSR/SSG 的开发错误页与 nonce、以及构建时清理输出目录，本项目不使用 SSR/SSG，也没有开启开发服务器 HTTPS。升级到 3.x 是一次独立的迁移：Electron 主进程改用 Rolldown 打包、`process.env` 改为 `import.meta.env`、各模式的依赖移到 `/src-<mode>` 目录、路径别名只保留 `@/`、要求 vue-router 5。
 
 **升级 Electron 抓取相关依赖后的验证**（`puppeteer`、`puppeteer-extra`、`puppeteer-in-electron`、`electron`）：类型检查和单元测试覆盖不到主进程里的抓取链路，需要实际跑一次。
 

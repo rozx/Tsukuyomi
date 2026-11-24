@@ -35,6 +35,8 @@ bun test --watch                   # 监听模式
 
 **版本号**: 仓库只存 `x.y.z`（`bun run bump` 修改）；界面上的 `x.y.z.提交数 (短 SHA)` 由 [`vite-plugins/build-info.ts`](vite-plugins/build-info.ts) 在构建时生成（`BUILD_COMMIT` → git → `dev`）。没有 pre-commit 自动 bump，不要手动写第 4 段 build 号。
 
+**依赖与构建常量**: 根目录和 `src-electron` 是同一个 Bun workspace（只有根目录的 `bun.lock`）。Electron 主进程运行时 `import` 的包加到 `src-electron/package.json`（`bun add --cwd src-electron <包>`），其余在根 `package.json`。构建常量用 `import.meta.env`（Quasar 的 `QUASAR_*`；项目自己的在 `quasar.config.ts` 的 `build.defineEnv` 加、在 `src/env.d.ts` 声明），不要用 `process.env.DEV`。Quasar CLI 需要 Node 22.22+（见 `.nvmrc`）。
+
 ---
 
 ## 代码风格

@@ -1,4 +1,4 @@
-// Stub for #q-app/wrappers so istanbul can instrument boot/router/store
+// Stub for #q-app so istanbul can instrument boot/router/store
 // entry points during coverage collection. None of these factories are
 // actually invoked during tests.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

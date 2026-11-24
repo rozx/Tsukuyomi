@@ -17,6 +17,7 @@ import { routeNewWindowsToSystemBrowser } from './external-links';
 import { VelopackApp } from 'velopack';
 import { registerDesktopUpdates } from './desktop-update-ipc';
 import { registerElectronMcpIpc } from './mcp-ipc';
+import { resolveElectronAssetsPath, resolvePublicPath } from '#q-app/electron/main';
 
 // 必须先处理 Velopack 启动钩子，再获取单实例锁或初始化 Puppeteer。
 if (app.isPackaged) VelopackApp.build().setAutoApplyOnStartup(false).run();
@@ -55,16 +56,14 @@ if (isPrimaryInstance) {
 // 检测是否为开发环境
 // 优先检查 app.isPackaged（Electron 打包后的标志）
 // 然后检查环境变量
-const isDev =
-  !app.isPackaged && (process.env.DEV === 'true' || process.env.NODE_ENV !== 'production');
+const isDev = !app.isPackaged && import.meta.env.QUASAR_DEV;
 // 调试模式：通过环境变量控制是否打开开发者工具（用于调试构建）
 const isDebugMode = process.env.ELECTRON_DEBUG === 'true' || isDev;
 
 // 记录环境信息以便调试
 console.log('[Electron] Environment info:', {
   isPackaged: app.isPackaged,
-  NODE_ENV: process.env.NODE_ENV,
-  DEV: process.env.DEV,
+  QUASAR_DEV: import.meta.env.QUASAR_DEV,
   ELECTRON_DEBUG: process.env.ELECTRON_DEBUG,
   isDev,
   isDebugMode,
@@ -93,6 +92,9 @@ function handleLoadError(window: BrowserWindow | null, err: unknown, path: strin
 
 function resolveSplashLogoBase64(): string {
   const candidates = [
+    // Quasar 按开发 / 打包两种布局解析 public 与 electron-assets 目录
+    resolvePublicPath('icons', 'android-chrome-512x512.png'),
+    resolveElectronAssetsPath('icons', 'icon.png'),
     join(__dirname, '..', 'icons', 'android-chrome-512x512.png'),
     join(__dirname, '..', '..', 'public', 'icons', 'android-chrome-512x512.png'),
     join(process.resourcesPath || __dirname, 'icons', 'android-chrome-512x512.png'),
@@ -167,10 +169,10 @@ function closeSplashWindow(): void {
 
 function resolvePreloadPath(): string | null {
   const candidates = [
-    // Packaged layout (Quasar places it under preload/ and .cjs extension)
-    join(__dirname, 'preload', 'electron-preload.cjs'),
-    // UnPackaged dev build (sometimes .cjs or .js)
+    // @quasar/app-vite 3：开发与打包后预加载脚本都与主进程脚本同目录
     join(__dirname, 'electron-preload.cjs'),
+    // 旧布局（@quasar/app-vite 2 放在 preload/ 下），保留作兜底
+    join(__dirname, 'preload', 'electron-preload.cjs'),
     join(__dirname, 'electron-preload.js'),
     // Fallback relative parent (rare, but keep for safety)
     join(__dirname, '../preload/electron-preload.cjs'),
@@ -189,7 +191,7 @@ function resolvePreloadPath(): string | null {
 
 function loadDevServer(): void {
   if (!mainWindow) return;
-  const devUrl = 'http://localhost:9000';
+  const devUrl = import.meta.env.QUASAR_APP_URL || 'http://localhost:9000';
   console.log(`[Electron] Loading dev server: ${devUrl}`);
   void mainWindow.loadURL(devUrl).catch((err) => {
     console.error('[Electron] Failed to load dev server:', err);
@@ -385,6 +387,11 @@ function createWindow() {
       }
     },
   );
+
+  // 预加载脚本执行失败时 electronAPI 不可用，渲染进程只会表现为「不是桌面版」，这里留下原因
+  mainWindow.webContents.on('preload-error', (_event, failedPath, error) => {
+    console.error(`[Electron] Preload script failed: ${failedPath}`, error);
+  });
 
   // 监听 DOM 就绪事件
   mainWindow.webContents.on('dom-ready', () => {

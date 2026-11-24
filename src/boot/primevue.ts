@@ -1,4 +1,4 @@
-import { defineBoot } from '#q-app/wrappers';
+import { defineBoot } from '#q-app';
 import PrimeVue from 'primevue/config';
 import TsukuyomiPreset from 'src/theme/tsukuyomi-preset';
 import ConfirmationService from 'primevue/confirmationservice';

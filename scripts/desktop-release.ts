@@ -46,8 +46,9 @@ export function releasePlan(platform: string, arch: string, version: string) {
       '--signEntitlements',
       'src-electron/mac.entitlements',
     );
-  else if (platform === 'win32') args.push('--noInst', '--icon', 'src-electron/icons/icon.ico');
-  else args.push('--icon', 'src-electron/icons/icon.png');
+  else if (platform === 'win32')
+    args.push('--noInst', '--icon', 'src-electron/electron-assets/icons/icon.ico');
+  else args.push('--icon', 'src-electron/electron-assets/icons/icon.png');
   return { channel, packDir, args };
 }
 
@@ -103,11 +104,13 @@ function run(command: string, args: string[], env = process.env) {
 }
 
 async function main() {
-  const pkg = JSON.parse(await readFile('package.json', 'utf8')) as {
-    version: string;
+  const pkg = JSON.parse(await readFile('package.json', 'utf8')) as { version: string };
+  // 主进程的依赖（包括 velopack）列在 src-electron/package.json 里
+  const electronPkg = JSON.parse(await readFile('src-electron/package.json', 'utf8')) as {
     dependencies: Record<string, string>;
   };
-  if (pkg.dependencies.velopack !== VPK_VERSION) throw new Error('velopack 与 vpk 版本必须一致');
+  if (electronPkg.dependencies.velopack !== VPK_VERSION)
+    throw new Error('velopack 与 vpk 版本必须一致');
   if (process.argv[2] === 'verify') {
     const [, , , dir, version, ...channels] = process.argv;
     if (!dir || !version || !channels.length) throw new Error('需要目录、版本和通道');

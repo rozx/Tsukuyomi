@@ -7,6 +7,6 @@ import { formatAppVersion } from 'src/utils/app-version';
  */
 export const APP_DISPLAY_VERSION = formatAppVersion(
   APP_VERSION,
-  process.env.APP_BUILD_COMMIT,
-  process.env.APP_BUILD_COMMIT_COUNT,
+  import.meta.env.APP_BUILD_COMMIT,
+  import.meta.env.APP_BUILD_COMMIT_COUNT,
 );

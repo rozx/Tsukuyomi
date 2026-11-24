@@ -20,7 +20,8 @@ async function flushScroll() {
 describe('路由文档滚动', () => {
   it('同页更新章节 hash 不把帮助正文重新滚到顶部', async () => {
     const scroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => undefined);
-    const router = await createAppRouter();
+    // 路由工厂不使用传入的上下文（store、ssrContext）
+    const router = await createAppRouter({} as Parameters<typeof createAppRouter>[0]);
     await router.push('/help/front-page');
     await flushScroll();
     scroll.mockClear();

@@ -1,4 +1,4 @@
-import { defineRouter } from '#q-app/wrappers';
+import { defineRouter } from '#q-app';
 import {
   createMemoryHistory,
   createRouter,
@@ -18,9 +18,9 @@ import { trackRouteLoading } from './route-loading';
  */
 
 export default defineRouter(function (/* { store, ssrContext } */) {
-  const createHistory = process.env.SERVER
+  const createHistory = import.meta.env.QUASAR_SERVER
     ? createMemoryHistory
-    : process.env.VUE_ROUTER_MODE === 'history'
+    : import.meta.env.QUASAR_VUE_ROUTER_MODE === 'history'
       ? createWebHistory
       : createWebHashHistory;
 
@@ -35,7 +35,7 @@ export default defineRouter(function (/* { store, ssrContext } */) {
     // Leave this as is and make changes in quasar.conf.js instead!
     // quasar.conf.js -> build -> vueRouterMode
     // quasar.conf.js -> build -> publicPath
-    history: createHistory(process.env.VUE_ROUTER_BASE),
+    history: createHistory(import.meta.env.QUASAR_VUE_ROUTER_BASE),
   });
 
   // 切换较慢时在内容区显示加载指示（见 RouteLoadingIndicator），不拦截网络请求

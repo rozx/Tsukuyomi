@@ -23,6 +23,8 @@
   ],
   "ignoreDependencies": [
     "@quasar/extras",
+    "@quasar/app-vite",
+    "velopack",
     "@intlify/unplugin-vue-i18n",
     "@intlify/message-compiler",
     "unplugin-auto-import",

@@ -1,7 +1,7 @@
 // Configuration for your app
-// https://v2.quasar.dev/quasar-cli-vite/quasar-config-file
+// https://quasar.dev/quasar-cli-vite/quasar-config-file
 
-import { defineConfig } from '#q-app/wrappers';
+import { defineConfig } from '#q-app';
 import { fileURLToPath } from 'node:url';
 import { PrimeVueResolver } from 'unplugin-vue-components/resolvers';
 import { dynamicAIProxy } from './vite-plugins/dynamic-ai-proxy';
@@ -32,7 +32,7 @@ function withDevWatchIgnores(watch: { ignored?: unknown } | undefined) {
   return { ...watch, ignored: [...ignored, '**/.claude/**', '**/dist/**'] };
 }
 
-export default defineConfig((ctx: any) => {
+export default defineConfig((ctx) => {
   // 构建时确定版本标识（短 SHA + 可选提交数），用于确认网站部署的是哪个 commit
   const buildInfo = resolveBuildInfo(
     process.env,
@@ -81,33 +81,31 @@ export default defineConfig((ctx: any) => {
       vueRouterMode: 'history', // available values: 'hash', 'history'
       // vueRouterBase,
       // vueDevtools,
-      // vueOptionsAPI: false,
+      // PrimeVue 的组件用 Options API 写成；@quasar/app-vite 3 默认关闭它，必须显式打开
+      vueOptionsAPI: true,
+
+      // @quasar/app-vite 3 只注入 `@/` 别名；项目里统一用 `src/...`，在这里补回
+      alias: {
+        src: ctx.appPaths.srcDir,
+      },
 
       // rebuildCache: true, // rebuilds Vite/linter/etc cache on startup
 
       // 在 Electron 模式下使用相对路径，确保 file:// 协议能正确加载资源
-      publicPath:
-        'pwa' in ctx.mode || 'ssr' in ctx.mode ? '/' : 'electron' in ctx.mode ? './' : '/',
+      // ctx.mode 的每个模式都有布尔值，不能用 `'electron' in ctx.mode` 判断
+      publicPath: ctx.mode.electron ? './' : '/',
       // analyze: true,
-      env: {
+      // 以 import.meta.env.APP_BUILD_* 的形式注入（见 src/constants/build-info.ts）
+      defineEnv: {
         APP_BUILD_COMMIT: buildInfo.commit,
         APP_BUILD_COMMIT_COUNT: buildInfo.commitCount?.toString() ?? '',
       },
-      // rawDefine: {}
+      // define: {}
       // ignorePublicFolder: true,
       // minify: false,
-      // polyfillModulePreload: true,
       // distDir
 
       extendViteConf(viteConf: any) {
-        if (ctx.dev) {
-          // index.html 的 Quasar 入口由插件注入，依赖扫描读取原始 HTML 时看不到它。
-          // 显式扫描实际入口（包括懒加载路由/服务），避免恢复途中发现新依赖而整页重载。
-          viteConf.optimizeDeps = {
-            ...viteConf.optimizeDeps,
-            entries: [ctx.appPaths.resolve.entry('client-entry.js')],
-          };
-        }
         // Reduce log noise in terminal
         viteConf.logLevel = 'error';
         // Suppress large chunk size warnings
@@ -165,7 +163,7 @@ export default defineConfig((ctx: any) => {
             // you need to set `runtimeOnly: false`
             // runtimeOnly: false,
 
-            ssr: ctx.modeName === 'ssr',
+            ssr: Boolean(ctx.mode.ssr || ctx.mode.ssg),
 
             // you need to set i18n resource including paths !
             include: [fileURLToPath(new URL('./src/i18n', import.meta.url))],
@@ -176,28 +174,26 @@ export default defineConfig((ctx: any) => {
         // 生产构建（build:spa / build:electron）不跑它——lint 与 type-check 已由 CI 独立门禁覆盖，
         // 而在部署容器里对整棵 src 树（含 src/__tests__ 上百个测试文件）跑 vueTsc+eslint 既冗余又吃内存，
         // 会导致构建被资源限制打断（exit 1）。
-        ...(ctx.dev
+        ctx.dev
           ? [
-              [
-                'vite-plugin-checker',
-                {
-                  vueTsc: {
-                    tsconfigPath: 'tsconfig.json',
-                  },
-                  eslint: {
-                    lintCommand: 'eslint -c ./eslint.config.js "./src*/**/*.{ts,js,mjs,cjs,vue}"',
-                    useFlatConfig: true,
-                    // 未设置时会监听整个项目根目录（含 .claude/worktrees 下其他会话的完整副本），
-                    // 耗尽文件监听上限导致开发服务器以 EMFILE 退出；只监听 lintCommand 覆盖的目录
-                    watchPath: ['./src', './src-electron'],
-                  },
-                  // Turn off in-browser overlay entirely (keep terminal output)
-                  overlay: false,
+              'vite-plugin-checker',
+              {
+                vueTsc: {
+                  tsconfigPath: 'tsconfig.json',
                 },
-                { server: false },
-              ],
+                eslint: {
+                  lintCommand: 'eslint -c ./eslint.config.js "./src*/**/*.{ts,js,mjs,cjs,vue}"',
+                  useFlatConfig: true,
+                  // 未设置时会监听整个项目根目录（含 .claude/worktrees 下其他会话的完整副本），
+                  // 耗尽文件监听上限导致开发服务器以 EMFILE 退出；只监听 lintCommand 覆盖的目录
+                  watchPath: ['./src', './src-electron'],
+                },
+                // Turn off in-browser overlay entirely (keep terminal output)
+                overlay: false,
+              },
+              { server: false },
             ]
-          : []),
+          : null,
       ],
     },
 
@@ -296,15 +292,17 @@ export default defineConfig((ctx: any) => {
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-electron-apps/configuring-electron
     electron: {
-      // 原生模块由 Node 在运行时加载，不进入 esbuild bundle。
-      extendElectronMainConf(conf: { external?: string[] }) {
-        conf.external = [...(conf.external ?? []), 'velopack'];
-      },
-      // UnPackaged 目录只复制 package.json、不含 patches/，保留 patchedDependencies 会让
-      // `bun install --production` 找不到补丁文件而失败。补丁只影响渲染进程依赖，
-      // 构建时已从根目录打过补丁的 node_modules 打包进 bundle，打包产物无需再次应用。
-      extendPackageJson(pkg: { patchedDependencies?: unknown }) {
+      // 主进程用到的 npm 包列在 src-electron/package.json 的 dependencies 里：它们不进 bundle，
+      // 由 Quasar 安装到 UnPackaged（原生模块 velopack 也在其中，由 Node 在运行时加载）。
+      //
+      // UnPackaged/package.json 以根 package.json 为底，这里去掉在那里用不上的字段：
+      // - patchedDependencies：UnPackaged 不含 patches/，保留会让 `bun install --production` 找不到
+      //   补丁文件而失败。补丁只影响渲染进程依赖，构建时已经打进 bundle。
+      // - workspaces：UnPackaged 里没有 src-electron 目录。
+      // overrides 要保留：puppeteer-in-electron 的 uuid 靠它换成修复版本。
+      extendElectronPackageJson(pkg: { patchedDependencies?: unknown; workspaces?: unknown }) {
         delete pkg.patchedDependencies;
+        delete pkg.workspaces;
       },
       preloadScripts: ['electron-preload'],
       inspectPort: 5858,
@@ -314,7 +312,7 @@ export default defineConfig((ctx: any) => {
         name: 'Tsukuyomi - Moonlit Translator',
         executableName: 'Tsukuyomi - Moonlit Translator',
         appBundleId: 'tsukuyomi',
-        icon: 'src-electron/icons/icon',
+        icon: 'src-electron/electron-assets/icons/icon',
         asar: { unpack: '**/*.node' },
         // Quasar 已安装生产依赖；避免另一个包管理器改写 Bun 的依赖树。
         prune: false,

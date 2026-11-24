@@ -1,4 +1,4 @@
-import { defineBoot } from '#q-app/wrappers';
+import { defineBoot } from '#q-app';
 
 /**
  * Toast 历史记录拦截插件

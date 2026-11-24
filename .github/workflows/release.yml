@@ -370,6 +370,10 @@ jobs:
           ref: ${{ needs.create-release.outputs.version }}
           # 完整历史：构建时用 git rev-list --count 生成版本号里的提交数（见 vite-plugins/build-info.ts）
           fetch-depth: 0
+      # @quasar/app-vite 3 要求 Node >= 22.22
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest

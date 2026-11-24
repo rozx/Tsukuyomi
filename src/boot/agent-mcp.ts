@@ -1,5 +1,5 @@
 import { watch } from 'vue';
-import { defineBoot } from '#q-app/wrappers';
+import { defineBoot } from '#q-app';
 import { recordToastInHistory } from 'src/composables/useToastHistory';
 import { translateText } from 'src/i18n/translate';
 import { startAgentMcpRuntime } from 'src/services/agent-mcp/runtime';

@@ -33,6 +33,8 @@ bunx vitest run -t "测试描述"  # 按测试名过滤
 
 **版本号**：仓库里只维护 `x.y.z`（`src/constants/version.ts` / `package.json`，由 `bun run bump <major|minor|patch|x.y.z>` 修改）。界面显示的 `x.y.z.提交数 (短 SHA)` 在构建时由 [`vite-plugins/build-info.ts`](vite-plugins/build-info.ts) 生成：短 SHA 依次取 `BUILD_COMMIT` 环境变量（DigitalOcean 绑定 `${<组件>.COMMIT_HASH}`）→ `git rev-parse HEAD` → `dev`；提交数只在完整克隆时显示。不再有 pre-commit 自动 bump，提交时不要手动写第 4 段 build 号（会让并行分支的 PR 冲突）。
 
+**依赖与构建常量**：根目录和 `src-electron` 是同一个 Bun workspace（锁文件只有根目录的 `bun.lock`，命令都在根目录运行）。Electron 主进程在运行时 `import` 的包要加到 `src-electron/package.json`（`bun add --cwd src-electron <包>`），其余依赖在根 `package.json`。构建时注入的常量用 `import.meta.env`（Quasar 提供 `QUASAR_*`，项目自己的在 `quasar.config.ts` 的 `build.defineEnv` 里加并在 `src/env.d.ts` 声明），不要再用 `process.env.DEV` 之类的写法。Quasar CLI 需要 Node 22.22 及以上（见 `.nvmrc`）。详见 [docs/BUILD_TROUBLESHOOTING.md](docs/BUILD_TROUBLESHOOTING.md)。
+
 ## 架构分层
 
 ```

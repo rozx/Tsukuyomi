@@ -1,4 +1,4 @@
-import { defineBoot } from '#q-app/wrappers';
+import { defineBoot } from '#q-app';
 import { initializeI18n } from 'src/i18n/setup';
 import type { MessageSchema } from 'src/i18n/types';
 

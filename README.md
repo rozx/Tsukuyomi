@@ -192,7 +192,7 @@ Tsukuyomi 采用 Bring Your Own Key 模式，内置三种提供商：
 
 ### 3. 从源码运行
 
-本项目基于 [Bun](https://bun.sh) 构建：
+本项目基于 [Bun](https://bun.sh) 构建，Quasar CLI 另需 Node.js 22.22 及以上（版本见 `.nvmrc`）：
 
 ```bash
 # 克隆仓库并进入
@@ -228,7 +228,7 @@ bun run dev
 | :---------------- | :-------------------------------------------------------------------------------------------------------------------- |
 | **前端框架**      | Vue 3.5 · Quasar 2.32 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US) |
 | **桌面封装**      | Electron 45（Web SPA 与桌面端共用同一份代码，通过 `useDeviceVariant` 强制 Desktop 变体）                              |
-| **运行时 / 构建** | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                         |
+| **运行时 / 构建** | Bun ≥ 1.0 · Node ≥ 22.22 · Vite · Quasar CLI                                                                          |
 | **AI SDK**        | Vercel AI SDK（OpenAI 兼容 · Google · Anthropic）；通过 OpenAI 配置接入兼容协议服务（BYOK）                           |
 | **本地嵌入**      | Transformers.js (ONNX Runtime Web) · `bekko-embedding-v1-a25m` · 384 维 mean pooling · WebGPU（优先）/ WASM（回退）   |
 | **存储 / 同步**   | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 哈希 manifest · 条件 GET + 伪 CAS 并发保护                |

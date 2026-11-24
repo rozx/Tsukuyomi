@@ -192,7 +192,7 @@ See the [AI import workspace guide](public/help/en-US/import-guide.md) for more 
 
 ### 3. Run from source
 
-The project is built with [Bun](https://bun.sh):
+The project is built with [Bun](https://bun.sh); the Quasar CLI also needs Node.js 22.22 or later (see `.nvmrc`):
 
 ```bash
 # Clone the repository
@@ -228,7 +228,7 @@ bun run dev
 | :-------------------- | :--------------------------------------------------------------------------------------------------------------------------- |
 | **Frontend**          | Vue 3.5 · Quasar 2.32 · TypeScript 5.9 · Pinia 3 · PrimeVue 4.5 · Tailwind CSS 3.4 · Vue-i18n (zh-CN / zh-TW / en-US)        |
 | **Desktop**           | Electron 45 (the web SPA and desktop app share one codebase; `useDeviceVariant` forces the Desktop variant)                  |
-| **Runtime / build**   | Bun ≥ 1.0 · Vite · Quasar CLI                                                                                                |
+| **Runtime / build**   | Bun ≥ 1.0 · Node ≥ 22.22 · Vite · Quasar CLI                                                                                 |
 | **AI SDK**            | Vercel AI SDK (OpenAI-compatible · Google · Anthropic); compatible services connect through the OpenAI provider (BYOK)       |
 | **Local embeddings**  | Transformers.js (ONNX Runtime Web) · `bekko-embedding-v1-a25m` · 384-dim mean pooling · WebGPU (preferred) / WASM (fallback) |
 | **Storage / sync**    | IndexedDB (`idb`) · GitHub Gist (`@octokit/rest`) · SHA-256 hash manifest · conditional GET + pseudo-CAS concurrency guard   |
