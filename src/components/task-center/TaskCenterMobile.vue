@@ -71,9 +71,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 抽屉正文自己滚动，详情视图不另设滚动；日志区至少占大半屏 */
+/* 抽屉是全出血的（正文不滚动）：详情视图自己滚动（.tc-dv 的 overflow-y: auto）；日志区至少占大半屏 */
 .tc-mobile-detail {
   --tc-log-min-height: 62dvh;
-  overflow: visible;
+  overscroll-behavior: contain;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 </style>

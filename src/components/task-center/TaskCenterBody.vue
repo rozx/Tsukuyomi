@@ -225,9 +225,15 @@ const pausedText = computed(() => {
   color: var(--moon-opacity-90);
 }
 
-/* 手机抽屉：由抽屉正文滚动，列表不另设滚动容器，分组标题栏才能相对抽屉吸顶 */
+/* 手机抽屉是全出血的（抽屉正文不滚动）：占满正文高度，由下面的 .tc-scroll 滚动，
+   分组标题栏相对它吸顶，标题区的暂停 / 停止按钮始终可见 */
+.tc-body--sheet {
+  flex: 1;
+}
+
 .tc-body--sheet .tc-scroll {
-  overflow: visible;
+  overscroll-behavior: contain;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* 固定面板：高度由外层面板尺寸决定（可拖动缩放） */
