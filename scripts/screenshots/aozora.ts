@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { load } from 'cheerio';
 
 /**
  * 截图用的演示书库原文取自青空文库（作者均已进入公有领域）。
@@ -18,35 +19,23 @@ export interface AozoraVolume {
 }
 
 const AOZORA_BASE = 'https://www.aozora.gr.jp/cards/';
-
-function stripTags(html: string): string {
-  return html
-    .replace(/<ruby><rb>(.*?)<\/rb>.*?<\/ruby>/gs, '$1')
-    .replace(/<img[^>]*class="gaiji"[^>]*>/g, '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, '&')
-    .replace(/\r/g, '');
-}
+const VOLUME_MARK = '@@VOL ';
+const CHAPTER_MARK = '@@CH ';
 
 /** 把青空文库的 XHTML 正文拆成卷 / 章 / 段落，注音只保留正文字 */
 export function parseAozoraHtml(html: string): AozoraVolume[] {
-  const mainStart = html.indexOf('class="main_text"');
-  const bodyStart = html.indexOf('>', mainStart) + 1;
-  const bodyEnd = html.indexOf('<div class="bibliographical_information"');
-  const marked = html
-    .slice(bodyStart, bodyEnd === -1 ? undefined : bodyEnd)
-    .replace(
-      /<h3 class="o-midashi">(.*?)<\/h3>/gs,
-      (_, title: string) => `\n@@VOL ${stripTags(title).trim()}\n`,
-    )
-    .replace(
-      /<h[45][^>]*>(.*?)<\/h[45]>/gs,
-      (_, title: string) => `\n@@CH ${stripTags(title).trim()}\n`,
-    )
-    .replace(/<br \/>/g, '\n');
+  const $ = load(html);
+  const main = $('.main_text').first();
+  // 注音读法、注音括号和外字图片不属于正文
+  main.find('rt, rp, img').remove();
+  // 标题换成带标记的独立行，稍后按行切分卷和章
+  main.find('h3.o-midashi').each((_, heading) => {
+    $(heading).text(`\n${VOLUME_MARK}${$(heading).text().trim()}\n`);
+  });
+  main.find('h4, h5').each((_, heading) => {
+    $(heading).text(`\n${CHAPTER_MARK}${$(heading).text().trim()}\n`);
+  });
+  main.find('br').replaceWith('\n');
 
   const volumes: AozoraVolume[] = [];
   let volume: AozoraVolume | undefined;
@@ -60,15 +49,15 @@ export function parseAozoraHtml(html: string): AozoraVolume[] {
     volume.chapters.push(chapter);
   };
 
-  for (const raw of stripTags(marked).split('\n')) {
+  for (const raw of main.text().split('\n')) {
     const line = raw.trim().replace(/^\u3000+|\u3000+$/g, '');
     if (!line) continue;
-    if (line.startsWith('@@VOL ')) {
-      volume = { title: line.slice(6), chapters: [] };
+    if (line.startsWith(VOLUME_MARK)) {
+      volume = { title: line.slice(VOLUME_MARK.length), chapters: [] };
       volumes.push(volume);
       chapter = undefined;
-    } else if (line.startsWith('@@CH ')) {
-      startChapter(line.slice(5));
+    } else if (line.startsWith(CHAPTER_MARK)) {
+      startChapter(line.slice(CHAPTER_MARK.length));
     } else {
       if (!chapter) startChapter(volume?.title ?? '本文');
       chapter!.paragraphs.push(line);

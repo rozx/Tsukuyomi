@@ -21,6 +21,7 @@ import type { AppLocale } from 'src/models/locale';
 import { loadAozoraWork } from './aozora';
 import type { AozoraVolume } from './aozora';
 import { DEMO_BOOKS } from './demo-library';
+import type * as SeedModule from './seed-in-page';
 import type { DemoSeedPayload, DemoSeedResult } from './seed-in-page';
 import { DEVICES, SHOTS, prepareShot } from './shots';
 import type { DeviceName, ShotContext } from './shots';
@@ -110,9 +111,16 @@ async function openPage(browser: Browser, baseUrl: string): Promise<Page> {
   return page;
 }
 
+/** 在页面里加载注入模块；数据作为参数传入，不拼进要执行的代码 */
 async function seed(page: Page, payload: DemoSeedPayload): Promise<DemoSeedResult> {
-  const expression = `import(${JSON.stringify(SEED_MODULE)}).then((m) => m.seedDemoLibrary(${JSON.stringify(payload)}))`;
-  return (await page.evaluate(expression)) as DemoSeedResult;
+  return page.evaluate(
+    async (modulePath: string, data: DemoSeedPayload) => {
+      const module = (await import(/* @vite-ignore */ modulePath)) as typeof SeedModule;
+      return module.seedDemoLibrary(data);
+    },
+    SEED_MODULE,
+    payload,
+  );
 }
 
 async function saveScreenshot(page: Page, file: string): Promise<number> {
