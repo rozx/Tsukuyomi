@@ -553,6 +553,15 @@
     }
   },
   {
+    "id": "v0.20.0",
+    "title": "v0.20.0",
+    "file": "RELEASE_NOTES_v0.20.0.md",
+    "path": "releaseNotes",
+    "category": "Release notes",
+    "description": "Whole-chapter tasks now run through a global queue managed in the task center, with batch start and a concurrency setting; new External Agent workspace (MCP / WebMCP); AI import is now a three-step Source → Organize → Import flow; the assistant moved to the top bar with a new desk pet, plus unified page headers, buttons, and settings; model information is looked up in the latest online catalog; dependency security advisories cleared",
+    "categoryId": "release-notes"
+  },
+  {
     "id": "v0.19.2",
     "title": "v0.19.2",
     "file": "RELEASE_NOTES_v0.19.2.md",

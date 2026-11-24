@@ -162,6 +162,8 @@ Configure and run Gist sync.
 
 ### Actions {#settings-guide-section-21}
 
+The sync tab is grouped into **Auto sync**, **Sync now**, and **Danger zone**, and its options are switches:
+
 - **Validate token**
 - **Upload to Gist**
 - **Download from Gist** (requires a Gist ID)
@@ -372,6 +374,8 @@ Shows:
 - Version as `version.commit-count (commit SHA)`, e.g. `0.18.1.1532 (0fa51f9)`; when the commit count is unknown, only `version (commit SHA)`
 - Author link (Rozx)
 - GitHub repository
+- A **Report an issue** link in the **Feedback** row: opens GitHub's new-issue page with the current version and runtime environment filled in
+- A **Star on GitHub** button
 
 > This tab is for identifying the application/version and has no editable settings.
 

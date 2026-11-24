@@ -104,7 +104,7 @@ The web app and the Windows, macOS, and Linux desktop builds share one codebase,
 - **Refreshed interface**: page headers, buttons, and the settings page share one style on desktop and tablet, the assistant moved to the top system bar, and a Tsukuyomi desk pet sits in the bottom-right corner on desktop.
 - **And more**: model details are looked up from the latest online catalog, the sidebar has a Report an issue entry, and external links in the desktop app open in your system browser.
 
-[See the full changelog](https://github.com/rozx/Tsukuyomi/releases)
+[Read the v0.20.0 release notes (Chinese)](public/releaseNotes/RELEASE_NOTES_v0.20.0.md) · [Full changelog](https://github.com/rozx/Tsukuyomi/releases)
 
 ## 🚀 Quick start
 

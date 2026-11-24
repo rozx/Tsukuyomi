@@ -553,6 +553,15 @@
     }
   },
   {
+    "id": "v0.20.0",
+    "title": "v0.20.0",
+    "file": "RELEASE_NOTES_v0.20.0.md",
+    "path": "releaseNotes",
+    "category": "更新紀錄",
+    "description": "整章任務改為全域佇列，頂部任務中心統一管理並支援批次啟動與並行設定；新增外部 Agent 工作台（MCP / WebMCP）；AI 匯入改為「來源 → 整理 → 匯入」三步引導；月詠入口移到頂部列、新增月詠桌寵，統一頁首、按鈕與設定頁；模型資料線上查詢最新目錄；相依套件安全告警清零",
+    "categoryId": "release-notes"
+  },
+  {
     "id": "v0.19.2",
     "title": "v0.19.2",
     "file": "RELEASE_NOTES_v0.19.2.md",

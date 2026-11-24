@@ -104,7 +104,7 @@
 - **介面翻新**：桌面與平板統一頁首、按鈕和設定頁樣式，月詠入口移到頂部系統列，桌面端右下角新增月詠桌寵。
 - **更多改進**：模型資料改為線上查詢最新目錄，側邊欄新增「回報問題」入口，桌面版的外部連結改用系統瀏覽器開啟。
 
-[查看全部更新紀錄](https://github.com/rozx/Tsukuyomi/releases)
+[閱讀 v0.20.0 發布說明（簡體中文）](public/releaseNotes/RELEASE_NOTES_v0.20.0.md) · [全部更新紀錄](https://github.com/rozx/Tsukuyomi/releases)
 
 ## 🚀 快速開始
 

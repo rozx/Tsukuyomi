@@ -80,7 +80,7 @@ Closing with unsaved changes asks you to continue editing or discard the changes
 
 ## ⚙️ Model information and connection testing {#ai-models-guide-section-7}
 
-**Fetch model information** queries only the bundled [models.dev](https://models.dev) catalog. It works offline, does not generate model output, and needs no API key. For an unknown model, it asks you to enter limits manually without clearing existing values.
+**Fetch model information** looks the model up in the latest [models.dev](https://models.dev) catalog online. It does not generate model output and needs no API key. If models.dev cannot be reached, it falls back to the catalog snapshot bundled with the app and tells you the values may be outdated. For a model the catalog does not list, it asks you to enter limits manually without clearing existing values.
 
 - **Context window**: input limit; 0 means unset.
 - **Maximum output tokens**: response limit; 0 means unset.
@@ -209,7 +209,7 @@ A: That model does not accept a temperature parameter. Edit the model, turn off 
 
 **Q: Why is there no catalog record?**
 
-A: The model is absent from the bundled catalog, often for a self-hosted or newly released model. Enter limits from the provider's documentation; current values are retained.
+A: The model is absent from the models.dev catalog, often for a self-hosted or just-released model. If models.dev could not be reached, only the snapshot bundled with the app was checked, so try again once you are online. Enter limits from the provider's documentation; current values are retained.
 
 **Q: What if testing fails?**
 
