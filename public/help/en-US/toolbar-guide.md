@@ -67,11 +67,13 @@ Main navigation:
 - 📚 **Books** — `/books`
 - 📥 **AI import** — `/import`
 - ✨ **AI models** — `/ai`
+- 🔗 **External Agent** — `/mcp`
 
 Bottom navigation:
 
 - ⚙️ **Settings** — `/settings`
 - ❓ **Help** — `/help`
+- 📣 **Report an issue** — opens GitHub's new-issue page with the current version and runtime environment filled in (the desktop app uses your system browser)
 
 ### 3) Right assistant panel (`AppRightPanelDesktop`) {#toolbar-guide-section-5}
 
@@ -133,7 +135,7 @@ A compact system bar plus a left navigation rail. There is no vertical tool rail
 
 ### Navigation and assistant {#toolbar-guide-section-9}
 
-- **Left navigation rail** (`TabletNavRail`): the logo returns home; main entries are Home / Library / AI import / AI models, with Help / Settings pinned at the bottom.
+- **Left navigation rail** (`TabletNavRail`): the logo returns home; main entries are Home / Library / AI import / AI models / External Agent, with Report an issue / Help / Settings pinned at the bottom.
 - **List / contents toggle** ("Collapse book list" / "Expand book list", "Collapse contents" / "Expand contents"): at the far left of the top system bar. In portrait, the list or contents opens as an overlay; tap outside to close it, and the button switches back to its collapsed state. In landscape, opening it narrows the content area.
 - **Tsukuyomi**: available on every tablet page from the "Tsukuyomi" button in the top system bar. The panel slides in from the right; tap the mask or the button again to close it (the mask does not cover the top system bar). On the AI import page in landscape, the import assistant stays docked, so the button stays highlighted and does nothing; in portrait, the button opens and closes the import assistant, which slides in from the right.
 

@@ -21,6 +21,7 @@ bun run lint                   # ESLint 检查
 bun run type-check             # TypeScript 类型检查
 bun run quality-check          # Fallow 代码质量检查（要先跑 test:coverage 才有 CRAP 评分数据）
 bun run format                 # Prettier 格式化
+bun run screenshots            # 用演示书库重拍 README 截图（先启动 bun run dev；见 scripts/screenshots/）
 
 bun run test                   # 运行所有测试（vitest）
 bun run test:watch             # 监听模式
@@ -192,6 +193,7 @@ AI: Vercel AI SDK 7 + OpenAI Compatible / Google provider；保留现有单步�
 
 - **代理 skill 位置**：项目 skill 只放 `.agents/skills/`（通用标准）和 `.claude/skills/`（Claude Code），两处保持一致；不要再建 `.agent/`、`.kilocode/`、`.opencode/`、`.github/skills` 等工具专属副本
 - **多语言文档**：帮助文档在 `public/help/<locale>/`（zh-CN 为源，zh-TW / en-US 同步，文件名与 `{#id}` 锚点一致）；README 有 `README.md`（简中）/ `README.zh-TW.md` / `README.en-US.md`；更新日志仅简中。改一种语言时同步另外两种，发版流程见 `release-ready` skill
+- **README 截图**：`public/screenshots/<locale>/<设备>-<名称>.webp`，由 `bun run screenshots` 生成（清单在 `scripts/screenshots/shots.ts`，演示书库取自青空文库的公有领域作品）。界面有明显改动时重拍三种语言，不要用真实书库或第三方封面截图
 - [AGENTS.md](AGENTS.md) — AI 编码代理指南（与本文件有重叠，更简洁）
 - [docs/TRANSLATION_GUIDE.md](docs/TRANSLATION_GUIDE.md) — 翻译规则、敬语处理、AI 提示词
 - [docs/BUILD_TROUBLESHOOTING.md](docs/BUILD_TROUBLESHOOTING.md) — 构建问题排查
