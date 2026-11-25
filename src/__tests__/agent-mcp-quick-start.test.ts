@@ -248,6 +248,34 @@ describe('buildAgentQuickStartGuide', () => {
     expect(guide).toContain('--widget-origin');
   });
 
+  it('浏览器通道提醒：工具可能被客户端按需加载、中继刚启动要稍等、不必停留在「外部 Agent」页面', () => {
+    const guide = webGuide();
+    // 有的客户端不直接列出 MCP 工具：没看到工具不等于没连上
+    expect(guide).toMatch(/按需加载/);
+    expect(guide).toMatch(/稍等/);
+    expect(guide).toMatch(/不必停留在「外部 Agent」页面/);
+    expect(webGuide('zh-TW')).toMatch(/按需載入/);
+    expect(webGuide('zh-TW')).toMatch(/不必停留在「外部 Agent」頁面/);
+    expect(webGuide('en-US')).toMatch(/on demand/);
+    expect(webGuide('en-US')).toMatch(/any Tsukuyomi page/);
+    // 桌面通道不经中继，不需要这些说明
+    expect(desktopGuide()).not.toMatch(/按需加载/);
+  });
+
+  it('复核时把查前文才确定的称呼、口吻回写到设定；没有本地嵌入时先浏览全部记忆摘要', () => {
+    for (const guide of [desktopGuide(), webGuide()]) {
+      // 查过前文才确定的东西说明设定里缺了它
+      expect(guide).toMatch(/靠 search_paragraphs 查前文才确定的称呼、口吻/);
+      expect(guide).toContain('speaking_style');
+      expect(guide).toMatch(/带敬称的称呼记进记忆，不加进角色别名/);
+      // 记忆只按关键词带出时，开翻前先看一遍摘要
+      expect(guide).toMatch(/local_embedding_enabled: false 时.*list_memories/);
+    }
+    expect(desktopGuide('en-US')).toMatch(/had to confirm with search_paragraphs/);
+    expect(desktopGuide('en-US')).toMatch(/local_embedding_enabled: false.*list_memories/);
+    expect(desktopGuide('zh-TW')).toMatch(/local_embedding_enabled: false 時.*list_memories/);
+  });
+
   it('包含与站内翻译相同的翻译规则：标点、格式、敬语、术语与角色、记忆', () => {
     const guide = desktopGuide();
     expect(guide).toMatch(/^## 翻译规则/m);

@@ -10,23 +10,19 @@
  * 这两处都是中继脚本的内部约定，升级依赖时由 agent-mcp-relay-link.test.ts 校验。
  */
 
+import type { WebMcpRelayLinkStatus } from 'src/models/agent-mcp';
+
 /** 中继默认监听的端口；多个 Agent 客户端各自启动的中继会汇聚到同一个端口上 */
 export const RELAY_DEFAULT_PORT = 9333;
 const DISCOVERY_PROTOCOL = 'webmcp-discovery.v1';
-const PROBE_TIMEOUT_MS = 1500;
+/**
+ * 等中继问候的时间。本机连接本身只要几毫秒，但 Chromium 在同一页面多次连接失败之后
+ * （中继组件扫描端口时会连着失败几十次）会把新的 WebSocket 连接推迟 1～5 秒才握手，
+ * 等得太短就会把正在运行的中继当成没有。
+ */
+const PROBE_TIMEOUT_MS = 6000;
 
-export type RelayLinkState =
-  /** 中继在运行，并且接受过本页 */
-  | 'connected'
-  /** 中继在运行，但本页没有被接受：多半是中继只允许的页面地址与本页不一致 */
-  | 'not-linked'
-  /** 没有找到中继：Agent 客户端还没有启动它 */
-  | 'not-found';
-
-export interface RelayLinkStatus {
-  state: RelayLinkState;
-  port: number | null;
-}
+export type RelayLinkStatus = WebMcpRelayLinkStatus;
 
 /** 中继脚本记录「已接入的中继地址」所用的 sessionStorage 键 */
 export function relayEndpointStorageKey(origin: string): string {

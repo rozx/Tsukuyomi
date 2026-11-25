@@ -6,6 +6,19 @@
  */
 export type WebMcpRelayState = 'idle' | 'enabled' | 'insecure' | 'legacy-native' | 'failed';
 
+/**
+ * 本页与本机中继的连接情况（由页面自己探测）。
+ * - `connected`：中继在运行，并且接受过本页
+ * - `not-linked`：中继在运行，但本页没有被接受：多半是中继只允许的页面地址与本页不一致
+ * - `not-found`：没有找到中继：Agent 客户端还没有启动它
+ */
+export type WebMcpRelayLinkState = 'connected' | 'not-linked' | 'not-found';
+
+export interface WebMcpRelayLinkStatus {
+  state: WebMcpRelayLinkState;
+  port: number | null;
+}
+
 export type ExternalAgentChannel = 'desktop-mcp' | 'webmcp';
 
 export type WebMcpAvailability = 'native-document' | 'native-navigator' | 'unavailable';

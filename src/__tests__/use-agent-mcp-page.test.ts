@@ -20,17 +20,6 @@ vi.mock('src/composables/useToastHistory', () => ({
 vi.mock('src/utils/platform', () => ({
   isElectron: () => platformState.isElectron,
 }));
-// 中继连接状态靠探测本机端口得到，测试里由 relayProbe 控制结果
-const { relayProbe } = vi.hoisted(() => ({
-  relayProbe: {
-    status: { state: 'not-found', port: null } as { state: string; port: number | null },
-  },
-}));
-vi.mock('src/services/agent-mcp/relay-link', async (importOriginal) => ({
-  ...(await importOriginal<Record<string, unknown>>()),
-  checkRelayLink: vi.fn(() => Promise.resolve({ ...relayProbe.status })),
-}));
-
 describe('useAgentMcpPage composable', () => {
   beforeEach(async () => {
     toastAdd.mockClear();
@@ -543,52 +532,91 @@ describe('useAgentMcpPage composable', () => {
   });
 
   it('浏览器端开启后说明是否真的接上了本机中继，并给出原因与本页地址', async () => {
-    const { checkRelayLink } = await import('src/services/agent-mcp/relay-link');
-    vi.mocked(checkRelayLink).mockClear();
-    relayProbe.status = { state: 'not-found', port: null };
     await useSettingsStore().updateSettings({ uiLocale: 'zh-CN' });
     await useSettingsStore().updateAgentMcpSettings({ webMcpEnabled: false });
+    const store = useAgentMcpStore();
+    // 连接状态由应用启动时开始的监视写入，不依赖这个页面是否打开
+    store.setWebMcpRelayLink({ state: 'not-found', port: null });
     const harness = mountHarness();
     const ctx = harness.getCtx();
 
-    // 开关没开时不检查，也不显示
-    await ctx.refreshRelayLink();
-    expect(checkRelayLink).not.toHaveBeenCalled();
+    // 开关没开时不显示
     expect(ctx.relayLinkNotice.value).toBeNull();
 
     await useSettingsStore().updateAgentMcpSettings({ webMcpEnabled: true });
-    await ctx.refreshRelayLink();
+    await nextTick();
     expect(ctx.relayLinkNotice.value?.tone).toBe('info');
     expect(ctx.relayLinkNotice.value?.text).toMatch(/没有找到/);
 
     // 中继在运行但没有接受本页：提示核对允许的页面地址，并给出本页实际地址
-    relayProbe.status = { state: 'not-linked', port: 9333 };
-    await ctx.refreshRelayLink();
+    store.setWebMcpRelayLink({ state: 'not-linked', port: 9333 });
+    await nextTick();
     expect(ctx.relayLinkNotice.value?.tone).toBe('warn');
     expect(ctx.relayLinkNotice.value?.text).toContain('--widget-origin');
     expect(ctx.relayLinkNotice.value?.text).toContain(window.location.origin);
 
-    relayProbe.status = { state: 'connected', port: 9333 };
-    await ctx.refreshRelayLink();
+    store.setWebMcpRelayLink({ state: 'connected', port: 9333 });
+    await nextTick();
     expect(ctx.relayLinkNotice.value?.tone).toBe('ok');
     expect(ctx.relayLinkNotice.value?.text).toContain('9333');
 
+    // 还没有检查结果时不显示
+    store.setWebMcpRelayLink(null);
+    await nextTick();
+    expect(ctx.relayLinkNotice.value).toBeNull();
+
     // 关掉开关后不再显示
+    store.setWebMcpRelayLink({ state: 'connected', port: 9333 });
     await useSettingsStore().updateAgentMcpSettings({ webMcpEnabled: false });
     await nextTick();
     expect(ctx.relayLinkNotice.value).toBeNull();
     harness.unmount();
   });
 
-  it('桌面端不探测中继', async () => {
-    platformState.isElectron = true;
-    const { checkRelayLink } = await import('src/services/agent-mcp/relay-link');
-    vi.mocked(checkRelayLink).mockClear();
+  it('「重新检查」交给应用启动时开始的中继监视；页面自己不再另外定时探测', async () => {
+    const monitor = {
+      start: vi.fn(),
+      stop: vi.fn(),
+      checkNow: vi.fn(() => Promise.resolve(null)),
+    };
+    await useSettingsStore().updateAgentMcpSettings({ webMcpEnabled: true });
+    const { startAgentMcpRuntime } = await import('src/services/agent-mcp/runtime');
+    const runtime = await startAgentMcpRuntime({
+      isElectronEnv: false,
+      webMcpEnv: () => ({
+        document: {
+          modelContext: { registerTool: () => undefined, unregisterTool: () => undefined },
+        },
+        navigator: {},
+      }),
+      webMcpRelay: {
+        enable: () => Promise.resolve('enabled' as const),
+        disable: () => undefined,
+        isEnabled: () => true,
+      },
+      relayLinkMonitor: monitor,
+    });
     const harness = mountHarness();
     await harness.getCtx().refreshRelayLink();
-    expect(checkRelayLink).not.toHaveBeenCalled();
+    expect(monitor.checkNow).toHaveBeenCalledTimes(1);
+
+    // 开关关掉后不检查
+    await useSettingsStore().updateAgentMcpSettings({ webMcpEnabled: false });
+    await harness.getCtx().refreshRelayLink();
+    expect(monitor.checkNow).toHaveBeenCalledTimes(1);
+    harness.unmount();
+    runtime.dispose();
+  });
+
+  it('桌面端不显示中继状态', async () => {
+    platformState.isElectron = true;
+    useAgentMcpStore().setWebMcpRelayLink({ state: 'connected', port: 9333 });
+    await useSettingsStore().updateAgentMcpSettings({ webMcpEnabled: true });
+    const harness = mountHarness();
+    await harness.getCtx().refreshRelayLink();
     expect(harness.getCtx().relayLinkNotice.value).toBeNull();
     harness.unmount();
+    useAgentMcpStore().setWebMcpRelayLink(null);
   });
 
   it('所有工具与内置工作流在三语 i18n 资源中均有完整专属描述键', async () => {

@@ -59,6 +59,28 @@ const MAX_CHUNK_PARAGRAPH_LIMIT = 200;
  */
 const DEFAULT_CHUNK_CHARACTER_LIMIT = 4000;
 
+/**
+ * 这一块之后只剩很少几段时并入这一块，省掉一轮只有几段的「取块 → 提交」。
+ * 剩下的段数不超过段数上限的这个比例、字数不到字符预算的三分之一时才并入
+ * （字数的条件与站内分块 buildChunks 合并小尾块的条件相同）。
+ */
+const TAIL_PARAGRAPH_RATIO = 0.2;
+
+function absorbShortTail(
+  chunk: Paragraph[],
+  candidates: readonly Paragraph[],
+  maxParagraphs: number,
+  chunkSize: number,
+): Paragraph[] {
+  // 这一块是候选段落的开头一段，其后的就是剩下的
+  const tail = candidates.slice(chunk.length);
+  if (tail.length === 0 || tail.length > Math.floor(maxParagraphs * TAIL_PARAGRAPH_RATIO)) {
+    return chunk;
+  }
+  const tailLength = tail.reduce((sum, p) => sum + p.text.length, 0);
+  return tailLength * 3 < chunkSize ? [...chunk, ...tail] : chunk;
+}
+
 interface FailedBatchItem {
   paragraph_id: string;
   error_code: string;
@@ -164,18 +186,42 @@ function formatChapterTitle(title: ChapterTitleRef) {
   };
 }
 
+/**
+ * 翻译块里术语与角色的说明最多带这么多字。说明常常是大段的剧情简介，一块命中十来个角色时
+ * 光说明就有几千字，新章节的第一块（不能用 compact）容易超出 Agent 客户端内联显示的上限。
+ */
+const CHUNK_DESCRIPTION_LIMIT = 150;
+
+/** 说明过长时只留开头并标明；全文可用 list_terms / list_characters 读取 */
+function clipDescription<T extends { description: string }>(
+  summary: T,
+): T & { description_truncated?: true } {
+  const chars = Array.from(summary.description);
+  if (chars.length <= CHUNK_DESCRIPTION_LIMIT) return summary;
+  return {
+    ...summary,
+    description: `${chars.slice(0, CHUNK_DESCRIPTION_LIMIT).join('')}…`,
+    description_truncated: true,
+  };
+}
+
 /** compact 模式下术语只给名称与译法：同一章的后续块里这些说明都是重复的 */
 function formatChunkTerm(term: Terminology, language: AppLocale, compact: boolean) {
   const full = formatTermSummary(term, language);
-  return compact ? { id: full.id, name: full.name, translation: full.translation } : full;
+  return compact
+    ? { id: full.id, name: full.name, translation: full.translation }
+    : clipDescription(full);
 }
 
-/** compact 模式下角色只给名称、译法与别名译法，省略性别、描述与说话风格 */
+/**
+ * compact 模式下角色省略描述，保留性别与说话风格：后续块才出场的角色同样需要口吻，
+ * 说话风格空着时 Agent 也能看出需要补全。
+ */
 function formatChunkCharacter(char: CharacterSetting, language: AppLocale, compact: boolean) {
   const full = formatCharacterSummary(char, language);
-  return compact
-    ? { id: full.id, name: full.name, translation: full.translation, aliases: full.aliases }
-    : full;
+  if (!compact) return clipDescription(full);
+  const { description: _description, ...rest } = full;
+  return rest;
 }
 
 function resolveBatchItemId(
@@ -429,10 +475,15 @@ async function executeGetTranslationChunk(
 
   const chunks = buildChunks(candidates, chunkSize, (p) => p.text);
   const candidateMap = new Map(candidates.map((p) => [p.id, p]));
-  const chunkParagraphs = chunks[0]!.paragraphIds
-    .slice(0, maxParagraphs)
-    .map((id) => candidateMap.get(id))
-    .filter((p): p is Paragraph => Boolean(p));
+  const chunkParagraphs = absorbShortTail(
+    chunks[0]!.paragraphIds
+      .slice(0, maxParagraphs)
+      .map((id) => candidateMap.get(id))
+      .filter((p): p is Paragraph => Boolean(p)),
+    candidates,
+    maxParagraphs,
+    chunkSize,
+  );
 
   const firstOriginalIdx = indexById.get(chunkParagraphs[0]!.id) ?? 0;
   const lastOriginalIdx = indexById.get(chunkParagraphs[chunkParagraphs.length - 1]!.id) ?? 0;
@@ -621,7 +672,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
   {
     name: 'get_translation_chunk',
     description:
-      'Fetch the next chunk of paragraphs to translate or review, bundled with preceding translated context (context_before; for the first chunk of a chapter, previous_chapter_tail carries the end of the previous chapter instead), recent_chapter_titles for title formatting, matched terms and characters (plus possible_terms / possible_characters: near matches where the source spelling differs slightly, e.g. a typo; text_in_source shows the spelling, confirm before applying), repeated_passages (paragraphs of this chunk whose source text also appears, already translated, earlier in this chapter or in the previous 30 chapters, such as flashbacks and callbacks, with that earlier translation; only exact repeats of 10+ characters, so search_paragraphs is still needed for older or merely similar lines), top relevant memories, special instructions, target language, and continuation cursor. A chunk holds at most 50 paragraphs and about 4000 source characters by default, sized to be translated and submitted in one submit_translations call. has_more tells whether another chunk follows this one; completed is true only when the call returned no paragraphs (nothing left in this mode), so always process the returned paragraphs first.',
+      'Fetch the next chunk of paragraphs to translate or review, bundled with preceding translated context (context_before; for the first chunk of a chapter, previous_chapter_tail carries the end of the previous chapter instead), recent_chapter_titles for title formatting, matched terms and characters (plus possible_terms / possible_characters: near matches where the source spelling differs slightly, e.g. a typo; text_in_source shows the spelling, confirm before applying; term and character descriptions longer than 150 characters are cut and marked description_truncated: true, so read the full text with list_terms / list_characters before editing one), repeated_passages (paragraphs of this chunk whose source text also appears, already translated, earlier in this chapter or in the previous 30 chapters, such as flashbacks and callbacks, with that earlier translation; only exact repeats of 10+ characters, so search_paragraphs is still needed for older or merely similar lines), top relevant memories, special instructions, target language, and continuation cursor. A chunk holds at most 50 paragraphs and about 4000 source characters by default, sized to be translated and submitted in one submit_translations call; when only a few short paragraphs would be left after it, they are folded in, so the last chunk of a chapter can run slightly over. has_more tells whether another chunk follows this one; completed is true only when the call returned no paragraphs (nothing left in this mode), so always process the returned paragraphs first.',
     category: 'translation',
     permission: 'read_only',
     readOnlyHint: true,
@@ -653,7 +704,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
         max_paragraphs: {
           type: 'number',
           description:
-            'Maximum paragraphs in this chunk (default 50, max 200); the chunk ends at whichever of this and chunk_size is reached first. Lower it if responses get truncated by your client.',
+            'Maximum paragraphs in this chunk (default 50, max 200); the chunk ends at whichever of this and chunk_size is reached first. A short remainder (at most 20% of this many paragraphs and under a third of the character budget) is folded into the chunk instead of becoming a tiny extra one. Lower it if responses get truncated by your client.',
         },
         context_before: {
           type: 'number',
@@ -668,7 +719,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
         compact: {
           type: 'boolean',
           description:
-            'Smaller response for follow-up chunks of a chapter you already started (default false): omits recent_chapter_titles and reduces terms/characters to name, translation (and character aliases), dropping descriptions and speaking styles. Paragraphs, context, memories and special instructions are unchanged.',
+            'Smaller response for follow-up chunks of a chapter you already started (default false): omits recent_chapter_titles and the descriptions of terms and characters. Characters keep sex, speaking_style and aliases, so one who first appears in a later chunk still comes with a voice. Paragraphs, context, memories and special instructions are unchanged.',
         },
       },
       required: ['chapter_id'],

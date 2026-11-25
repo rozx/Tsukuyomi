@@ -129,6 +129,21 @@ describe('本机中继连接状态', () => {
     expect(socket.closed).toBe(true);
   });
 
+  it('探测：浏览器把连接推迟几秒才发起时仍然等得到问候（连续连不上之后浏览器会这样限流）', async () => {
+    vi.useFakeTimers();
+    // 不传超时，用默认值
+    const result = probeRelay(9333, { createSocket });
+    const socket = FakeSocket.last!;
+    // Chromium 在同一页面多次连接失败后，会把新的 WebSocket 连接推迟 1～5 秒再握手
+    vi.advanceTimersByTime(5200);
+    socket.emit(
+      'message',
+      JSON.stringify({ type: 'server-hello', service: 'webmcp-local-relay', version: 1 }),
+    );
+    await expect(result).resolves.toBe(true);
+    vi.useRealTimers();
+  });
+
   it('探测：连接失败、被关闭、超时或端口上是别的服务，都算没有中继', async () => {
     const failed = probeRelay(9333, { createSocket, timeoutMs: 1000 });
     FakeSocket.last!.emit('error');

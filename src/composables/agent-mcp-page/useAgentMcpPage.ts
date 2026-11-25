@@ -1,11 +1,9 @@
 import {
   computed,
   inject,
-  onBeforeUnmount,
   onMounted,
   provide,
   ref,
-  watch,
   type ComputedRef,
   type InjectionKey,
   type Ref,
@@ -34,12 +32,12 @@ import {
   TOKEN_PLACEHOLDER,
 } from 'src/services/agent-mcp/client-config';
 import { isToolAllowedByPermission } from 'src/services/agent-mcp/kernel';
+import { RELAY_DEFAULT_PORT } from 'src/services/agent-mcp/relay-link';
 import {
-  checkRelayLink,
-  RELAY_DEFAULT_PORT,
-  type RelayLinkStatus,
-} from 'src/services/agent-mcp/relay-link';
-import { getActiveDesktopMcpBridge, getActiveWebMcpAdapter } from 'src/services/agent-mcp/runtime';
+  getActiveDesktopMcpBridge,
+  getActiveRelayLinkMonitor,
+  getActiveWebMcpAdapter,
+} from 'src/services/agent-mcp/runtime';
 import type {
   AgentMcpPromptDescriptor,
   AgentMcpToolCategory,
@@ -48,10 +46,6 @@ import type {
 import { useAgentMcpStore } from 'src/stores/agent-mcp';
 import { useSettingsStore } from 'src/stores/settings';
 import { isElectron } from 'src/utils/platform';
-
-/** 开启后隔多久做第一次中继连接检查（给中继脚本留出连接时间），以及之后的复查间隔 */
-const RELAY_LINK_FIRST_CHECK_MS = 2500;
-const RELAY_LINK_POLL_MS = 15000;
 
 /** 桌面端直连本地 MCP 服务的客户端，以及浏览器端经本地中继接入的两种配置形式 */
 export type AgentMcpConnectTab =
@@ -165,7 +159,7 @@ export interface AgentMcpPageContext {
   webMcpRelayIssue: ComputedRef<string>;
   /** 浏览器端：本页是否真的接上了本机中继，接不上时说明原因；开关没开或在桌面端时为 null */
   relayLinkNotice: ComputedRef<{ tone: 'ok' | 'warn' | 'info'; text: string } | null>;
-  /** 立即重新检查中继连接（页面也会定时检查） */
+  /** 立即重新检查中继连接（应用在后台也会定时检查，与是否停留在本页无关） */
   refreshRelayLink: () => Promise<void>;
   /** 当前通道已可用：桌面端服务运行中，或浏览器端工具已注册 */
   connectionReady: ComputedRef<boolean>;
@@ -656,14 +650,13 @@ function createAgentMcpPageContext(): AgentMcpPageContext {
     agentMcpStore.clearActivities();
   };
 
-  // 中继脚本不会告诉页面有没有连上，由页面自己探测；只在浏览器端、开关打开、本页开着时进行
-  const relayLink = ref<RelayLinkStatus | null>(null);
+  // 中继连接由应用启动时开始的监视定时探测（runtime 的 relay-monitor），结果在 store 里；
+  // 这里只负责显示，页面开不开都不影响探测
+  const relayLink = computed(() => agentMcpStore.webMcpRelayLink);
   const relayLinkWanted = computed(() => !isElectronEnv.value && webMcpToggleOn.value);
   const refreshRelayLink = async (): Promise<void> => {
     if (!relayLinkWanted.value) return;
-    const status = await checkRelayLink({ origin: pageOrigin, storage: window.sessionStorage });
-    // 检查期间开关可能被关掉
-    relayLink.value = relayLinkWanted.value ? status : null;
+    await getActiveRelayLinkMonitor()?.checkNow();
   };
   const relayLinkNotice = computed(() => {
     const status = relayLink.value;
@@ -688,30 +681,6 @@ function createAgentMcpPageContext(): AgentMcpPageContext {
           text: translateText(locale, 'agentMcp.steps.relayNotFound', { origin: pageOrigin }),
         };
     }
-  });
-
-  let relayLinkTimers: Array<ReturnType<typeof setTimeout>> = [];
-  const stopRelayLinkPolling = (): void => {
-    for (const timer of relayLinkTimers) clearTimeout(timer);
-    relayLinkTimers = [];
-  };
-  const stopWatchingRelayLink = watch(
-    relayLinkWanted,
-    (wanted) => {
-      stopRelayLinkPolling();
-      relayLink.value = null;
-      if (!wanted) return;
-      // 刚开启时中继脚本还在连接，稍等再做第一次检查；之后定时复查
-      relayLinkTimers = [
-        setTimeout(() => void refreshRelayLink(), RELAY_LINK_FIRST_CHECK_MS),
-        setInterval(() => void refreshRelayLink(), RELAY_LINK_POLL_MS),
-      ];
-    },
-    { immediate: true },
-  );
-  onBeforeUnmount(() => {
-    stopWatchingRelayLink();
-    stopRelayLinkPolling();
   });
 
   onMounted(() => {

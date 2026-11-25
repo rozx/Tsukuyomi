@@ -193,6 +193,60 @@ describe('AgentMcp translation tools', () => {
     expect(data.memories.map((m) => m.summary)).toEqual(['爱丽丝珍视月光石']);
   });
 
+  it('没有本地嵌入时，记忆里记下的原文写法出现在本块正文里就能带出，不被较新的剧情记忆挤掉', async () => {
+    const base = createTestBook();
+    const book = createTestBook({
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            {
+              ...base.volumes![0]!.chapters![0]!,
+              content: [
+                {
+                  id: 'p0000001',
+                  text: '新しいお嫁さんが来た、とアリスは言った。',
+                  selectedTranslationId: '',
+                  translations: [],
+                },
+                {
+                  id: 'p0000002',
+                  text: '【朗報・速報】フィン(・・・)が帰ってきた。',
+                  selectedTranslationId: '',
+                  translations: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+    const day = 24 * 60 * 60 * 1000;
+    const old = { createdAt: Date.now() - 90 * day, lastAccessedAt: Date.now() - 90 * day };
+    const add = (id: string, summary: string, content: string, timestamps?: typeof old) =>
+      MemoryService.createMemoryWithId(book.id, id, content, summary, timestamps);
+    // 三条翻译约定：摘要里带着原文写法；一条刚用过，两条是很久以前记下的
+    await add('m-bride', 'お嫁さん 统一译作「老婆」', '不译作新娘、媳妇。');
+    await add('m-news', '弹幕标题【朗報】译作【好消息】', '保留方括号。', old);
+    await add('m-dots', '傍点写法 (・・) 保留在译名后', '如 芬恩(・・・)。', old);
+    // 刚写下的剧情记忆，提到了本块命中的角色
+    await add('m-plot', '第 350 话剧情梗概', 'アリス在王都遇到了旧友，两人一起调查失踪案。');
+    // 与本块无关的约定
+    await add('m-other', '魔導列車 译作「魔导列车」', '不译作魔法火车。', old);
+
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const res = await kernel.callTool(
+      'get_translation_chunk',
+      { book_id: book.id, chapter_id: 'ch-1' },
+      { channel: 'desktop-mcp' },
+    );
+    expect(res.isError, res.text).toBe(false);
+    const ids = (res.data as { memories: Array<{ id: string }> }).memories.map((m) => m.id);
+    expect(ids).toEqual(expect.arrayContaining(['m-bride', 'm-news', 'm-dots']));
+    expect(ids).not.toContain('m-other');
+  });
+
   it('角色用姓或名单独出现、带敬称时也能命中（与站内翻译用同一套匹配）', async () => {
     const base = createTestBook();
     const book = createTestBook({
@@ -718,7 +772,7 @@ describe('AgentMcp translation tools', () => {
     expect((await chunk({ chunk_size: 20000 })).has_more).toBe(false);
   });
 
-  it('get_translation_chunk 的 compact 模式省略最近章节标题，术语与角色只给名称和译法', async () => {
+  it('get_translation_chunk 的 compact 模式省略最近章节标题与术语、角色的说明，保留角色的性别与说话风格', async () => {
     const book = createTestBook();
     await useBooksStore().addBook(book);
     const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
@@ -746,12 +800,108 @@ describe('AgentMcp translation tools', () => {
     expect(compact.matched_terms).toEqual([
       { id: 'term-1', name: '月光石', translation: '月光石' },
     ]);
+    // 角色保留性别与说话风格：后续块才出场的角色也要知道口吻，空着时 Agent 能看出需要补
     expect(compact.matched_characters).toEqual([
-      { id: 'char-1', name: 'アリス', translation: '爱丽丝', aliases: [] },
+      {
+        id: 'char-1',
+        name: 'アリス',
+        translation: '爱丽丝',
+        sex: 'female',
+        speaking_style: '礼貌温柔',
+        aliases: [],
+      },
     ]);
     // 段落、特殊指令等翻译必需的内容不受影响
     expect(compact.paragraphs).toEqual(full.paragraphs);
     expect(compact.special_instructions).toBe(full.special_instructions);
+  });
+
+  it('get_translation_chunk 把过长的术语与角色说明截短并标明，首块不会因为大段剧情简介而过大', async () => {
+    const base = createTestBook();
+    const longText = '設'.repeat(300);
+    const book = createTestBook({
+      terminologies: [{ ...base.terminologies![0]!, description: longText }],
+      characterSettings: [
+        { ...base.characterSettings![0]!, description: longText },
+        {
+          id: 'char-near',
+          name: 'アレクサンドラ',
+          sex: 'female',
+          description: longText,
+          speakingStyle: '',
+          translation: { id: 'ct-near', translation: '亚历珊德拉', aiModelId: 'm1' },
+          aliases: [],
+        },
+      ],
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            {
+              ...base.volumes![0]!.chapters![0]!,
+              content: [
+                {
+                  id: 'p0000001',
+                  text: 'アリスは月光石を手に、アレクサンドロを見た。',
+                  selectedTranslationId: '',
+                  translations: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    type Entity = {
+      description?: string;
+      description_truncated?: boolean;
+      speaking_style?: string;
+    };
+    const res = await kernel.callTool(
+      'get_translation_chunk',
+      { book_id: book.id, chapter_id: 'ch-1' },
+      { channel: 'desktop-mcp' },
+    );
+    expect(res.isError, res.text).toBe(false);
+    const data = res.data as {
+      matched_terms: Entity[];
+      matched_characters: Entity[];
+      possible_characters: Entity[];
+    };
+    for (const entity of [
+      data.matched_terms[0]!,
+      data.matched_characters[0]!,
+      data.possible_characters[0]!,
+    ]) {
+      // 保留开头 150 个字并加省略号；标明被截短，Agent 修改说明前要先读全文
+      expect(entity.description).toBe(`${'設'.repeat(150)}…`);
+      expect(entity.description_truncated).toBe(true);
+    }
+    // 说话风格直接影响译文，不截短
+    expect(data.matched_characters[0]!.speaking_style).toBe('礼貌温柔');
+
+    // 说明不长时原样返回，也不带截短标记
+    await useBooksStore().updateBook(book.id, {
+      terminologies: base.terminologies!,
+      characterSettings: base.characterSettings!,
+    });
+    const short = (
+      await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-1' },
+        { channel: 'desktop-mcp' },
+      )
+    ).data as typeof data;
+    expect(short.matched_terms[0]).toEqual({
+      id: 'term-1',
+      name: '月光石',
+      translation: '月光石',
+      description: '发光矿石',
+    });
+    expect(short.matched_characters[0]).not.toHaveProperty('description_truncated');
+    expect(short.matched_characters[0]!.description).toBe('主角');
   });
 
   it('get_translation_chunk 每块最多 50 段，正好对应一次提交；max_paragraphs 可以调整', async () => {
@@ -829,6 +979,99 @@ describe('AgentMcp translation tools', () => {
 
     // 字符预算更紧时仍以字符预算为准
     expect((await chunk({ mode: 'all', chunk_size: 1 })).paragraphs).toHaveLength(1);
+  });
+
+  it('get_translation_chunk 把章末剩下的几段并入最后一块，不单独留一个很小的尾块', async () => {
+    const base = createTestBook();
+    const bookWith = (texts: string[]) =>
+      createTestBook({
+        volumes: [
+          {
+            ...base.volumes![0]!,
+            chapters: [
+              {
+                ...base.volumes![0]!.chapters![0]!,
+                content: texts.map((text, i) => ({
+                  id: `t${String(i).padStart(7, '0')}`,
+                  text,
+                  selectedTranslationId: '',
+                  translations: [],
+                })),
+              },
+            ],
+          },
+        ],
+      });
+    const short = (count: number) =>
+      Array.from({ length: count }, (_, i) => `これは${i}行目の短い文です。`);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    type Chunk = {
+      has_more: boolean;
+      next_cursor: number | null;
+      paragraphs: Array<{ id: string; index: number }>;
+    };
+    const chunk = async (args: Record<string, unknown>) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: base.id, chapter_id: 'ch-1', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as Chunk;
+    };
+
+    // 105 段：第二块之后只剩 5 段，并入第二块（55 段），不再有第三块
+    await useBooksStore().addBook(bookWith(short(105)));
+    const first = await chunk({ mode: 'all' });
+    expect(first.paragraphs).toHaveLength(50);
+    expect(first.next_cursor).toBe(50);
+    const last = await chunk({ mode: 'all', cursor: 50 });
+    expect(last.paragraphs).toHaveLength(55);
+    expect(last.has_more).toBe(false);
+    expect(last.next_cursor).toBeNull();
+
+    // untranslated 模式同理：提交第一块后，剩下的 55 段一次取完
+    await kernel.callTool(
+      'submit_translations',
+      {
+        book_id: base.id,
+        chapter_id: 'ch-1',
+        paragraphs: first.paragraphs.map((p) => ({
+          paragraph_id: p.id,
+          translated_text: `译文${p.index}`,
+        })),
+      },
+      { channel: 'desktop-mcp' },
+    );
+    const rest = await chunk({});
+    expect(rest.paragraphs).toHaveLength(55);
+    expect(rest.has_more).toBe(false);
+
+    // 显式的 max_paragraphs 同样适用，尾巴不超过它的两成
+    expect((await chunk({ mode: 'all', cursor: 81, max_paragraphs: 20 })).paragraphs).toHaveLength(
+      24,
+    );
+    expect((await chunk({ mode: 'all', cursor: 80, max_paragraphs: 20 })).paragraphs).toHaveLength(
+      20,
+    );
+    // 段数上限很小时两成不足一段：不并入
+    expect((await chunk({ mode: 'all', cursor: 100, max_paragraphs: 4 })).paragraphs).toHaveLength(
+      4,
+    );
+
+    // 剩下 11 段超过两成：仍然单独成块
+    await useBooksStore().deleteBook(base.id);
+    await useBooksStore().addBook(bookWith(short(61)));
+    expect((await chunk({ mode: 'all' })).paragraphs).toHaveLength(50);
+
+    // 剩下的段数虽少但字数多（超过字符预算的三分之一）：不并入，避免响应过大
+    await useBooksStore().deleteBook(base.id);
+    await useBooksStore().addBook(
+      bookWith([...short(50), ...Array.from({ length: 5 }, () => '長'.repeat(400))]),
+    );
+    const bounded = await chunk({ mode: 'all' });
+    expect(bounded.paragraphs).toHaveLength(50);
+    expect(bounded.has_more).toBe(true);
   });
 
   it('get_translation_chunk 的默认字符预算不超过 4000：长段落的文体不会因为书籍分块大小设得大而返回过大的块', async () => {

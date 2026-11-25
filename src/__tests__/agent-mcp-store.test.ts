@@ -72,8 +72,11 @@ describe('useAgentMcpStore', () => {
   it('只有服务状态不随刷新保留：中继与服务端状态每次从默认值开始', () => {
     const store = useAgentMcpStore();
     store.setWebMcpRelayState('enabled');
+    store.setWebMcpRelayLink({ state: 'connected', port: 9333 });
+    expect(store.webMcpRelayLink).toEqual({ state: 'connected', port: 9333 });
     setActivePinia(createPinia());
     expect(useAgentMcpStore().webMcpRelayState).toBe('idle');
+    expect(useAgentMcpStore().webMcpRelayLink).toBeNull();
   });
 
   it('按最新优先记录调用活动，并在超过上限时自动截断旧记录', () => {

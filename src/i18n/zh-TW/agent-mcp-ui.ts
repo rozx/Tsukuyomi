@@ -129,7 +129,7 @@ export default {
       wfTranslatePlan:
         '提交譯文之前先做準備，與內建翻譯的規劃階段相同。新術語、新角色和可重複使用的翻譯決定在這一步就建好，不要留到譯完之後：',
       wfTranslateReview:
-        '這一塊提交之後複核，與內建翻譯的複核階段相同。修正自己剛提交的譯文時把 write_mode 設為 "overwrite"，就地改寫這份草稿，不多佔一個版本：',
+        '這一塊提交之後複核，與內建翻譯的複核階段相同。修正自己剛提交的譯文時把 write_mode 設為 "overwrite"，就地改寫這份草稿，不多佔一個版本。靠 search_paragraphs 查前文才確定的稱呼、口吻、標點或固定譯法，表示設定裡缺了它：複核時補進該角色的 speaking_style，或併入既有記憶（帶敬稱的稱呼記進記憶，不加進角色別名）。清單如下：',
       wfTranslateBrief: '之後的每一塊只需簡短準備，然後同樣翻譯、提交、複核：',
       wfPolishTitle: '潤飾校對',
       wfPolish1:
@@ -155,7 +155,8 @@ export default {
         'include_updated 會套用已匯入章節的正文改動，並清除被改段落的譯文，使用前必須先得到使用者同意。',
       wfUpdate4: '匯入完成後按「翻譯一章」處理新章節。',
       wfWorldTitle: '維護術語、角色與記憶',
-      wfWorld1: '開始翻譯一本書之前，先用 list_terms 和 list_characters 了解已有的譯法。',
+      wfWorld1:
+        '開始翻譯一本書之前，先用 list_terms 和 list_characters 了解已有的譯法。get_app_context 回傳 local_embedding_enabled: false 時，記憶只按關鍵字帶出：再用 list_memories 瀏覽全部摘要，確認標點、稱呼等全書約定。',
       wfWorld2:
         '遇到作品特有的新術語或新角色時，用 upsert_terms、upsert_characters 記錄下來，之後全書沿用。通用詞彙不建術語；人名放角色表，不放術語表；建角色前先確認它不是既有角色的別名。',
       wfWorld3:
@@ -193,7 +194,7 @@ export default {
         'UPDATE_SOURCE_MISSING、UPDATE_SOURCE_INVALID：這本書沒有可用的更新來源，請使用者在應用程式裡設定或修復。',
       errOther: '其他錯誤：把工具回傳的錯誤訊息原樣告訴使用者，不要猜測原因後反覆重試。',
       errRelay:
-        '看不到任何 Tsukuyomi 工具，或 webmcp_list_sources 回傳 0 個來源：請使用者查看 Tsukuyomi「外部 Agent」頁面第一步的中繼狀態。頁面沒開或 WebMCP 沒開啟時請使用者開啟；顯示「本機有中繼在執行，但本頁還沒有接上」時，表示中繼的 --widget-origin 與頁面位址不一致，依頁面顯示的位址更新 MCP 設定後重新啟動用戶端；顯示「還沒有找到本機中繼」時，表示中繼沒有啟動或連接埠被占用。',
+        '看不到任何 Tsukuyomi 工具，或 webmcp_list_sources 回傳 0 個來源：中繼剛啟動時頁面要二十秒左右才接上，先稍等再試一次；仍然不行時請使用者查看 Tsukuyomi「外部 Agent」頁面第一步的中繼狀態。頁面沒開或 WebMCP 沒開啟時請使用者開啟；顯示「本機有中繼在執行，但本頁還沒有接上」時，表示中繼的 --widget-origin 與頁面位址不一致，依頁面顯示的位址更新 MCP 設定後重新啟動用戶端；顯示「還沒有找到本機中繼」時，表示中繼沒有啟動或連接埠被占用。',
       title: 'Tsukuyomi 快速上手指南',
       setupTitle: '首次設定（只需做一次）',
       setupIntro:
@@ -211,11 +212,11 @@ export default {
       setupPrereqDesktop:
         '前提：使用者已在 Tsukuyomi 桌面版的「外部 Agent」頁面開啟本機 MCP 服務。連不上時先請使用者確認這一點。',
       setupPrereqWeb:
-        '前提：使用者已在瀏覽器裡開啟 Tsukuyomi 的「外部 Agent」頁面並開啟 WebMCP，且保持該頁面開啟；執行中繼需要 Node.js 22 或更高版本。連不上時先請使用者確認這幾點。',
+        '前提：使用者已在瀏覽器裡開啟 Tsukuyomi，在「外部 Agent」頁面開啟 WebMCP，之後保持 Tsukuyomi 開啟（不必停留在「外部 Agent」頁面）；執行中繼需要 Node.js 22 或更高版本。連不上時先請使用者確認這幾點。',
       setupTokenWarning:
         '注意：上面的指令和寫入的 MCP 設定裡包含存取權杖，不要把這個資料夾提交到公開儲存庫。',
       overviewRelay:
-        '先呼叫 webmcp_list_sources 確認 Tsukuyomi 頁面已連線。如果在工具列表裡看不到下面提到的工具，用 webmcp_list_tools 列出它們，再用 webmcp_call_tool 按名稱呼叫。工具名帶有類似 `_a1b2` 的後綴時，表示使用者同時開著多個 Tsukuyomi 頁面：請使用者只保留一個，或者呼叫時使用帶後綴的完整名稱。',
+        '先呼叫 webmcp_list_sources 確認 Tsukuyomi 頁面已連線。有些用戶端不直接列出 MCP 工具，而是按需載入：沒看到 webmcp_ 開頭的工具時，先依用戶端的方式搜尋或呼叫，不要直接認定沒連上。如果在工具列表裡看不到下面提到的工具，用 webmcp_list_tools 列出它們，再用 webmcp_call_tool 按名稱呼叫。工具名帶有類似 `_a1b2` 的後綴時，表示使用者同時開著多個 Tsukuyomi 頁面：請使用者只保留一個，或者呼叫時使用帶後綴的完整名稱。',
     },
     activity: {
       title: '呼叫活動',

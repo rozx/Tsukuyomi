@@ -97,6 +97,17 @@ function removeLegacyNativeWebMcp(): boolean {
   return !('modelContext' in document);
 }
 
+/**
+ * 让中继组件立即重新寻找本机中继。组件连不上时会进入休眠，很久才自己探测一次；
+ * 这条消息与中继 embed 脚本在用户切回标签页时发给它的相同，组件已经连着时不起作用。
+ */
+export function wakeWebMcpRelayWidget(): void {
+  if (typeof document === 'undefined') return;
+  const frame = document.querySelector<HTMLIFrameElement>(WIDGET_FRAME_SELECTOR);
+  // 组件只接受来自本页来源的消息
+  frame?.contentWindow?.postMessage({ type: 'webmcp.connect' }, window.location.origin);
+}
+
 function defaultBaseUrl(): string {
   const base = import.meta.env?.BASE_URL;
   return typeof base === 'string' && base ? base : '/';

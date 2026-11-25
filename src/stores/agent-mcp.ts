@@ -2,6 +2,7 @@ import { defineStore, acceptHMRUpdate } from 'pinia';
 import type {
   AgentMcpActivityEntry,
   RecordAgentMcpActivityInput,
+  WebMcpRelayLinkStatus,
   WebMcpRelayState,
   WebMcpRuntimeStatus,
 } from 'src/models/agent-mcp';
@@ -73,6 +74,8 @@ export const useAgentMcpStore = defineStore('agent-mcp', {
     } as WebMcpRuntimeStatus,
     /** 浏览器端本地中继的接通状态 */
     webMcpRelayState: 'idle' as WebMcpRelayState,
+    /** 本页是否接上了本机中继；开关没开、还没检查过或在桌面端时为 null */
+    webMcpRelayLink: null as WebMcpRelayLinkStatus | null,
     activities: loadPersistedActivities(),
   }),
 
@@ -83,6 +86,10 @@ export const useAgentMcpStore = defineStore('agent-mcp', {
 
     setWebMcpRelayState(state: WebMcpRelayState): void {
       this.webMcpRelayState = state;
+    },
+
+    setWebMcpRelayLink(status: WebMcpRelayLinkStatus | null): void {
+      this.webMcpRelayLink = status ? { ...status } : null;
     },
 
     setWebMcpStatus(status: WebMcpRuntimeStatus): void {

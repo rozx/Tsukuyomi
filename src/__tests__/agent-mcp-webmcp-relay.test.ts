@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createWebMcpRelayBridge,
+  wakeWebMcpRelayWidget,
   WEBMCP_RELAY_EMBED_PATH,
 } from 'src/services/agent-mcp/webmcp-relay';
 
@@ -81,6 +82,19 @@ describe('WebMCP local relay bridge', () => {
     expect(await bridge.enable()).toBe('enabled');
     expect(runtime.initializeWebModelContext).toHaveBeenCalledTimes(2);
     expect(document.querySelectorAll('script[data-agent-mcp-relay]')).toHaveLength(1);
+  });
+
+  it('叫醒中继组件：向它的 iframe 发送重新连接的消息，只发给本页来源；没有 iframe 时什么也不做', () => {
+    // 组件还没注入时不报错
+    expect(() => wakeWebMcpRelayWidget()).not.toThrow();
+
+    const frame = document.createElement('iframe');
+    frame.setAttribute('data-webmcp-relay', '1');
+    document.body.appendChild(frame);
+    const postMessage = vi.spyOn(frame.contentWindow!, 'postMessage');
+    wakeWebMcpRelayWidget();
+    // 与中继 embed 脚本在用户切回标签页时发的消息相同
+    expect(postMessage).toHaveBeenCalledWith({ type: 'webmcp.connect' }, window.location.origin);
   });
 
   it('开启还没完成就被关闭：不初始化运行时、不留下中继脚本；之后可以重新开启', async () => {

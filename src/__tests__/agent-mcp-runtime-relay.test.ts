@@ -1,6 +1,6 @@
 import './setup';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { startAgentMcpRuntime } from 'src/services/agent-mcp/runtime';
+import { getActiveRelayLinkMonitor, startAgentMcpRuntime } from 'src/services/agent-mcp/runtime';
 import { useBooksStore } from 'src/stores/books';
 import { useSettingsStore } from 'src/stores/settings';
 
@@ -58,6 +58,82 @@ describe('AgentMcp runtime × WebMCP relay', () => {
     expect(order.slice(2)).toEqual(['unregister', 'relay.disable']);
     expect(relayStates).toEqual(['enabled', 'idle']);
 
+    handle.dispose();
+  });
+
+  const webMcpEnv = () => ({
+    document: { modelContext: { registerTool: () => undefined, unregisterTool: () => undefined } },
+    navigator: {},
+  });
+  const createMonitor = () => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    checkNow: vi.fn(() => Promise.resolve(null)),
+  });
+
+  it('中继接通后开始留意本机中继是否在运行（在哪个页面都一样），关闭开关或卸载时停止', async () => {
+    const monitor = createMonitor();
+    const relay = {
+      enable: vi.fn(() => Promise.resolve('enabled' as const)),
+      disable: vi.fn(),
+      isEnabled: () => true,
+    };
+    const settings = useSettingsStore();
+    await settings.updateAgentMcpSettings({ webMcpEnabled: true });
+
+    const handle = await startAgentMcpRuntime({
+      isElectronEnv: false,
+      webMcpEnv,
+      webMcpRelay: relay,
+      relayLinkMonitor: monitor,
+    });
+    expect(monitor.start).toHaveBeenCalledTimes(1);
+    expect(monitor.stop).not.toHaveBeenCalled();
+    // 「外部 Agent」页面的「重新检查」用的是同一个监视
+    expect(getActiveRelayLinkMonitor()).toBe(monitor);
+
+    await settings.updateAgentMcpSettings({ webMcpEnabled: false });
+    await handle.syncNow();
+    expect(monitor.stop).toHaveBeenCalledTimes(1);
+
+    await settings.updateAgentMcpSettings({ webMcpEnabled: true });
+    await handle.syncNow();
+    expect(monitor.start).toHaveBeenCalledTimes(2);
+
+    handle.dispose();
+    expect(monitor.stop).toHaveBeenCalledTimes(2);
+    expect(getActiveRelayLinkMonitor()).toBeNull();
+  });
+
+  it('中继没有接通（页面不安全、初始化失败等）时不去探测本机中继', async () => {
+    const settings = useSettingsStore();
+    await settings.updateAgentMcpSettings({ webMcpEnabled: true });
+    for (const result of ['insecure', 'legacy-native', 'failed'] as const) {
+      const monitor = createMonitor();
+      const handle = await startAgentMcpRuntime({
+        isElectronEnv: false,
+        webMcpEnv,
+        webMcpRelay: {
+          enable: () => Promise.resolve(result),
+          disable: () => undefined,
+          isEnabled: () => false,
+        },
+        relayLinkMonitor: monitor,
+      });
+      expect(monitor.start, result).not.toHaveBeenCalled();
+      handle.dispose();
+    }
+  });
+
+  it('桌面端不监视中继', async () => {
+    const monitor = createMonitor();
+    const handle = await startAgentMcpRuntime({
+      isElectronEnv: true,
+      desktopApi: null,
+      relayLinkMonitor: monitor,
+    });
+    expect(monitor.start).not.toHaveBeenCalled();
+    expect(getActiveRelayLinkMonitor()).toBeNull();
     handle.dispose();
   });
 

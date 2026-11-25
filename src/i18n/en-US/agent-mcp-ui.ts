@@ -127,7 +127,7 @@ export default {
       wfTranslate1:
         'Call get_translation_chunk with the chapter_id and mode set to "untranslated". A chunk holds at most 50 paragraphs and about 4000 source characters (adjust with max_paragraphs, chunk_size): translate and submit it in one go. For later chunks of the same chapter pass compact: true to leave out the repeated titles and term/character descriptions.',
       wfTranslate2:
-        'In the result, paragraphs are the paragraphs to translate (with id and source text); context_before is the existing translation of the preceding text in this chapter, for continuity; when this chapter has none yet, use previous_chapter_tail instead: the source and translation of the end of the previous chapter, whose punctuation habits and fixed closing phrases you should follow; recent_chapter_titles are the source titles and translated titles of the latest chapters, and a new chapter title should follow their format. matched_terms and matched_characters are the terms and characters that occur in this chunk; possible_terms and possible_characters are near matches where the source spelling differs slightly (text_in_source shows it), likely a typo or variant in the source: use them only after confirming it is the same word. repeated_passages lists the paragraphs of this chunk whose identical source was already translated earlier in this chapter or in the previous 30 chapters, with that translation: reuse it for flashbacks and callbacks unless the context differs. Older or merely similar lines are not listed; for two-part chapters, flashbacks or retold passages, look up the earlier wording with search_paragraphs. memories are related notes; special_instructions are the special instructions; target_language is the target language.',
+        'paragraphs are what to translate (id and source text); context_before is the existing translation of the preceding text in this chapter, for continuity; when this chapter has none yet, use previous_chapter_tail instead: the end of the previous chapter (source and translation), whose punctuation habits and fixed closing phrases you should follow; recent_chapter_titles are recent source and translated titles: follow their format for a new chapter title. matched_terms and matched_characters occur in this chunk; possible_terms and possible_characters are near matches where the source spelling differs slightly (text_in_source shows it), likely a typo or variant in the source: use them only after confirming it is the same word. repeated_passages lists the paragraphs of this chunk whose identical source was already translated earlier in this chapter or in the previous 30 chapters, with that translation: reuse it for flashbacks and callbacks unless the context differs. Older or merely similar lines are not listed; for two-part chapters, flashbacks or retold passages, look up the earlier wording with search_paragraphs. memories are related notes; follow special_instructions and translate into target_language.',
       wfTranslate3:
         'Translate paragraph by paragraph: one translated paragraph per source paragraph, with no merging, splitting or omission. Use the given renderings for terms and character names.',
       wfTranslate4:
@@ -137,7 +137,7 @@ export default {
       wfTranslatePlan:
         'Before submitting any translation, prepare the same way the built-in translation does in its planning phase. Create new terms, new characters and reusable translation decisions at this point instead of leaving them until afterwards:',
       wfTranslateReview:
-        'After submitting this chunk, review it the same way the built-in translation does in its review phase. When correcting a translation you just submitted, set write_mode to "overwrite" to revise that draft in place instead of using up another version:',
+        'After submitting this chunk, review it the same way the built-in translation does in its review phase. When correcting a translation you just submitted, set write_mode to "overwrite" to revise that draft in place instead of using up another version. Whatever you had to confirm with search_paragraphs (a form of address, a voice, punctuation, a fixed rendering) is missing from the settings: add it to that character\'s speaking_style or an existing memory (honorific address forms go in memories, not aliases). Checklist:',
       wfTranslateBrief:
         'For every later chunk a short preparation is enough, followed by the same translate, submit and review steps:',
       wfPolishTitle: 'Polish and proofread',
@@ -167,7 +167,7 @@ export default {
       wfUpdate4: 'After importing, handle the new chapters as described in "Translate a chapter".',
       wfWorldTitle: 'Maintain terms, characters and memories',
       wfWorld1:
-        'Before translating a book, check the existing renderings with list_terms and list_characters.',
+        'Before translating a book, check the existing renderings with list_terms and list_characters. When get_app_context shows local_embedding_enabled: false, memories match by keyword only, so also skim every summary with list_memories for book-wide conventions.',
       wfWorld2:
         'When you meet a new term or character specific to the work, record it with upsert_terms and upsert_characters so the whole book uses it. Do not create terms for ordinary vocabulary; personal names go in the character list, not the term list; before creating a character, make sure it is not an alias of an existing one.',
       wfWorld3:
@@ -211,7 +211,7 @@ export default {
       errOther:
         'Other errors: tell the user the error message exactly as the tool returned it; do not guess the cause and retry repeatedly.',
       errRelay:
-        'No Tsukuyomi tools are visible, or webmcp_list_sources returns 0 sources: ask the user to look at the relay status in step 1 of the Tsukuyomi "External Agent" page. If the page is closed or WebMCP is off, ask them to turn it on. "A relay is running on this computer, but this page is not connected to it" means the relay\'s --widget-origin does not match the page address: update the MCP configuration with the address shown on the page and restart the client. "No local relay found yet" means the relay is not running or its port is taken.',
+        'No Tsukuyomi tools are visible, or webmcp_list_sources returns 0 sources: a page needs about 20 seconds to connect after the relay starts, so retry once first; then ask the user to look at the relay status in step 1 of the Tsukuyomi "External Agent" page. If the page is closed or WebMCP is off, ask them to turn it on. "A relay is running on this computer, but this page is not connected to it" means the relay\'s --widget-origin does not match the page address: update the MCP configuration with the address shown on the page and restart the client. "No local relay found yet" means the relay is not running or its port is taken.',
       title: 'Tsukuyomi quick start guide',
       setupTitle: 'First-time setup (once only)',
       setupIntro:
@@ -231,11 +231,11 @@ export default {
       setupPrereqDesktop:
         'Prerequisite: the user has turned on the local MCP server on the External Agent page of the Tsukuyomi desktop app. If you cannot connect, ask the user to confirm this first.',
       setupPrereqWeb:
-        'Prerequisite: the user has the External Agent page of Tsukuyomi open in a browser with WebMCP turned on, and keeps that page open. Running the relay requires Node.js 22 or later. If you cannot connect, ask the user to confirm these points first.',
+        'Prerequisite: the user has Tsukuyomi open in a browser with WebMCP turned on (on the External Agent page), and keeps any Tsukuyomi page open afterwards; it need not be the External Agent page. Running the relay requires Node.js 22 or later. If you cannot connect, ask the user to confirm these points first.',
       setupTokenWarning:
         'Note: the command above and the MCP configuration it writes contain an access token. Do not commit this folder to a public repository.',
       overviewRelay:
-        'Call webmcp_list_sources first to confirm the Tsukuyomi page is connected. If the tools mentioned below are missing from your tool list, list them with webmcp_list_tools and call them by name with webmcp_call_tool. Tool names with a suffix such as `_a1b2` mean the user has several Tsukuyomi pages open: ask them to keep only one, or call the tools by their full suffixed names.',
+        'Call webmcp_list_sources first to confirm the Tsukuyomi page is connected. Some clients load MCP tools on demand: if no webmcp_ tools are listed, look them up the way your client does before concluding nothing is connected. If the tools mentioned below are missing from your tool list, list them with webmcp_list_tools and call them by name with webmcp_call_tool. Tool names with a suffix such as `_a1b2` mean the user has several Tsukuyomi pages open: ask them to keep only one, or call the tools by their full suffixed names.',
     },
     activity: {
       title: 'Call activity',
