@@ -135,6 +135,52 @@ describe('近似匹配：原文写法与名称非常接近但不完全相同', (
     ).toEqual(['アリシャ']);
   });
 
+  it('片假名词只差首尾那个字、并且那一段嵌在更长的片假名词里时不算（共用词尾或词头的另一个词）', () => {
+    const terms = [term('sister', 'シスター')];
+    // 「ンスター」是「モンスター」的一部分，不是「シスター」写错
+    expect(findNearTermsInText('森でモンスターに遭遇した。', terms)).toEqual([]);
+    // 尾字同理：后面还连着片假名
+    expect(findNearTermsInText('シスタリアという街。', terms)).toEqual([]);
+    // 独立成词、只是写错一个字时仍然算
+    expect(findNearTermsInText('シスタアが祈っていた。', terms).map((m) => m.matchedText)).toEqual([
+      'シスタア',
+    ]);
+  });
+
+  it('不超过 4 个字的纯片假名名称，首字不同时不算：只是共用词尾的另一个词', () => {
+    // ミスター、マスター、ポスター 与 シスター 都只差首字，但都是别的词
+    const terms = [term('sister', 'シスター')];
+    expect(findNearTermsInText('あのミスターが来た。', terms)).toEqual([]);
+    expect(findNearTermsInText('マスターに聞いた。', terms)).toEqual([]);
+    // 词尾的异写仍然算（アリシア → アリシャ）
+    expect(
+      findNearCharactersInText('アリシャが来た。', [character('alicia', 'アリシア')]).map(
+        (m) => m.matchedText,
+      ),
+    ).toEqual(['アリシャ']);
+    // 名称更长，或者不是纯片假名时，首字写错仍然算
+    expect(
+      findNearTermsInText('プレクサンドラが来た。', [term('alex', 'アレクサンドラ')]).map(
+        (m) => m.matchedText,
+      ),
+    ).toEqual(['プレクサンドラ']);
+    expect(
+      findNearTermsInText('性女エロと呼ばれた。', [term('saint', '聖女エロ')]).map(
+        (m) => m.matchedText,
+      ),
+    ).toEqual(['性女エロ']);
+  });
+
+  it('名称的前半原样出现、后面接的是助词等平假名时不算，差几个字都一样', () => {
+    // 「ユニコーンとス」是「ユニコーン」加助词，再接下一个词，不是「ユニコーン幼女」
+    const terms = [term('uni', 'ユニコーン幼女')];
+    expect(findNearTermsInText('ユニコーンとスライムが現れた。', terms)).toEqual([]);
+    // 差两个字、但都不是平假名顶替时仍然算
+    expect(
+      findNearTermsInText('ユニコーン妖女が現れた。', terms).map((m) => m.matchedText),
+    ).toEqual(['ユニコーン妖女']);
+  });
+
   it('已经被精确匹配认出的条目不再列为近似匹配', () => {
     // 全名带分隔符：精确匹配能认出「アリシア・ラ・アエラス」，近似匹配不应再拿它去碰别的片段
     const chars = [character('alicia', 'アリシア・ラ・アエラス')];

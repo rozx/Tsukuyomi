@@ -813,14 +813,42 @@ function locateNearText(
 }
 
 const HIRAGANA_CHAR = /[\u3041-\u3096]/;
+/** 片假名（含长音符号）：连在一起的片假名是同一个词 */
+const KATAKANA_CHAR = /[\u30A1-\u30FA\u30FC-\u30FF]/;
+
+function isKatakanaChar(char: string | undefined): boolean {
+  return char !== undefined && KATAKANA_CHAR.test(char);
+}
+
+/** 纯片假名名称不超过这个长度时，首字不同的写法不算近似：共用词尾的词太多 */
+const SHORT_KATAKANA_NAME_LENGTH = 4;
+
+function isAllKatakana(name: string): boolean {
+  return Array.from(name).every((char) => KATAKANA_CHAR.test(char));
+}
+
+/**
+ * 等长的片段与名称相比是不是整体错开了一位（原文多一个字或少一个字）。
+ * 这时片段从出错的位置起全部对不上，逐字对比没有意义。
+ */
+function isShiftedVariant(candidate: string, name: string, firstMismatch: number): boolean {
+  const last = name.length - 1;
+  return (
+    candidate.slice(firstMismatch + 1) === name.slice(firstMismatch, last) ||
+    candidate.slice(firstMismatch, last) === name.slice(firstMismatch + 1)
+  );
+}
 
 /**
  * 命中的片段是否像是「同一个词写错了字」。片段里夹着名称里没有的标点或空白时不算。
- * 另外在恰好错一个字时再判断一条（多字、少字时片段是错位的，逐字对比没有意义）：
+ * 另外在片段与名称逐字对得上、只是其中几个字不同时再判断两条（多字、少字时片段是错位的，
+ * 逐字对比没有意义）：
  * - 名称里是汉字或片假名、原文里却是平假名：多半是名称的一部分后面跟了助词
- *   （如「向こう側」之于「向こうに」），而不是错字。
- * - 差的是首字或尾字，原文里那个字是汉字、并且与片段外侧紧挨的汉字相连：片段切开了另一个词，
- *   只是与名称共用前缀或后缀（如「分身の術」之于「分身の記憶」的「分身の記」），而不是错字。
+ *   （如「向こう側」之于「向こうに」、「ユニコーン幼女」之于「ユニコーンとス」），而不是错字。
+ * - 差的是首字或尾字，原文里那个字与片段外侧紧挨的字同为汉字或同为片假名：片段切开了另一个词，
+ *   只是与名称共用前缀或后缀（如「分身の術」之于「分身の記憶」的「分身の記」、
+ *   「シスター」之于「モンスター」的「ンスター」），而不是错字。
+ * - 名称是不超过 4 个字的纯片假名、差的是首字：共用词尾的另一个词（「シスター」之于「ミスター」）。
  */
 function isPlausibleVariant(
   located: { text: string; start: number },
@@ -837,18 +865,25 @@ function isPlausibleVariant(
   for (let i = 0; i < name.length; i++) {
     if (candidate[i] !== name[i]) mismatches.push(i);
   }
-  if (mismatches.length !== 1) return true;
-  const at = mismatches[0]!;
-  const actual = candidate[at]!;
-  const expected = name[at]!;
-  if (HIRAGANA_CHAR.test(actual) && !HIRAGANA_CHAR.test(expected)) return false;
-  const outside =
-    at === 0
-      ? source[located.start - 1]
-      : at === name.length - 1
-        ? source[located.start + candidate.length]
-        : undefined;
-  return !(isKanjiChar(actual) && isKanjiChar(outside));
+  if (mismatches.length === 0) return true;
+  if (mismatches.length > 1 && isShiftedVariant(candidate, name, mismatches[0]!)) return true;
+  // 短的片假名词换一个首字多半是另一个词（シスター / ミスター / マスター），不是写错
+  if (mismatches[0] === 0 && name.length <= SHORT_KATAKANA_NAME_LENGTH && isAllKatakana(name)) {
+    return false;
+  }
+  for (const at of mismatches) {
+    const actual = candidate[at]!;
+    if (HIRAGANA_CHAR.test(actual) && !HIRAGANA_CHAR.test(name[at]!)) return false;
+    const outside =
+      at === 0
+        ? source[located.start - 1]
+        : at === name.length - 1
+          ? source[located.start + candidate.length]
+          : undefined;
+    if (isKanjiChar(actual) && isKanjiChar(outside)) return false;
+    if (isKatakanaChar(actual) && isKatakanaChar(outside)) return false;
+  }
+  return true;
 }
 
 /** 常见的日文敬称后缀；长的排在前面，保证「ちゃん」不会被当成别的后缀 */
