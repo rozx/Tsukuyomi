@@ -550,6 +550,7 @@ async function selectMemoriesByScore(
   const scored: ScoredMemory[] = scoreMemoriesBatch(allMemories, {
     chunkEntities,
     rawQuery: semanticQueryContext,
+    chunkText,
     chunkEmbeddings: chunkEmbeddings.length > 0 ? chunkEmbeddings : undefined,
     now: Date.now(),
     expectedModelVersion: chunkEmbeddings.length > 0 ? MEMORY_EMBEDDING_VERSION : undefined,

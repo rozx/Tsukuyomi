@@ -6,6 +6,7 @@ import {
   calculateSemanticSim,
   calculateSegmentedSemanticSimilarity,
   calculateQueryKeywordScore,
+  calculateSourcePhraseScore,
   scoreMemory,
   scoreMemoriesBatch,
   selectByBudget,
@@ -1099,5 +1100,92 @@ describe('memory-scoring - calculateQueryKeywordScore (CJK 部分匹配)', () =>
     expect(preciseScore).toBeCloseTo(1.0, 3);
     // partial 只能部分命中 → 明显更低
     expect(preciseScore).toBeGreaterThan(partialScore + 0.5);
+  });
+});
+
+describe('memory-scoring - 摘要里的原文写法出现在正文里', () => {
+  const now = 1_000 * MS_PER_DAY;
+
+  test('摘要里单独写出的原文词出现在正文里即命中，不要求分词', () => {
+    const bride = makeMemory({ summary: 'お嫁さん 统一译作「老婆」' });
+    expect(calculateSourcePhraseScore(bride, '新しいお嫁さんが来た。')).toBe(1);
+    const news = makeMemory({ summary: '弹幕标题【朗報】译作【好消息】' });
+    expect(calculateSourcePhraseScore(news, '【朗報・速報】帰ってきた。')).toBe(1);
+    // 正文里没有摘要记下的写法
+    expect(calculateSourcePhraseScore(bride, '今日は晴れている。')).toBe(0);
+  });
+
+  test('只比对摘要，不比对正文内容；单个字与西文单词不算', () => {
+    const memory = makeMemory({ summary: '剧情梗概', content: 'お嫁さん 出场' });
+    expect(calculateSourcePhraseScore(memory, 'お嫁さんが来た。')).toBe(0);
+    expect(calculateSourcePhraseScore(makeMemory({ summary: '姉 的译法' }), '姉が来た。')).toBe(0);
+    expect(
+      calculateSourcePhraseScore(makeMemory({ summary: 'use the honorific' }), 'the end of use'),
+    ).toBe(0);
+  });
+
+  test('摘要里的词要整段出现：连在一起写的说明文字不会被拆开去碰正文', () => {
+    const memory = makeMemory({ summary: '王国的称呼约定' });
+    expect(calculateSourcePhraseScore(memory, '王国の騎士が来た。')).toBe(0);
+    expect(calculateSourcePhraseScore(makeMemory({ summary: '王国 的称呼' }), '王国の騎士')).toBe(
+      1,
+    );
+  });
+
+  test('摘要里单独写出的重复符号按「同一个符号连写」匹配，不计个数', () => {
+    const dots = makeMemory({ summary: '傍点写法 (・・) 保留在译名后' });
+    expect(calculateSourcePhraseScore(dots, 'フィン(・・・)が笑った。')).toBe(1);
+    expect(calculateSourcePhraseScore(dots, 'アリシア・ラ・アエラス')).toBe(0);
+    // 夹在文字中间的符号是摘要自己的标点，不是在记录写法
+    const prose = makeMemory({ summary: '角色口吻——景胜' });
+    expect(calculateSourcePhraseScore(prose, 'そう——だったのか。')).toBe(0);
+  });
+
+  test('没有正文或摘要时为 0', () => {
+    expect(calculateSourcePhraseScore(makeMemory({ summary: 'お嫁さん' }), undefined)).toBe(0);
+    expect(calculateSourcePhraseScore(makeMemory({ summary: '' }), 'お嫁さん')).toBe(0);
+  });
+
+  test('没有嵌入时，命中原文写法的旧约定不会因为不如别的记忆新而被挤掉', () => {
+    const old = now - 90 * MS_PER_DAY;
+    const memories = [
+      makeMemory({ id: 'fresh', summary: 'お嫁さん 统一译作「老婆」', lastAccessedAt: now }),
+      makeMemory({ id: 'old', summary: '【朗報】译作【好消息】', lastAccessedAt: old }),
+      makeMemory({ id: 'plot', summary: '剧情梗概', content: 'アリス 出场', lastAccessedAt: now }),
+      makeMemory({ id: 'none', summary: '魔導列車 译作「魔导列车」', lastAccessedAt: old }),
+    ];
+    const scored = scoreMemoriesBatch(memories, {
+      chunkEntities: [{ name: 'アリス' }, { name: '爱丽丝' }],
+      chunkText: '新しいお嫁さんが来た。【朗報・速報】とアリスは言った。',
+      now,
+    });
+    const byId = new Map(scored.map((item) => [item.memory.id, item.breakdown]));
+    expect(byId.get('fresh')!.keyword).toBe(1);
+    expect(byId.get('old')!.keyword).toBe(1);
+    expect(byId.get('none')!.keyword).toBe(0);
+
+    const selected = selectByBudget(scored).map((memory) => memory.id);
+    expect(selected).toContain('fresh');
+    // 与最高分相差超过相对窗口（只差在新旧上），但关键词是完整命中：保留
+    expect(selected).toContain('old');
+    expect(selected).not.toContain('none');
+  });
+
+  test('有嵌入时相对窗口照常生效：关键词完整命中也不豁免', () => {
+    const item = (id: string, total: number): ScoredMemory => ({
+      memory: makeMemory({ id }),
+      breakdown: {
+        scoringMode: 'semantic',
+        semantic: total,
+        keyword: 1,
+        recency: 0,
+        semanticWeighted: total,
+        keywordWeighted: 0,
+        recencyWeighted: 0,
+        total,
+      },
+    });
+    const result = filterByRelativeRanking([item('a', 0.9), item('b', 0.6)]);
+    expect(result.map((s) => s.memory.id)).toEqual(['a']);
   });
 });

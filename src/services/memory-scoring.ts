@@ -72,6 +72,11 @@ export interface ScoringContext {
    * 作为命中度,对无空格 CJK 查询比字面 includes 友好得多。
    */
   rawQuery?: string | undefined;
+  /**
+   * 正在翻译的原文（翻译注入路径传）。记忆摘要里单独写出的原文写法出现在其中时，
+   * 关键词信号按完整命中计（见 calculateSourcePhraseScore）。
+   */
+  chunkText?: string | undefined;
   chunkEmbedding?: Float32Array | number[] | undefined;
   /**
    * 长文本拆分后的多个查询向量。存在时优先于 `chunkEmbedding`；先做多分段稳健聚合，
@@ -382,6 +387,37 @@ function partialMatchLength(unit: string, haystack: string): number {
 }
 
 /**
+ * 摘要里单独写出的重复符号（如 `(・・)`、`「──」`）：记的是标点、傍点一类写法。
+ * 夹在文字中间的（`口吻——景胜`）是摘要自己的标点，不算。
+ */
+const STANDALONE_SYMBOL_RUN = /(?<![\p{L}\p{N}])([^\p{L}\p{N}\s])\1+(?![\p{L}\p{N}])/gu;
+const CJK_UNIT_START = /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+
+/**
+ * 记忆摘要里记下的原文写法是否出现在正在翻译的原文里：出现返回 1，否则返回 0。
+ *
+ * 翻译约定类的记忆通常把原文写法写在摘要里（「お嫁さん 统一译作…」「【朗報】译作…」）。
+ * 这个词往往不是术语也不是角色，实体命中认不出它；没有嵌入时就只能靠这一条召回。
+ *
+ * - 只看摘要里的中日文连续片段（至少两个字），并且要整段出现在原文里：连在一起写的说明
+ *   文字（「王国的称呼约定」）不会被拆开去碰原文。西文单词不看，常用词太多。
+ * - 摘要里单独写出的重复符号按「同一个符号连写两个以上」匹配，不计个数：
+ *   摘要写 `(・・)`，原文是 `(・・・)` 也算。
+ */
+export function calculateSourcePhraseScore(memory: Memory, chunkText: string | undefined): number {
+  const summary = memory.summary ?? '';
+  if (!chunkText || !summary) return 0;
+  for (const unit of extractQueryUnits(summary)) {
+    if (CJK_UNIT_START.test(unit) && chunkText.includes(unit)) return 1;
+  }
+  for (const match of summary.matchAll(STANDALONE_SYMBOL_RUN)) {
+    const symbol = match[1]!;
+    if (chunkText.includes(symbol + symbol)) return 1;
+  }
+  return 0;
+}
+
+/**
  * 计算时间衰减因子:exp(-ageDays / 30)
  * lastAccessedAt 越新,返回值越接近 1。
  */
@@ -466,15 +502,16 @@ function shouldUseFallbackWeights(
 }
 
 /**
- * 根据 context 合并低权重辅助信号：章节标题/自然语言 query 与正文实体各自打分，
- * 取更强者。embedding 模式下该信号固定只占 0.10，不能单独决定召回。
+ * 根据 context 合并低权重辅助信号：章节标题/自然语言 query、正文实体、摘要里的原文写法
+ * 各自打分，取最强者。embedding 模式下该信号固定只占 0.10，不能单独决定召回。
  */
 function resolveKeyword(memory: Memory, context: ScoringContext): number {
   const queryScore = context.rawQuery?.trim()
     ? calculateQueryKeywordScore(context.rawQuery, memory)
     : 0;
   const entityScore = calculateKeywordHitRatio(memory, context.chunkEntities);
-  return Math.max(queryScore, entityScore);
+  const phraseScore = calculateSourcePhraseScore(memory, context.chunkText);
+  return Math.max(queryScore, entityScore, phraseScore);
 }
 
 /**
@@ -663,12 +700,24 @@ export function calculateNormalizedRrfScores(values: Array<number | null>): numb
  * 相对排名过滤:先按 total 降序,再做两步收缩
  *
  * 1. 只保留 top-K(硬上限,防止"全员注入")
- * 2. 在 top-K 内进一步剔除分数比 top 低超过 relativeDelta 的条目(质量地板)
+ * 2. 在 top-K 内进一步剔除分数比 top 低超过 relativeDelta 的条目(质量地板)；
+ *    没有嵌入且关键词强命中的条目除外(见 isStrongFallbackKeywordHit)
  *
  * 这一步独立于 minScore 的绝对阈值 — 用于应对向量绝对余弦分布偏高、
  * 绝对阈值无区分度的情况。调用方可在此之前先用绝对
  * 阈值滤掉噪声地板以下的条目,再交给这里做相对收缩。
  */
+/**
+ * 没有嵌入、关键词又是强命中的条目不受相对窗口约束。fallback 模式下访问时间占 0.25，
+ * 两条同样完整命中的记忆只因新旧不同就能差出窗口宽度的几倍：窗口是为语义分数挤在一起的
+ * 情况定的，不该用它把旧的翻译约定筛掉。top-K 与字符预算仍然照常限制数量。
+ */
+function isStrongFallbackKeywordHit(breakdown: ScoreBreakdown): boolean {
+  return (
+    breakdown.scoringMode === 'fallback' && breakdown.keyword >= UNEMBEDDED_FALLBACK_MIN_KEYWORD
+  );
+}
+
 export function filterByRelativeRanking(
   scoredMemories: ScoredMemory[],
   topK: number = DEFAULT_TOP_K,
@@ -680,7 +729,9 @@ export function filterByRelativeRanking(
   if (capped.length === 0) return [];
   const topScore = capped[0]!.breakdown.total;
   const threshold = topScore - relativeDelta;
-  return capped.filter((s) => s.breakdown.total >= threshold);
+  return capped.filter(
+    (s) => s.breakdown.total >= threshold || isStrongFallbackKeywordHit(s.breakdown),
+  );
 }
 
 /**

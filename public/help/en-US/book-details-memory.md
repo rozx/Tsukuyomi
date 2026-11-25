@@ -103,11 +103,11 @@ Scores range from 0 to 1.0.
 
 With embeddings:
 
-| Signal   | Weight | Meaning                                                                              |
-| :------- | :----- | :----------------------------------------------------------------------------------- |
-| Semantic | 0.85   | Cosine similarity calibrated with floor 0.30/full 0.65, batch contrast, and RRF rank |
-| Keywords | 0.10   | Hits for current source/target term and character names                              |
-| Recency  | 0.05   | Exponential decay with a 30-day half-life                                            |
+| Signal   | Weight | Meaning                                                                                                                                                         |
+| :------- | :----- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Semantic | 0.85   | Cosine similarity calibrated with floor 0.30/full 0.65, batch contrast, and RRF rank                                                                            |
+| Keywords | 0.10   | Hits for current source/target term and character names; a source phrase written on its own in a memory summary counts as a full hit when it occurs in the text |
+| Recency  | 0.05   | Exponential decay with a 30-day half-life                                                                                                                       |
 
 Without embeddings:
 
@@ -115,6 +115,8 @@ Without embeddings:
 | :------- | :----- | :-------------------- |
 | Keywords | 0.75   | Same keyword evidence |
 | Recency  | 0.25   | Same recency evidence |
+
+Without embeddings, a translation convention whose summary spells out the source phrase (for example "お嫁さん is always rendered as…", or a repeated symbol written on its own such as `(・・)`) is recalled whenever that phrase occurs in the text, and a memory with a full keyword hit is not dropped merely for being older than the others.
 
 **Memories without a usable vector (stale after a model upgrade, or new and not yet embedded)**: when a query vector is available, such a memory switches to the keyword fallback weights above only if its raw keyword confidence is at least 0.8. Partial matches keep the semantic-led weights (keyword 0.10 + time decay 0.05) and stay below the minimum relevance threshold.
 
