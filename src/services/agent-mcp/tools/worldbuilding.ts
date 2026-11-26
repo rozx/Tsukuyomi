@@ -5,6 +5,7 @@ import {
   getDataManagementRules,
   getMemoryWorkflowRules,
 } from 'src/services/ai/tasks/prompts/common';
+import { mergeInstructions } from 'src/services/ai/tools/special-instruction-tools';
 import { describeTool, stringToolParameter } from 'src/services/ai/tools/tool-localization';
 import type { Memory } from 'src/models/memory';
 import { CharacterSettingService } from 'src/services/character-setting-service';
@@ -176,26 +177,48 @@ async function upsertSingleCharacter(
   }
 }
 
-function buildSpecialInstructionPatch(args: Record<string, unknown>) {
-  const patch: {
-    translationInstructions?: string | undefined;
-    polishInstructions?: string | undefined;
-    proofreadingInstructions?: string | undefined;
-  } = {};
+/** 参数名与书籍 / 章节上的字段 */
+const INSTRUCTION_ARG_FIELDS = [
+  ['translation_instructions', 'translationInstructions'],
+  ['polish_instructions', 'polishInstructions'],
+  ['proofreading_instructions', 'proofreadingInstructions'],
+] as const;
+
+type InstructionField = (typeof INSTRUCTION_ARG_FIELDS)[number][1];
+type InstructionMode = 'append' | 'replace';
+
+/** 不传 mode 时整体替换（与加入 mode 之前的行为一致）；不认识的值返回 null */
+function parseInstructionMode(raw: unknown): InstructionMode | null {
+  if (raw === undefined) return 'replace';
+  return raw === 'append' || raw === 'replace' ? raw : null;
+}
+
+/**
+ * 按写入方式算出要写入的字段。replace 时空字符串表示清除；append 时空内容记为 emptyAppend，
+ * 由调用方报错，避免什么也没追加却回报成功。
+ */
+function buildSpecialInstructionPatch(
+  args: Record<string, unknown>,
+  current: Partial<Record<InstructionField, string | undefined>>,
+  mode: InstructionMode,
+) {
+  const patch: Partial<Record<InstructionField, string | undefined>> = {};
+  const written: Record<string, string> = {};
   let hasAny = false;
-  if (typeof args.translation_instructions === 'string') {
-    patch.translationInstructions = args.translation_instructions.trim() || undefined;
+  let emptyAppend = false;
+  for (const [argKey, field] of INSTRUCTION_ARG_FIELDS) {
+    const value = args[argKey];
+    if (typeof value !== 'string') continue;
     hasAny = true;
+    if (mode === 'append' && !value.trim()) {
+      emptyAppend = true;
+      continue;
+    }
+    const next = mergeInstructions(current[field] ?? '', value, mode);
+    patch[field] = next || undefined;
+    written[argKey] = next;
   }
-  if (typeof args.polish_instructions === 'string') {
-    patch.polishInstructions = args.polish_instructions.trim() || undefined;
-    hasAny = true;
-  }
-  if (typeof args.proofreading_instructions === 'string') {
-    patch.proofreadingInstructions = args.proofreading_instructions.trim() || undefined;
-    hasAny = true;
-  }
-  return { hasAny, patch };
+  return { hasAny, emptyAppend, patch, written };
 }
 
 async function executeUpsertBatch(
@@ -768,7 +791,7 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
     name: 'update_special_instructions',
     description: withBuiltinGuidance(
       'update_special_instructions',
-      'Update book-level (or chapter-level when chapter_id is provided) translation, polish, or proofreading special instructions.',
+      'Update book-level (or chapter-level when chapter_id is provided) translation, polish, or proofreading special instructions. Each given field is replaced by default; pass mode "append" to add a rule after the existing ones. The response returns the full text now stored for each field written.',
     ),
     category: 'worldbuilding',
     permission: 'translate_and_edit',
@@ -786,6 +809,12 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
         translation_instructions: { type: 'string' },
         polish_instructions: { type: 'string' },
         proofreading_instructions: { type: 'string' },
+        mode: {
+          type: 'string',
+          enum: ['append', 'replace'],
+          description:
+            "replace (default) overwrites each given field with the new text (an empty string clears it); append adds the new text as a new line after that field's existing instructions, keeping them.",
+        },
       },
     },
     execute: async (args, ctx) => {
@@ -793,21 +822,33 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
       if (!resolved.ok) return resolved.error;
       const { book, targetLanguage } = resolved;
 
-      const { hasAny, patch } = buildSpecialInstructionPatch(args);
+      const mode = parseInstructionMode(args.mode);
+      if (!mode) {
+        return agentMcpError('INVALID_ARGS', 'mode must be "append" or "replace".');
+      }
+      const chapterId = readTrimmedString(args.chapter_id);
+      const chapter = chapterId ? findChapterInBook(book, chapterId) : null;
+      if (chapterId && !chapter) {
+        return agentMcpError('CHAPTER_NOT_FOUND', `Chapter not found: ${chapterId}`);
+      }
+
+      const { hasAny, emptyAppend, patch, written } = buildSpecialInstructionPatch(
+        args,
+        chapter ?? book,
+        mode,
+      );
       if (!hasAny) {
         return agentMcpError(
           'INVALID_ARGS',
           'Provide at least one of translation_instructions, polish_instructions, or proofreading_instructions.',
         );
       }
+      if (emptyAppend) {
+        return agentMcpError('INVALID_ARGS', 'mode "append" needs non-empty instructions.');
+      }
 
       const booksStore = useBooksStore();
-      const chapterId = readTrimmedString(args.chapter_id);
-      if (chapterId) {
-        const chapter = findChapterInBook(book, chapterId);
-        if (!chapter) {
-          return agentMcpError('CHAPTER_NOT_FOUND', `Chapter not found: ${chapterId}`);
-        }
+      if (chapter) {
         await booksStore.editTitle(
           book.id,
           targetLanguage,
@@ -819,11 +860,18 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
           },
           targetLanguage,
         );
-        return { book_id: book.id, scope: 'chapter', chapter_id: chapter.id, updated: true };
+        return {
+          book_id: book.id,
+          scope: 'chapter',
+          chapter_id: chapter.id,
+          mode,
+          instructions: written,
+          updated: true,
+        };
       }
 
       await booksStore.updateBook(book.id, patch);
-      return { book_id: book.id, scope: 'book', updated: true };
+      return { book_id: book.id, scope: 'book', mode, instructions: written, updated: true };
     },
   },
 ];

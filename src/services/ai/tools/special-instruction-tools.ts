@@ -33,8 +33,8 @@ function readInstructions(holder: InstructionHolder): Record<InstructionTask, st
   };
 }
 
-/** append 模式按行追加，原指令为空时不留多余换行 */
-function mergeInstructions(previous: string, addition: string, mode: 'append' | 'replace') {
+/** append 模式按行追加，原指令为空时不留多余换行；外部 Agent 的同名工具共用这条规则 */
+export function mergeInstructions(previous: string, addition: string, mode: 'append' | 'replace') {
   const next = addition.trim();
   if (mode === 'replace' || !previous.trim()) return next;
   return `${previous.trimEnd()}\n${next}`;

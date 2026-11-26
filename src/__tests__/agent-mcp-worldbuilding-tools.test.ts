@@ -363,6 +363,74 @@ describe('AgentMcp worldbuilding tools', () => {
     expect(data.chapter.translation_instructions).toBe('本章战斗节奏紧凑');
   });
 
+  it('update_special_instructions 的 mode: "append" 把新规则追加到已有指令之后，默认与 replace 仍整体替换，未知 mode 报错而不覆盖', async () => {
+    const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
+    const call = (args: Record<string, unknown>) =>
+      kernel.callTool(
+        'update_special_instructions',
+        { book_id: 'book-wb-1', ...args },
+        { channel: 'desktop-mcp' },
+      );
+    const read = async (chapterId?: string) => {
+      const res = await kernel.callTool(
+        'get_special_instructions',
+        { book_id: 'book-wb-1', ...(chapterId ? { chapter_id: chapterId } : {}) },
+        { channel: 'desktop-mcp' },
+      );
+      return res.data as {
+        book: Record<string, string>;
+        chapter?: Record<string, string>;
+      };
+    };
+
+    // 原指令为空时追加不留多余换行
+    expect(
+      (await call({ mode: 'append', translation_instructions: '  保留原文的「」『』  ' })).isError,
+    ).toBe(false);
+    expect((await read()).book.translation_instructions).toBe('保留原文的「」『』');
+
+    // 已有指令时按行追加，只改传入的字段，结果里带上写入后的全文
+    const appended = await call({
+      mode: 'append',
+      translation_instructions: '标题格式：第X话　标题',
+    });
+    expect(appended.isError).toBe(false);
+    expect(appended.data).toMatchObject({
+      mode: 'append',
+      instructions: { translation_instructions: '保留原文的「」『』\n标题格式：第X话　标题' },
+    });
+    expect(appended.data).not.toHaveProperty('instructions.polish_instructions');
+    expect((await read()).book.translation_instructions).toBe(
+      '保留原文的「」『』\n标题格式：第X话　标题',
+    );
+
+    // 章节级同样可以追加
+    await call({ chapter_id: 'ch-1', translation_instructions: '本章战斗节奏紧凑' });
+    await call({ chapter_id: 'ch-1', mode: 'append', translation_instructions: '招式名保留原文' });
+    expect((await read('ch-1')).chapter!.translation_instructions).toBe(
+      '本章战斗节奏紧凑\n招式名保留原文',
+    );
+
+    // 不传 mode 与 replace：整体替换（与原先的行为一致，已经读出全文再写回的 Agent 不会重复）
+    await call({ translation_instructions: '只留这一条' });
+    expect((await read()).book.translation_instructions).toBe('只留这一条');
+    await call({ mode: 'replace', translation_instructions: '替换后的指令' });
+    expect((await read()).book.translation_instructions).toBe('替换后的指令');
+
+    // 未知 mode、append 空内容：报错，原指令不变
+    const badMode = await call({ mode: 'merge', translation_instructions: '新规则' });
+    expect(badMode.isError).toBe(true);
+    expect(badMode.text).toContain('INVALID_ARGS');
+    const emptyAppend = await call({ mode: 'append', translation_instructions: '   ' });
+    expect(emptyAppend.isError).toBe(true);
+    expect((await read()).book.translation_instructions).toBe('替换后的指令');
+
+    // schema 里列出 mode，客户端才不会把它当成未知参数
+    const schema = agentMcpWorldbuildingTools.find((t) => t.name === 'update_special_instructions')!
+      .inputSchema.properties as Record<string, { enum?: string[] }>;
+    expect(schema.mode?.enum).toEqual(['append', 'replace']);
+  });
+
   it('list_terms 与 list_characters 支持分页和精简输出，设定很多的书不会一次塞满上下文', async () => {
     const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
     await kernel.callTool(
