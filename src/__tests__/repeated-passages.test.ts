@@ -26,6 +26,8 @@ const chapter = (id: string, content: Paragraph[]): Chapter =>
 
 const LONG = '父さんは言った。「剣は人を守るためにある」と。';
 const LONG_ZH = '父亲说过：「剑是为了守护他人而存在的」。';
+/** 去掉标点后仍有二十多个字的长句：前文译法不一时也照样给出最近的一处 */
+const MOTIF = '父さんはいつも言っていた。「剣は弱い人を守るためにあるのだ。それを忘れるな」と。';
 
 const find = (options: {
   targets: Paragraph[];
@@ -85,6 +87,62 @@ describe('findRepeatedPassages', () => {
     expect(result).toEqual([]);
   });
 
+  it('字数只算文字，不算标点与引号：「……アンデッド？」「ええ、もちろんですわ」这类短应答不列出', async () => {
+    const shortReplies = ['「……アンデッド？」', '「ええ、もちろんですわ」', '「……はい。……はい！」'];
+    const kept = '「……わたくしが、生きるためですわ」';
+    const result = await find({
+      targets: [...shortReplies, kept].map((text, i) => para(`t${i}`, text)),
+      previous: [
+        chapter(
+          'c1',
+          [...shortReplies, kept].map((text, i) => para(`x${i}`, text, `译文${i}`)),
+        ),
+      ],
+    });
+    expect(result.map((r) => r.paragraphId)).toEqual(['t3']);
+  });
+
+  it('短句在前文里两处译法不同时不列出：译法随语境变化，没有可沿用的固定译法', async () => {
+    const greeting = '「はい。こちらこそ、よろしくお願いいたします」';
+    const varied = await find({
+      targets: [para('a', greeting)],
+      previous: [
+        chapter('c1', [para('x1', greeting, '「好的。我才要请您多多关照」')]),
+        chapter('c2', [para('y1', greeting, '「是。彼此彼此，还请多指教」')]),
+      ],
+    });
+    expect(varied).toEqual([]);
+
+    // 前文译法一致（只差空白）时照常给出最近的一处
+    const consistent = await find({
+      targets: [para('a', greeting)],
+      previous: [
+        chapter('c1', [para('x1', greeting, '「好的。我才要请您多多关照」')]),
+        chapter('c2', [para('y1', greeting, '「好的。 我才要请您多多关照」')]),
+      ],
+    });
+    expect(consistent.map((r) => r.earlierParagraphId)).toEqual(['y1']);
+
+    // 前文只出现过一次时也给出
+    const once = await find({
+      targets: [para('a', greeting)],
+      previous: [chapter('c1', [para('x1', greeting, '「好的。我才要请您多多关照」')])],
+    });
+    expect(once.map((r) => r.earlierParagraphId)).toEqual(['x1']);
+  });
+
+  it('长句前文译法不同时仍给出最近的一处：回忆、复述的长句要与最近的译法一致', async () => {
+    const result = await find({
+      targets: [para('a', MOTIF)],
+      previous: [
+        chapter('c1', [para('x1', MOTIF, '较早的译法。')]),
+        chapter('c2', [para('y1', MOTIF, '较近的译法。')]),
+      ],
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ earlierParagraphId: 'y1', translation: '较近的译法。' });
+  });
+
   it('前文的同文段落还没有译文时不列出', async () => {
     const result = await find({
       targets: [para('a', LONG)],
@@ -94,12 +152,16 @@ describe('findRepeatedPassages', () => {
   });
 
   it('本章里排在这一块之前的同文段落也算，并且离得最近的优先', async () => {
-    const current = [para('n0', LONG, '本章里的译法。'), para('n1', '間の行。'), para('n2', LONG)];
+    const current = [
+      para('n0', MOTIF, '本章里的译法。'),
+      para('n1', '間の行。'),
+      para('n2', MOTIF),
+    ];
     const result = await find({
       targets: [current[2]!],
       current,
       beforeIndex: 2,
-      previous: [chapter('c1', [para('x1', LONG, '更早一章的译法。')])],
+      previous: [chapter('c1', [para('x1', MOTIF, '更早一章的译法。')])],
     });
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ earlierParagraphId: 'n0', translation: '本章里的译法。' });
@@ -113,10 +175,10 @@ describe('findRepeatedPassages', () => {
 
   it('多章都有同文时取最近的一章；同一章里取最靠后的一处', async () => {
     const result = await find({
-      targets: [para('a', LONG)],
+      targets: [para('a', MOTIF)],
       previous: [
-        chapter('c1', [para('x1', LONG, '最早的译法。')]),
-        chapter('c2', [para('y1', LONG, '较近、靠前。'), para('y2', LONG, '较近、靠后。')]),
+        chapter('c1', [para('x1', MOTIF, '最早的译法。')]),
+        chapter('c2', [para('y1', MOTIF, '较近、靠前。'), para('y2', MOTIF, '较近、靠后。')]),
       ],
     });
     expect(result[0]).toMatchObject({ earlierParagraphId: 'y2', translation: '较近、靠后。' });

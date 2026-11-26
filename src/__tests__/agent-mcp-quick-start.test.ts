@@ -157,8 +157,8 @@ describe('buildAgentQuickStartGuide', () => {
   it('翻译一章：一块对应一次提交，复核时就地改写自己的草稿，前文同文的句子沿用原来的译法', () => {
     const guide = desktopGuide();
     const translate = guide.slice(guide.indexOf('### 翻译一章'), guide.indexOf('### 润色校对'));
-    // 一块最多 50 段，取到的一块一次提交完，不再另行分批
-    expect(translate).toMatch(/最多 50 段[^\n]*max_paragraphs/);
+    // 一块最多 40 段，取到的一块一次提交完，不再另行分批
+    expect(translate).toMatch(/最多 40 段[^\n]*max_paragraphs/);
     expect(translate).toMatch(/一块[^\n]*一次提交/);
     expect(guide).not.toMatch(/30\s*~\s*50/);
     // 续取同一章的后续块用 compact 省略重复的说明
@@ -168,6 +168,10 @@ describe('buildAgentQuickStartGuide', () => {
     expect(translate).toMatch(/回忆[^\n]*search_paragraphs/);
     // 复核时修正自己刚提交的草稿：就地改写，不多留一个版本
     expect(translate).toMatch(/复核[^\n]*write_mode[^\n]*"overwrite"/);
+    // 复核时留意常犯的错：原文没有的引号与破折号、给性别不明的角色用了「他」「她」
+    expect(translate).toMatch(/复核[^\n]*原文没有的“”或——[^\n]*性别不明/);
+    // 开始或换章时先说明在做什么，不让用户干等
+    expect(guide).toMatch(/换到下一章时用一句话说明/);
     // 连续翻译多章时不能省略复核
     expect(translate).toMatch(/多章[^\n]*复核/);
     // 润色校对已有的译文仍然默认追加新版本
@@ -237,8 +241,9 @@ describe('buildAgentQuickStartGuide', () => {
       expect(guide).toContain(field);
     // 模糊搜索是可选项
     expect(guide).toMatch(/默认都是精确匹配[^\n]*fuzzy: true/);
-    // 用户的长期要求写进特殊指令；可复用的翻译决定放记忆，由相关性自动带出
-    expect(guide).toMatch(/长期要求[^\n]*update_special_instructions/);
+    // 每章都要遵守的全书规范与用户的长期要求写进特殊指令（每块都带上）；可复用的翻译决定放记忆，由相关性自动带出
+    expect(guide).toMatch(/每章都要遵守的全书规范[^\n]*长期要求[^\n]*update_special_instructions/);
+    expect(guide).toMatch(/update_special_instructions[^\n]*每次取翻译块都会带上[^\n]*可能取不到/);
     expect(guide).toMatch(/翻译决定[^\n]*upsert_memory/);
   });
 

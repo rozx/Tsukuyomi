@@ -33,7 +33,12 @@ import {
 import { findRepeatedPassages } from 'src/services/library-query/repeated-passages';
 import { isEmptyParagraph } from 'src/utils/text-utils';
 import { buildExternalTranslationModelId } from 'src/utils/translation-model-label';
-import { agentMcpError, type AgentMcpExecutionContext, type AgentMcpToolSpec } from '../types';
+import {
+  agentMcpError,
+  isAgentMcpToolError,
+  type AgentMcpExecutionContext,
+  type AgentMcpToolSpec,
+} from '../types';
 import {
   formatCharacterSummary,
   formatTermSummary,
@@ -48,13 +53,14 @@ import {
 /**
  * 一块默认最多多少段。字符预算（书籍的分块大小）是按站内翻译定的，短段落多的章节一块能有
  * 一两百段：响应容易超出 Agent 客户端的单次输出上限，也远多于一次提交适合带的段数。
- * 限到这个数之后，取一块正好对应一次提交和一次复核。
+ * 限到这个数之后，取一块正好对应一次提交和一次复核。50 段时带上术语、记忆等之后
+ * 响应仍常超出客户端内联显示的上限（被存成文件，要多一轮读取），所以取 40。
  */
-const DEFAULT_CHUNK_PARAGRAPH_LIMIT = 50;
+const DEFAULT_CHUNK_PARAGRAPH_LIMIT = 40;
 const MAX_CHUNK_PARAGRAPH_LIMIT = 200;
 /**
  * 默认字符预算的上限（原文字数）。书籍的分块大小可以设到 50000，那是给站内翻译用的；
- * 长段落的文体里 50 段就有一万多字，带上译文后响应同样会超出客户端的输出上限。
+ * 长段落的文体里 40 段就有一万多字，带上译文后响应同样会超出客户端的输出上限。
  * 书籍设得更小时按书籍的来；Agent 明确传入 chunk_size 时不受这个上限约束。
  */
 const DEFAULT_CHUNK_CHARACTER_LIMIT = 4000;
@@ -224,6 +230,43 @@ function formatChunkCharacter(char: CharacterSetting, language: AppLocale, compa
   return rest;
 }
 
+/** compact 模式下省略的元数据：同一章的续块里它们与第一块相同 */
+const COMPACT_OMITTED_METADATA = [
+  'chapter_title_original',
+  'chapter_title_translation',
+  'target_language',
+  'enable_original_text_validation',
+  'mode',
+] as const;
+
+/** compact 模式下为空时省略的字段：缺少即表示没有 */
+const COMPACT_OPTIONAL_LISTS = [
+  'context_before',
+  'matched_terms',
+  'matched_characters',
+  'possible_terms',
+  'possible_characters',
+  'repeated_passages',
+  'memories',
+] as const;
+
+/**
+ * compact 模式的响应：去掉续块里重复的元数据、为空的列表、为 null 的 previous_chapter_tail
+ * 与空的特殊指令。段落、进度与续取用的字段（paragraphs、completed、has_more、next_cursor）
+ * 总是保留，空的 paragraphs 本身就表示没有可处理的段落。
+ */
+function compactChunkPayload<T extends Record<string, unknown>>(payload: T): Partial<T> {
+  const result: Record<string, unknown> = { ...payload };
+  for (const key of COMPACT_OMITTED_METADATA) delete result[key];
+  for (const key of COMPACT_OPTIONAL_LISTS) {
+    const value = result[key];
+    if (Array.isArray(value) && value.length === 0) delete result[key];
+  }
+  if (result.previous_chapter_tail === null) delete result.previous_chapter_tail;
+  if (result.special_instructions === '') delete result.special_instructions;
+  return result as Partial<T>;
+}
+
 function resolveBatchItemId(
   rawId: string,
   paragraphById: Map<string, Paragraph>,
@@ -386,6 +429,12 @@ async function executeGetTranslationChunk(
   args: Record<string, unknown>,
   ctx: AgentMcpExecutionContext,
 ) {
+  const result = await buildTranslationChunk(args, ctx);
+  if (args.compact !== true || isAgentMcpToolError(result)) return result;
+  return compactChunkPayload(result);
+}
+
+async function buildTranslationChunk(args: Record<string, unknown>, ctx: AgentMcpExecutionContext) {
   const resolved = resolveBookAndChapterFromArgs(args, ctx);
   if (!resolved.ok) return resolved.error;
   const { book, chapter, targetLanguage } = resolved;
@@ -672,7 +721,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
   {
     name: 'get_translation_chunk',
     description:
-      'Fetch the next chunk of paragraphs to translate or review, bundled with preceding translated context (context_before; for the first chunk of a chapter, previous_chapter_tail carries the end of the previous chapter instead), recent_chapter_titles for title formatting, matched terms and characters (plus possible_terms / possible_characters: near matches where the source spelling differs slightly, e.g. a typo; text_in_source shows the spelling, confirm before applying; term and character descriptions longer than 150 characters are cut and marked description_truncated: true, so read the full text with list_terms / list_characters before editing one), repeated_passages (paragraphs of this chunk whose source text also appears, already translated, earlier in this chapter or in the previous 30 chapters, such as flashbacks and callbacks, with that earlier translation; only exact repeats of 10+ characters, so search_paragraphs is still needed for older or merely similar lines), top relevant memories, special instructions, target language, and continuation cursor. A chunk holds at most 50 paragraphs and about 4000 source characters by default, sized to be translated and submitted in one submit_translations call; when only a few short paragraphs would be left after it, they are folded in, so the last chunk of a chapter can run slightly over. has_more tells whether another chunk follows this one; completed is true only when the call returned no paragraphs (nothing left in this mode), so always process the returned paragraphs first.',
+      'Fetch the next chunk of paragraphs to translate or review, bundled with preceding translated context (context_before; for the first chunk of a chapter, previous_chapter_tail carries the end of the previous chapter instead), recent_chapter_titles for title formatting, matched terms and characters (plus possible_terms / possible_characters: near matches where the source spelling differs slightly, e.g. a typo; text_in_source shows the spelling, confirm before applying; term and character descriptions longer than 150 characters are cut and marked description_truncated: true, so read the full text with list_terms / list_characters before editing one), repeated_passages (paragraphs of this chunk whose source text also appears, already translated, earlier in this chapter or in the previous 30 chapters, such as flashbacks and callbacks, with that earlier translation; only exact repeats with 10+ characters of text, punctuation not counted; a short line under 24 characters is left out when its two most recent earlier translations differ, since its wording follows the context; search_paragraphs is still needed for older or merely similar lines), top relevant memories, special instructions, target language, and continuation cursor. A chunk holds at most 40 paragraphs and about 4000 source characters by default, sized to be translated and submitted in one submit_translations call; when only a few short paragraphs would be left after it, they are folded in, so the last chunk of a chapter can run slightly over. has_more tells whether another chunk follows this one; completed is true only when the call returned no paragraphs (nothing left in this mode), so always process the returned paragraphs first.',
     category: 'translation',
     permission: 'read_only',
     readOnlyHint: true,
@@ -704,7 +753,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
         max_paragraphs: {
           type: 'number',
           description:
-            'Maximum paragraphs in this chunk (default 50, max 200); the chunk ends at whichever of this and chunk_size is reached first. A short remainder (at most 20% of this many paragraphs and under a third of the character budget) is folded into the chunk instead of becoming a tiny extra one. Lower it if responses get truncated by your client.',
+            'Maximum paragraphs in this chunk (default 40, max 200); the chunk ends at whichever of this and chunk_size is reached first. A short remainder (at most 20% of this many paragraphs and under a third of the character budget) is folded into the chunk instead of becoming a tiny extra one. Lower it if responses get truncated by your client.',
         },
         context_before: {
           type: 'number',
@@ -719,7 +768,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
         compact: {
           type: 'boolean',
           description:
-            'Smaller response for follow-up chunks of a chapter you already started (default false): omits recent_chapter_titles and the descriptions of terms and characters. Characters keep sex, speaking_style and aliases, so one who first appears in a later chunk still comes with a voice. Paragraphs, context, memories and special instructions are unchanged.',
+            'Smaller response for follow-up chunks of a chapter you already started (default false): omits what the first chunk already gave (recent_chapter_titles, chapter_title_original / chapter_title_translation, target_language, enable_original_text_validation, mode) and the descriptions of terms and characters, and leaves out context_before, matched_terms, matched_characters, possible_terms, possible_characters, repeated_passages and memories when empty, previous_chapter_tail when null and special_instructions when empty: a missing field means there is none. Characters keep sex, speaking_style and aliases, so one who first appears in a later chunk still comes with a voice. Paragraphs, progress counts, has_more, completed and next_cursor are always present.',
         },
       },
       required: ['chapter_id'],
@@ -729,7 +778,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
   {
     name: 'submit_translations',
     description:
-      'Validate and persist a batch of paragraph translations (and optional chapter title translation) to the local library, refreshing the live UI immediately. Submit one chunk from get_translation_chunk per call (at most 50 paragraphs by default); send calls one after another, waiting for each result. Submissions to the same book are applied one at a time, so parallel calls gain nothing.',
+      'Validate and persist a batch of paragraph translations (and optional chapter title translation) to the local library, refreshing the live UI immediately. Submit one chunk from get_translation_chunk per call (at most 40 paragraphs by default); send calls one after another, waiting for each result. Submissions to the same book are applied one at a time, so parallel calls gain nothing; get_translation_chunk is read-only, so the next chunk can be fetched while a review correction (write_mode overwrite) is being saved.',
     category: 'translation',
     permission: 'translate_and_edit',
     readOnlyHint: false,

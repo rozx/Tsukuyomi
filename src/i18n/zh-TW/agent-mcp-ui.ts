@@ -117,7 +117,7 @@ export default {
       workflowsNote: '下面是每類任務的步驟，照著執行即可。',
       wfTranslateTitle: '翻譯一章',
       wfTranslate1:
-        '呼叫 get_translation_chunk，傳入 chapter_id，mode 設為 "untranslated"。一塊最多 50 段、約 4000 字原文（可用 max_paragraphs、chunk_size 調整），正好一次譯完、一次提交；續取同一章的後續塊時加上 compact: true，省略重複的標題與術語、角色說明。',
+        '呼叫 get_translation_chunk，傳入 chapter_id，mode 設為 "untranslated"。一塊最多 40 段、約 4000 字原文（可用 max_paragraphs、chunk_size 調整），正好一次譯完、一次提交；續取同一章的後續塊時加上 compact: true，省略第一塊已給過的資訊和為空的清單。',
       wfTranslate2:
         '回傳的 paragraphs 是待翻譯段落（含 id 與原文）；context_before 是本章前文已有的譯文，用來銜接語氣；本章還沒有譯文時改看 previous_chapter_tail，它是上一章末尾的原文與譯文，標點習慣和章末固定用語要與它保持一致；recent_chapter_titles 是最近幾章的標題原文與譯名，新章節的標題格式要與它們一致。matched_terms、matched_characters 是這一塊命中的術語和角色；possible_terms、possible_characters 是原文寫法略有出入的近似命中（text_in_source 是原文裡的寫法），可能是原文的錯字或異寫，確認是同一個詞後再使用。repeated_passages 列出本塊裡與前文同文的段落（本章前文或之前 30 章裡原文完全相同、已有譯文）和當時的譯法：回憶、首尾呼應的句子沿用它，語境不同時再調整；更早的章節和只是相近的句子不會列出，遇到前後篇、回憶、複述前文的段落時用 search_paragraphs 查前文的譯法。memories 是相關記憶，special_instructions 是特殊指令，target_language 是目標語言。',
       wfTranslate3:
@@ -129,7 +129,7 @@ export default {
       wfTranslatePlan:
         '提交譯文之前先做準備，與內建翻譯的規劃階段相同。新術語、新角色和可重複使用的翻譯決定在這一步就建好，不要留到譯完之後：',
       wfTranslateReview:
-        '這一塊提交之後複核，與內建翻譯的複核階段相同。修正自己剛提交的譯文時把 write_mode 設為 "overwrite"，就地改寫這份草稿，不多佔一個版本。靠 search_paragraphs 查前文才確定的稱呼、口吻、標點或固定譯法，表示設定裡缺了它：複核時補進該角色的 speaking_style，或併入既有記憶（帶敬稱的稱呼記進記憶，不加進角色別名）。清單如下：',
+        '這一塊提交之後複核，與內建翻譯的複核階段相同。修正自己剛提交的譯文時把 write_mode 設為 "overwrite"，就地改寫這份草稿，不多佔一個版本。靠 search_paragraphs 查前文才確定的稱呼、口吻、標點或固定譯法，表示設定裡缺了它：複核時補進該角色的 speaking_style，或併入既有記憶（帶敬稱的稱呼記進記憶，不加進角色別名）。留意原文沒有的“”或——、錯別字，以及給性別不明的角色用了「他」「她」。清單如下：',
       wfTranslateBrief: '之後的每一塊只需簡短準備，然後同樣翻譯、提交、複核：',
       wfPolishTitle: '潤飾校對',
       wfPolish1:
@@ -138,7 +138,7 @@ export default {
       wfPolish3:
         '潤飾校對的對象是已有的譯文：預設會新增一個譯文版本並選用它，只有使用者明確要求直接改寫目前版本時才把 write_mode 設為 "overwrite"。',
       wfPolish4:
-        '用回傳的 next_cursor 作為下一次呼叫的 cursor；has_more 為 false 時這一塊已經到章末，處理完就結束。續取同一章的後續塊時可以加上 compact: true，省略重複的標題與術語、角色說明。',
+        '用回傳的 next_cursor 作為下一次呼叫的 cursor；has_more 為 false 時這一塊已經到章末，處理完就結束。續取同一章的後續塊時可以加上 compact: true，省略第一塊已給過的資訊和為空的清單。',
       wfPolishPlan: '修改之前先做準備，與內建潤色、校對的規劃階段相同（潤色與校對沒有複核階段）：',
       wfImportTitle: '匯入新書',
       wfImport1:
@@ -162,7 +162,7 @@ export default {
       wfWorld3:
         '可重複使用的翻譯決定（稱呼怎麼譯、某個詞固定怎麼譯、文風偏好、固定用語）用 upsert_memory 記下，取翻譯塊時會依相關度自動帶出；劇情、背景和世界觀不要寫進記憶。需要查找時用 search_memories，結果依相關度排序並帶有分數。',
       wfWorld4:
-        '使用者對文風或稱呼有長期要求時，用 update_special_instructions 寫成書籍層級或章節層級的特殊指令：特殊指令每次取翻譯塊都會帶上。',
+        '每章都要遵守的全書規範（標題格式、標點約定、常用詞的統一譯法）和使用者的長期要求，用 update_special_instructions 寫成特殊指令（mode 用 append）：特殊指令每次取翻譯塊都會帶上，記憶只依相關度帶出，可能取不到。',
       wfWorld5:
         '用 list_memories 可以翻頁查看全部記憶。過時或重複的項目用 delete_terms、delete_characters、delete_memories 刪除，刪除前先向使用者確認。',
       wfRenameTitle: '統一修改譯名',
@@ -181,7 +181,8 @@ export default {
       ruleWriteBack: '所有譯文和設定都透過工具寫回應用程式，不要只貼在對話裡。',
       ruleConfirm:
         'apply_book_updates 的 include_updated、delete_book，以及 delete_terms、delete_characters、delete_memories 會遺失使用者的資料，使用前必須先得到使用者同意。',
-      ruleAsk: '不確定要處理哪本書、哪些章節時先問使用者；每完成一章回報進度。',
+      ruleAsk:
+        '不確定要處理哪本書、哪些章節時先問使用者；開始或換到下一章時用一句話說明在做什麼，每完成一章回報進度。',
       errorsTitle: '出錯時',
       errPermission:
         'PERMISSION_DENIED：目前的權限模式不允許這個操作。告訴使用者需要在「外部 Agent」頁面調整權限，不要嘗試繞過。',

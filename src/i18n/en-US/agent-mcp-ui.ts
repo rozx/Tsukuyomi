@@ -125,9 +125,9 @@ export default {
       workflowsNote: 'These are the steps for each kind of task; follow them as written.',
       wfTranslateTitle: 'Translate a chapter',
       wfTranslate1:
-        'Call get_translation_chunk with the chapter_id and mode set to "untranslated". A chunk holds at most 50 paragraphs and about 4000 source characters (adjust with max_paragraphs, chunk_size): translate and submit it in one go. For later chunks of the same chapter pass compact: true to leave out the repeated titles and term/character descriptions.',
+        'Call get_translation_chunk with the chapter_id and mode set to "untranslated". A chunk holds at most 40 paragraphs and about 4000 source characters (adjust with max_paragraphs, chunk_size): translate and submit it in one go. For later chunks of the same chapter pass compact: true, which drops what the first chunk already gave and any empty list.',
       wfTranslate2:
-        'paragraphs are what to translate (id and source text); context_before is the existing translation of the preceding text in this chapter, for continuity; when this chapter has none yet, use previous_chapter_tail instead: the end of the previous chapter (source and translation), whose punctuation habits and fixed closing phrases you should follow; recent_chapter_titles are recent source and translated titles: follow their format for a new chapter title. matched_terms and matched_characters occur in this chunk; possible_terms and possible_characters are near matches where the source spelling differs slightly (text_in_source shows it), likely a typo or variant in the source: use them only after confirming it is the same word. repeated_passages lists the paragraphs of this chunk whose identical source was already translated earlier in this chapter or in the previous 30 chapters, with that translation: reuse it for flashbacks and callbacks unless the context differs. Older or merely similar lines are not listed; for two-part chapters, flashbacks or retold passages, look up the earlier wording with search_paragraphs. memories are related notes; follow special_instructions and translate into target_language.',
+        "paragraphs are what to translate. context_before is this chapter's preceding translated text, for continuity; when there is none yet, previous_chapter_tail gives the end of the previous chapter (source and translation): follow its punctuation habits and fixed closing phrases. Match the format of recent_chapter_titles for a new chapter title. matched_terms and matched_characters occur in this chunk; possible_terms and possible_characters are near matches (text_in_source shows the source spelling, likely a typo or variant): confirm it is the same word before using them. repeated_passages gives the earlier translation of paragraphs whose identical source appears earlier in this chapter or the previous 30 chapters: reuse it for flashbacks and callbacks unless the context differs; for older or merely similar lines (two-part chapters, retold passages) look up the earlier wording with search_paragraphs. memories are related notes; follow special_instructions and translate into target_language.",
       wfTranslate3:
         'Translate paragraph by paragraph: one translated paragraph per source paragraph, with no merging, splitting or omission. Use the given renderings for terms and character names.',
       wfTranslate4:
@@ -137,7 +137,7 @@ export default {
       wfTranslatePlan:
         'Before submitting any translation, prepare the same way the built-in translation does in its planning phase. Create new terms, new characters and reusable translation decisions at this point instead of leaving them until afterwards:',
       wfTranslateReview:
-        'After submitting this chunk, review it the same way the built-in translation does in its review phase. When correcting a translation you just submitted, set write_mode to "overwrite" to revise that draft in place instead of using up another version. Whatever you had to confirm with search_paragraphs (a form of address, a voice, punctuation, a fixed rendering) is missing from the settings: add it to that character\'s speaking_style or an existing memory (honorific address forms go in memories, not aliases). Checklist:',
+        'After submitting this chunk, review it the same way the built-in translation does in its review phase. When correcting a translation you just submitted, set write_mode to "overwrite" to revise that draft in place instead of using up another version. Whatever you had to confirm with search_paragraphs (a form of address, a voice, punctuation, a fixed rendering) is missing from the settings: add it to that character\'s speaking_style or an existing memory (honorific address forms go in memories, not aliases). Watch for “” or —— the source lacks, typos, and he/she for a character of unknown gender. Checklist:',
       wfTranslateBrief:
         'For every later chunk a short preparation is enough, followed by the same translate, submit and review steps:',
       wfPolishTitle: 'Polish and proofread',
@@ -148,7 +148,7 @@ export default {
       wfPolish3:
         'Polishing and proofreading work on existing translations: by default a new version is added and selected. Set write_mode to "overwrite" only when the user explicitly asks to rewrite the current version in place.',
       wfPolish4:
-        'Use the returned next_cursor as the cursor of the next call. When has_more is false, this chunk already reaches the end of the chapter: process it and stop. For later chunks of the same chapter you can pass compact: true to leave out the repeated titles and term/character descriptions.',
+        'Use the returned next_cursor as the cursor of the next call. When has_more is false, this chunk already reaches the end of the chapter: process it and stop. For later chunks of the same chapter you can pass compact: true, which drops what the first chunk already gave and any empty list.',
       wfPolishPlan:
         'Before changing anything, prepare the same way the built-in polishing and proofreading do in their planning phase (they have no review phase):',
       wfImportTitle: 'Import a new book',
@@ -173,7 +173,7 @@ export default {
       wfWorld3:
         'Record reusable translation decisions (how a form of address is rendered, the fixed rendering of a word, style preferences, fixed phrases) with upsert_memory; they are brought back automatically by relevance when you fetch a translation chunk. Do not store plot, background or world-building in memories. Use search_memories to look things up; results are ranked by relevance and carry a score.',
       wfWorld4:
-        'When the user has a standing requirement about style or forms of address, write it as a book-level or chapter-level special instruction with update_special_instructions: special instructions come with every translation chunk.',
+        "Write conventions every chapter must follow (title format, punctuation, uniform renderings of common words) and the user's standing requirements as special instructions with update_special_instructions (mode append): every chunk carries them, while memories are recalled by relevance and can be missed.",
       wfWorld5:
         'list_memories pages through every memory. Remove outdated or duplicate entries with delete_terms, delete_characters and delete_memories, and confirm with the user before deleting.',
       wfRenameTitle: 'Rename a term everywhere',
@@ -196,7 +196,7 @@ export default {
       ruleConfirm:
         "include_updated on apply_book_updates, delete_book, and delete_terms, delete_characters and delete_memories destroy user data. Get the user's consent before using them.",
       ruleAsk:
-        'Ask the user when it is unclear which book or chapters to work on, and report progress after each chapter.',
+        'Ask the user when it is unclear which book or chapters to work on. Say briefly what you are doing when you start or switch chapters, and report progress after each chapter.',
       errorsTitle: 'When something fails',
       errPermission:
         'PERMISSION_DENIED: the current permission mode does not allow this operation. Tell the user to adjust the permission on the External Agent page; do not try to work around it.',

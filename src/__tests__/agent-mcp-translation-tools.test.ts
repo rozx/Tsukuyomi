@@ -816,6 +816,75 @@ describe('AgentMcp translation tools', () => {
     expect(compact.special_instructions).toBe(full.special_instructions);
   });
 
+  it('get_translation_chunk 的 compact 模式省略续块里重复的元数据，以及为空的列表、previous_chapter_tail 与特殊指令', async () => {
+    // 用单独的书：同一个 book_id 下前面用例建的记忆还在
+    const base = createTestBook({ id: 'book-compact-1' });
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const call = async (args: Record<string, unknown>) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { chapter_id: 'ch-1', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as Record<string, unknown>;
+    };
+    const repeatedMetadata = [
+      'chapter_title_original',
+      'chapter_title_translation',
+      'target_language',
+      'enable_original_text_validation',
+      'mode',
+    ];
+    const emptyLists = ['possible_terms', 'possible_characters', 'repeated_passages', 'memories'];
+
+    await useBooksStore().addBook(base);
+    const full = await call({ book_id: base.id });
+    // 非 compact（新章节的第一块）字段齐全，空列表也照常给出
+    for (const key of [...repeatedMetadata, ...emptyLists, 'previous_chapter_tail']) {
+      expect(full).toHaveProperty(key);
+    }
+
+    const compact = await call({ book_id: base.id, compact: true });
+    for (const key of [...repeatedMetadata, ...emptyLists, 'previous_chapter_tail']) {
+      expect(compact, key).not.toHaveProperty(key);
+    }
+    // 定位、进度、续取与翻译必需的内容照常给出；有内容的列表与特殊指令不省略
+    expect(compact).toMatchObject({
+      book_id: base.id,
+      chapter_id: 'ch-1',
+      completed: false,
+      has_more: false,
+      chapter_total_count: 4,
+      chapter_translated_count: 1,
+      remaining_untranslated_count: 3,
+      next_cursor: 1,
+      special_instructions: full.special_instructions,
+      paragraphs: full.paragraphs,
+      context_before: full.context_before,
+    });
+    expect(compact.matched_terms).toHaveLength(1);
+    expect(compact.matched_characters).toHaveLength(1);
+
+    // 特殊指令为空时 compact 也省略
+    const plain = createTestBook({ id: 'book-compact-2', translationInstructions: '' });
+    plain.volumes![0]!.chapters![0]!.translationInstructions = '';
+    await useBooksStore().addBook(plain);
+    expect(await call({ book_id: plain.id })).toHaveProperty('special_instructions', '');
+    expect(await call({ book_id: plain.id, compact: true })).not.toHaveProperty(
+      'special_instructions',
+    );
+
+    // 没有可处理的段落：compact 只留 completed、空的 paragraphs 与进度
+    const done = await call({ book_id: base.id, compact: true, mode: 'all', cursor: 99 });
+    expect(done).toMatchObject({ completed: true, has_more: false, paragraphs: [] });
+    expect(done).not.toHaveProperty('context_before');
+    expect(done).not.toHaveProperty('matched_terms');
+
+    await useBooksStore().deleteBook(base.id);
+    await useBooksStore().deleteBook(plain.id);
+  });
+
   it('get_translation_chunk 把过长的术语与角色说明截短并标明，首块不会因为大段剧情简介而过大', async () => {
     const base = createTestBook();
     const longText = '設'.repeat(300);
@@ -904,7 +973,7 @@ describe('AgentMcp translation tools', () => {
     expect(short.matched_characters[0]!.description).toBe('主角');
   });
 
-  it('get_translation_chunk 每块最多 50 段，正好对应一次提交；max_paragraphs 可以调整', async () => {
+  it('get_translation_chunk 每块最多 40 段，正好对应一次提交；max_paragraphs 可以调整', async () => {
     const base = createTestBook();
     const book = createTestBook({
       volumes: [
@@ -941,12 +1010,12 @@ describe('AgentMcp translation tools', () => {
       return res.data as Chunk;
     };
 
-    // 字符预算再大，一块也不超过 50 段
+    // 字符预算再大，一块也不超过 40 段：50 段时响应常超出客户端单次内联显示的上限
     const first = await chunk({});
-    expect(first.paragraphs).toHaveLength(50);
+    expect(first.paragraphs).toHaveLength(40);
     expect(first.has_more).toBe(true);
 
-    // 整块一次提交后，下一块从第 51 段开始
+    // 整块一次提交后，下一块从第 41 段开始
     const submitted = await kernel.callTool(
       'submit_translations',
       {
@@ -959,23 +1028,23 @@ describe('AgentMcp translation tools', () => {
       },
       { channel: 'desktop-mcp' },
     );
-    expect((submitted.data as { saved_count: number }).saved_count).toBe(50);
+    expect((submitted.data as { saved_count: number }).saved_count).toBe(40);
     const second = await chunk({});
-    expect(second.paragraphs[0]!.index).toBe(50);
-    expect(second.paragraphs).toHaveLength(50);
+    expect(second.paragraphs[0]!.index).toBe(40);
+    expect(second.paragraphs).toHaveLength(40);
 
     // mode="all" 同样受限，next_cursor 指向下一块的起点
     const review = await chunk({ mode: 'all' });
-    expect(review.paragraphs).toHaveLength(50);
-    expect(review.next_cursor).toBe(50);
+    expect(review.paragraphs).toHaveLength(40);
+    expect(review.next_cursor).toBe(40);
     expect(review.has_more).toBe(true);
 
     // 可以调小或调大；超过上限时按 200 处理，非法值用默认值
     expect((await chunk({ mode: 'all', max_paragraphs: 20 })).paragraphs).toHaveLength(20);
     expect((await chunk({ mode: 'all', max_paragraphs: 80 })).paragraphs).toHaveLength(80);
     expect((await chunk({ mode: 'all', max_paragraphs: 9999 })).paragraphs).toHaveLength(120);
-    expect((await chunk({ mode: 'all', max_paragraphs: 0 })).paragraphs).toHaveLength(50);
-    expect((await chunk({ mode: 'all', max_paragraphs: 'abc' })).paragraphs).toHaveLength(50);
+    expect((await chunk({ mode: 'all', max_paragraphs: 0 })).paragraphs).toHaveLength(40);
+    expect((await chunk({ mode: 'all', max_paragraphs: 'abc' })).paragraphs).toHaveLength(40);
 
     // 字符预算更紧时仍以字符预算为准
     expect((await chunk({ mode: 'all', chunk_size: 1 })).paragraphs).toHaveLength(1);
@@ -1020,17 +1089,17 @@ describe('AgentMcp translation tools', () => {
       return res.data as Chunk;
     };
 
-    // 105 段：第二块之后只剩 5 段，并入第二块（55 段），不再有第三块
-    await useBooksStore().addBook(bookWith(short(105)));
+    // 85 段：第二块之后只剩 5 段，并入第二块（45 段），不再有第三块
+    await useBooksStore().addBook(bookWith(short(85)));
     const first = await chunk({ mode: 'all' });
-    expect(first.paragraphs).toHaveLength(50);
-    expect(first.next_cursor).toBe(50);
-    const last = await chunk({ mode: 'all', cursor: 50 });
-    expect(last.paragraphs).toHaveLength(55);
+    expect(first.paragraphs).toHaveLength(40);
+    expect(first.next_cursor).toBe(40);
+    const last = await chunk({ mode: 'all', cursor: 40 });
+    expect(last.paragraphs).toHaveLength(45);
     expect(last.has_more).toBe(false);
     expect(last.next_cursor).toBeNull();
 
-    // untranslated 模式同理：提交第一块后，剩下的 55 段一次取完
+    // untranslated 模式同理：提交第一块后，剩下的 45 段一次取完
     await kernel.callTool(
       'submit_translations',
       {
@@ -1044,33 +1113,33 @@ describe('AgentMcp translation tools', () => {
       { channel: 'desktop-mcp' },
     );
     const rest = await chunk({});
-    expect(rest.paragraphs).toHaveLength(55);
+    expect(rest.paragraphs).toHaveLength(45);
     expect(rest.has_more).toBe(false);
 
     // 显式的 max_paragraphs 同样适用，尾巴不超过它的两成
-    expect((await chunk({ mode: 'all', cursor: 81, max_paragraphs: 20 })).paragraphs).toHaveLength(
+    expect((await chunk({ mode: 'all', cursor: 61, max_paragraphs: 20 })).paragraphs).toHaveLength(
       24,
     );
-    expect((await chunk({ mode: 'all', cursor: 80, max_paragraphs: 20 })).paragraphs).toHaveLength(
+    expect((await chunk({ mode: 'all', cursor: 60, max_paragraphs: 20 })).paragraphs).toHaveLength(
       20,
     );
     // 段数上限很小时两成不足一段：不并入
-    expect((await chunk({ mode: 'all', cursor: 100, max_paragraphs: 4 })).paragraphs).toHaveLength(
+    expect((await chunk({ mode: 'all', cursor: 80, max_paragraphs: 4 })).paragraphs).toHaveLength(
       4,
     );
 
     // 剩下 11 段超过两成：仍然单独成块
     await useBooksStore().deleteBook(base.id);
-    await useBooksStore().addBook(bookWith(short(61)));
-    expect((await chunk({ mode: 'all' })).paragraphs).toHaveLength(50);
+    await useBooksStore().addBook(bookWith(short(51)));
+    expect((await chunk({ mode: 'all' })).paragraphs).toHaveLength(40);
 
     // 剩下的段数虽少但字数多（超过字符预算的三分之一）：不并入，避免响应过大
     await useBooksStore().deleteBook(base.id);
     await useBooksStore().addBook(
-      bookWith([...short(50), ...Array.from({ length: 5 }, () => '長'.repeat(400))]),
+      bookWith([...short(40), ...Array.from({ length: 5 }, () => '長'.repeat(400))]),
     );
     const bounded = await chunk({ mode: 'all' });
-    expect(bounded.paragraphs).toHaveLength(50);
+    expect(bounded.paragraphs).toHaveLength(40);
     expect(bounded.has_more).toBe(true);
   });
 

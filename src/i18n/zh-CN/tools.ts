@@ -59,7 +59,8 @@ export default {
     create_character__parameters__properties__name:
       '角色原名，来源语言不限。已知全名时使用全名，不仅用姓或名；不得凭空补全未知的姓名部分。',
     create_character__parameters__properties__translation: '角色全名的执行目标语言译名。',
-    create_character__parameters__properties__sex: '角色性别（可选）',
+    create_character__parameters__properties__sex:
+      '角色性别（可选），只能是 male、female、other 之一；性别不明时省略此字段，不要填 unknown 等其他值',
     create_character__parameters__properties__description:
       '角色的简短描述（可选）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
     create_character__parameters__properties__speaking_style:
@@ -84,7 +85,8 @@ export default {
     update_character__parameters__properties__name:
       '新的角色原名（可选）。已知全名时使用全名，不得补全未知部分。',
     update_character__parameters__properties__translation: '新的翻译文本（可选）',
-    update_character__parameters__properties__sex: '新的性别（可选）',
+    update_character__parameters__properties__sex:
+      '新的性别（可选），只能是 male、female、other 之一；不修改或性别不明时省略此字段，不要填 unknown 等其他值',
     update_character__parameters__properties__description:
       '新的描述（可选，设置为空字符串可删除描述）。[警告] **重要**：描述应该简短，只包含重要信息，避免冗长或不必要的细节。',
     update_character__parameters__properties__speaking_style:
