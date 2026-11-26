@@ -158,11 +158,11 @@ export default {
       wfWorld1:
         '開始翻譯一本書之前，先用 list_terms 和 list_characters 了解已有的譯法。get_app_context 回傳 local_embedding_enabled: false 時，記憶只按關鍵字帶出：再用 list_memories 瀏覽全部摘要，確認標點、稱呼等全書約定。',
       wfWorld2:
-        '遇到作品特有的新術語或新角色時，用 upsert_terms、upsert_characters 記錄下來，之後全書沿用。通用詞彙不建術語；人名放角色表，不放術語表；建角色前先確認它不是既有角色的別名。',
+        '遇到作品特有的新術語或新角色時，用 upsert_terms、upsert_characters 記錄下來，之後全書沿用。無歧義的日常詞不建術語；有多種常見譯法、需要全書統一的詞（職業、魔物類別、設定高頻詞，如魔道具、アンデッド）要建，依塊帶出；人名放角色表，不放術語表；建角色前先確認它不是既有角色的別名。',
       wfWorld3:
         '可重複使用的翻譯決定（稱呼怎麼譯、某個詞固定怎麼譯、文風偏好、固定用語）用 upsert_memory 記下，取翻譯塊時會依相關度自動帶出；劇情、背景和世界觀不要寫進記憶。需要查找時用 search_memories，結果依相關度排序並帶有分數。',
       wfWorld4:
-        '每章都要遵守的全書規範（標題格式、標點約定、常用詞的統一譯法）和使用者的長期要求，用 update_special_instructions 寫成特殊指令（mode 用 append）：特殊指令每次取翻譯塊都會帶上，記憶只依相關度帶出，可能取不到。',
+        '每章都要遵守的全書規範（標題格式、標點約定、敘事文風）和使用者的長期要求，用 update_special_instructions 寫成特殊指令（mode 用 append）：特殊指令每次取翻譯塊都會帶上，記憶只依相關度帶出，可能取不到。',
       wfWorld5:
         '用 list_memories 可以翻頁查看全部記憶。過時或重複的項目用 delete_terms、delete_characters、delete_memories 刪除，刪除前先向使用者確認。',
       wfRenameTitle: '統一修改譯名',

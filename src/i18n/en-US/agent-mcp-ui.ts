@@ -169,11 +169,11 @@ export default {
       wfWorld1:
         'Before translating a book, check the existing renderings with list_terms and list_characters. When get_app_context shows local_embedding_enabled: false, memories match by keyword only, so also skim every summary with list_memories for book-wide conventions.',
       wfWorld2:
-        'When you meet a new term or character specific to the work, record it with upsert_terms and upsert_characters so the whole book uses it. Do not create terms for ordinary vocabulary; personal names go in the character list, not the term list; before creating a character, make sure it is not an alias of an existing one.',
+        'Record terms and characters specific to the work with upsert_terms and upsert_characters for the whole book. Skip unambiguous everyday words, but add words with several common renderings that must stay uniform (classes, monster types). Personal names go in the character list, not the term list; check that a new character is not an alias of an existing one.',
       wfWorld3:
         'Record reusable translation decisions (how a form of address is rendered, the fixed rendering of a word, style preferences, fixed phrases) with upsert_memory; they are brought back automatically by relevance when you fetch a translation chunk. Do not store plot, background or world-building in memories. Use search_memories to look things up; results are ranked by relevance and carry a score.',
       wfWorld4:
-        "Write conventions every chapter must follow (title format, punctuation, uniform renderings of common words) and the user's standing requirements as special instructions with update_special_instructions (mode append): every chunk carries them, while memories are recalled by relevance and can be missed.",
+        "Write conventions every chapter must follow (title format, punctuation, narrative style) and the user's standing requirements as special instructions with update_special_instructions (mode append): every chunk carries them, while relevance-recalled memories can be missed.",
       wfWorld5:
         'list_memories pages through every memory. Remove outdated or duplicate entries with delete_terms, delete_characters and delete_memories, and confirm with the user before deleting.',
       wfRenameTitle: 'Rename a term everywhere',

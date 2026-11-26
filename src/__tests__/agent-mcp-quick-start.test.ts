@@ -244,6 +244,9 @@ describe('buildAgentQuickStartGuide', () => {
     // 每章都要遵守的全书规范与用户的长期要求写进特殊指令（每块都带上）；可复用的翻译决定放记忆，由相关性自动带出
     expect(guide).toMatch(/每章都要遵守的全书规范[^\n]*长期要求[^\n]*update_special_instructions/);
     expect(guide).toMatch(/update_special_instructions[^\n]*每次取翻译块都会带上[^\n]*可能取不到/);
+    // 特殊指令只放格式、文风与长期偏好：需要全书统一的高频词进术语表（按块带出），不往指令里堆词表
+    expect(guide).not.toMatch(/特殊指令[^\n]*常用词/);
+    expect(guide).toMatch(/多种常见译法[^\n]*全书统一[^\n]*术语/);
     expect(guide).toMatch(/翻译决定[^\n]*upsert_memory/);
   });
 

@@ -425,6 +425,11 @@ describe('AgentMcp worldbuilding tools', () => {
     expect(emptyAppend.isError).toBe(true);
     expect((await read()).book.translation_instructions).toBe('替换后的指令');
 
+    // 术语说明：无歧义的日常词不建，有多种常见译法、需要全书统一的词要建
+    const termsTool = agentMcpWorldbuildingTools.find((t) => t.name === 'upsert_terms')!;
+    expect(termsTool.description).toMatch(/多种常见译法[^。]*全书统一/);
+    expect(termsTool.description).not.toMatch(/不为通用词汇/);
+
     // schema 里列出 mode，客户端才不会把它当成未知参数
     const schema = agentMcpWorldbuildingTools.find((t) => t.name === 'update_special_instructions')!
       .inputSchema.properties as Record<string, { enum?: string[] }>;
