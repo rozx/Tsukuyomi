@@ -487,10 +487,9 @@ describe('AgentMcp translation tools', () => {
         chapter_id: string;
         title_original: string;
         title_translation: string;
-        paragraphs: Array<{ id: string; original: string; translation: string }>;
+        paragraphs: Array<{ original: string; translation: string }>;
       } | null;
       recent_chapter_titles: Array<{
-        chapter_id: string;
         title_original: string;
         title_translation: string;
       }>;
@@ -501,17 +500,14 @@ describe('AgentMcp translation tools', () => {
       title_original: '６９５話　前夜',
       title_translation: '６９５话　前夜',
     });
-    // 取上一章最后 2 段已译的非空段落，按原顺序
-    expect(first.previous_chapter_tail?.paragraphs.map((p) => [p.id, p.translation])).toEqual([
-      ['pa000002', '第二行。'],
-      ['pa000004', '「明天见」'],
+    // 取上一章最后 2 段已译的非空段落，按原顺序；只用来对齐语气与标点，不带段落 ID 与序号
+    expect(first.previous_chapter_tail?.paragraphs).toEqual([
+      { original: '二行目。', translation: '第二行。' },
+      { original: '「また明日」', translation: '「明天见」' },
     ]);
+    // 最近几章的标题只用来对齐格式，不带章节 ID
     expect(first.recent_chapter_titles).toEqual([
-      {
-        chapter_id: 'ch-prev',
-        title_original: '６９５話　前夜',
-        title_translation: '６９５话　前夜',
-      },
+      { title_original: '６９５話　前夜', title_translation: '６９５话　前夜' },
     ]);
 
     // 本章已有已译前文时用本章的，不再带上一章
@@ -973,7 +969,181 @@ describe('AgentMcp translation tools', () => {
     expect(short.matched_characters[0]!.description).toBe('主角');
   });
 
-  it('get_translation_chunk 每块最多 40 段，正好对应一次提交；max_paragraphs 可以调整', async () => {
+  it('get_translation_chunk 命中的条目多时收紧说明的截短长度，说明合计不超过预算；include_descriptions: false 时不带说明', async () => {
+    const base = createTestBook();
+    const longText = '設'.repeat(300);
+    const names = (count: number) =>
+      Array.from({ length: count }, (_, i) => `人${String.fromCharCode(0x7532 + i * 3)}`);
+    const bookWith = (characterNames: string[]) =>
+      createTestBook({
+        characterSettings: characterNames.map((name, i) => ({
+          id: `char-${i}`,
+          name,
+          sex: 'female' as const,
+          description: longText,
+          speakingStyle: '平静',
+          translation: { id: `ct-${i}`, translation: `译${i}`, aliases: [], aiModelId: 'm1' },
+          aliases: [
+            {
+              id: `al-${i}`,
+              name: `${name}様`,
+              translation: { id: `at-${i}`, translation: `${i}大人`, aiModelId: 'm1' },
+            },
+          ],
+        })),
+        volumes: [
+          {
+            ...base.volumes![0]!,
+            chapters: [
+              {
+                ...base.volumes![0]!.chapters![0]!,
+                content: [
+                  {
+                    id: 'p0000001',
+                    text: `月光石を囲んで、${characterNames.join('と')}が話した。`,
+                    selectedTranslationId: '',
+                    translations: [],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    type Entity = {
+      description?: string;
+      description_truncated?: boolean;
+      sex?: string;
+      speaking_style?: string;
+      aliases?: unknown[];
+    };
+    type Chunk = { matched_terms: Entity[]; matched_characters: Entity[] };
+    const fetchChunk = async (args: Record<string, unknown> = {}) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: base.id, chapter_id: 'ch-1', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as Chunk;
+    };
+
+    // 12 个角色各有 300 字的说明：短说明（月光石的 4 个字）照常带全，
+    // 其余平分剩下的 596 字，每条截到 49 字
+    await useBooksStore().addBook(bookWith(names(12)));
+    const many = await fetchChunk();
+    expect(many.matched_characters).toHaveLength(12);
+    expect(many.matched_terms[0]!.description).toBe('发光矿石');
+    for (const char of many.matched_characters) {
+      expect(char.description).toBe(`${'設'.repeat(49)}…`);
+      expect(char.description_truncated).toBe(true);
+      // 译名、性别、口吻与别名是翻译必需的，不受预算影响
+      expect(char.speaking_style).toBe('平静');
+      expect(char.aliases).toHaveLength(1);
+    }
+
+    // 条目再多，每条也至少保留 40 字
+    await useBooksStore().deleteBook(base.id);
+    await useBooksStore().addBook(bookWith(names(30)));
+    const crowded = await fetchChunk();
+    expect(crowded.matched_characters).toHaveLength(30);
+    expect(crowded.matched_characters[0]!.description).toBe(`${'設'.repeat(40)}…`);
+
+    // include_descriptions: false 时第一块也不带说明，其余字段照旧
+    const lean = await fetchChunk({ include_descriptions: false });
+    expect(lean.matched_terms[0]).toEqual({ id: 'term-1', name: '月光石', translation: '月光石' });
+    expect(lean.matched_characters[0]).not.toHaveProperty('description');
+    expect(lean.matched_characters[0]).not.toHaveProperty('description_truncated');
+    expect(lean.matched_characters[0]).toMatchObject({ sex: 'female', speaking_style: '平静' });
+  });
+
+  it('get_translation_chunk 的第一块带上 style_hints：统计本章与前几章已有译文的引号、破折号、省略号、对白句末句号、数字与空格的写法', async () => {
+    const base = createTestBook();
+    const firstChapter = base.volumes![0]!.chapters![0]!;
+    const translated = (id: string, text: string, translation: string) => ({
+      id,
+      text,
+      selectedTranslationId: `tr-${id}`,
+      translations: [
+        { id: `tr-${id}`, translation, aiModelId: 'builtin-model-1', language: 'zh-CN' as const },
+      ],
+    });
+    const previousContent = [
+      ...Array.from({ length: 10 }, (_, i) =>
+        translated(`pa${String(i).padStart(6, '0')}`, `「行${i}」`, `「第${i + 1}行」`),
+      ),
+      translated('pb000001', '彼は――と言った。', '他——这么说了。'),
+      translated('pb000002', 'そうか……', '是吗……'),
+      translated('pb000003', '「わかった。」', '「知道了。」'),
+      translated('pb000004', '３つ目！', '第3个! 真的吗？'),
+      translated('pb000005', '『秘密』', '“秘密”和　全角空格 与 半角'),
+      // 原样照搬的段落（分隔线、纯符号行）不反映译者的习惯，不计入
+      translated('pb000006', '---', '---'),
+    ];
+    const book = createTestBook({
+      translationInstructions: '',
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            { ...firstChapter, id: 'ch-prev', content: previousContent },
+            {
+              ...firstChapter,
+              id: 'ch-new',
+              translationInstructions: '',
+              content: [
+                { id: 'pn000001', text: '朝が来た。', selectedTranslationId: '', translations: [] },
+                { id: 'pn000002', text: '鳥が鳴く。', selectedTranslationId: '', translations: [] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const fetchChunk = async (args: Record<string, unknown> = {}) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-new', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as { style_hints?: Record<string, unknown> };
+    };
+
+    const first = await fetchChunk();
+    expect(first.style_hints).toEqual({
+      sample_paragraphs: 15,
+      quotes: { '「」': 11, '“”': 1 },
+      dashes: { '——': 1 },
+      ellipses: { '……': 1 },
+      dialogue_end_period: { with_period: 1, without_period: 11 },
+      exclamation_question: { '！？': 1, '!?': 1 },
+      digits: { '0-9': 11 },
+      spaces: { full_width: 1, half_width: 2 },
+    });
+
+    // 续块用 compact 时不再带
+    expect(await fetchChunk({ compact: true })).not.toHaveProperty('style_hints');
+
+    // 已有译文太少（不到 10 段）时统计没有意义，不带
+    await useBooksStore().updateBook(book.id, {
+      volumes: [
+        {
+          ...book.volumes![0]!,
+          chapters: [
+            { ...book.volumes![0]!.chapters![0]!, content: previousContent.slice(10, 14) },
+            book.volumes![0]!.chapters![1]!,
+          ],
+        },
+      ],
+    });
+    expect(await fetchChunk()).not.toHaveProperty('style_hints');
+  });
+
+  it('get_translation_chunk 每块默认最多 60 段，正好对应一次提交；max_paragraphs 可以调整', async () => {
     const base = createTestBook();
     const book = createTestBook({
       volumes: [
@@ -1003,19 +1173,26 @@ describe('AgentMcp translation tools', () => {
     const chunk = async (args: Record<string, unknown>) => {
       const res = await kernel.callTool(
         'get_translation_chunk',
-        { book_id: book.id, chapter_id: 'ch-1', chunk_size: 50000, ...args },
+        // 这里只看段数上限：放宽整包的字节预算
+        {
+          book_id: book.id,
+          chapter_id: 'ch-1',
+          chunk_size: 50000,
+          max_response_bytes: 100000,
+          ...args,
+        },
         { channel: 'desktop-mcp' },
       );
       expect(res.isError, res.text).toBe(false);
       return res.data as Chunk;
     };
 
-    // 字符预算再大，一块也不超过 40 段：50 段时响应常超出客户端单次内联显示的上限
+    // 字符预算再大，一块也不超过 60 段；网文的短段落 60 段也只有一两千字
     const first = await chunk({});
-    expect(first.paragraphs).toHaveLength(40);
+    expect(first.paragraphs).toHaveLength(60);
     expect(first.has_more).toBe(true);
 
-    // 整块一次提交后，下一块从第 41 段开始
+    // 整块一次提交后，下一块从第 61 段开始
     const submitted = await kernel.callTool(
       'submit_translations',
       {
@@ -1028,26 +1205,220 @@ describe('AgentMcp translation tools', () => {
       },
       { channel: 'desktop-mcp' },
     );
-    expect((submitted.data as { saved_count: number }).saved_count).toBe(40);
+    expect((submitted.data as { saved_count: number }).saved_count).toBe(60);
     const second = await chunk({});
-    expect(second.paragraphs[0]!.index).toBe(40);
-    expect(second.paragraphs).toHaveLength(40);
+    expect(second.paragraphs[0]!.index).toBe(60);
+    expect(second.paragraphs).toHaveLength(60);
 
     // mode="all" 同样受限，next_cursor 指向下一块的起点
     const review = await chunk({ mode: 'all' });
-    expect(review.paragraphs).toHaveLength(40);
-    expect(review.next_cursor).toBe(40);
+    expect(review.paragraphs).toHaveLength(60);
+    expect(review.next_cursor).toBe(60);
     expect(review.has_more).toBe(true);
 
     // 可以调小或调大；超过上限时按 200 处理，非法值用默认值
     expect((await chunk({ mode: 'all', max_paragraphs: 20 })).paragraphs).toHaveLength(20);
     expect((await chunk({ mode: 'all', max_paragraphs: 80 })).paragraphs).toHaveLength(80);
     expect((await chunk({ mode: 'all', max_paragraphs: 9999 })).paragraphs).toHaveLength(120);
-    expect((await chunk({ mode: 'all', max_paragraphs: 0 })).paragraphs).toHaveLength(40);
-    expect((await chunk({ mode: 'all', max_paragraphs: 'abc' })).paragraphs).toHaveLength(40);
+    expect((await chunk({ mode: 'all', max_paragraphs: 0 })).paragraphs).toHaveLength(60);
+    expect((await chunk({ mode: 'all', max_paragraphs: 'abc' })).paragraphs).toHaveLength(60);
 
     // 字符预算更紧时仍以字符预算为准
     expect((await chunk({ mode: 'all', chunk_size: 1 })).paragraphs).toHaveLength(1);
+  });
+
+  it('get_translation_chunk 按整个响应的 UTF-8 字节预算（默认 9000）收口：先放上下文，剩下的空间装段落，首块不会超出客户端约 10 KiB 的内联上限', async () => {
+    const base = createTestBook();
+    const firstChapter = base.volumes![0]!.chapters![0]!;
+    const translated = (id: string, text: string, translation: string) => ({
+      id,
+      text,
+      selectedTranslationId: `tr-${id}`,
+      translations: [
+        { id: `tr-${id}`, translation, aiModelId: 'builtin-model-1', language: 'zh-CN' as const },
+      ],
+    });
+    const names = Array.from({ length: 8 }, (_, i) => `人${String.fromCharCode(0x7532 + i * 3)}`);
+    const book = createTestBook({
+      characterSettings: names.map((name, i) => ({
+        id: `char-${i}`,
+        name,
+        sex: 'male' as const,
+        description: '長'.repeat(300),
+        speakingStyle: '说话简短，常用反问',
+        translation: { id: `ct-${i}`, translation: `译名${i}`, aiModelId: 'm1' },
+        aliases: [],
+      })),
+      volumes: [
+        {
+          ...base.volumes![0]!,
+          chapters: [
+            {
+              ...firstChapter,
+              id: 'ch-prev',
+              content: Array.from({ length: 12 }, (_, i) =>
+                translated(`pp${String(i).padStart(6, '0')}`, `前章${i}行目。`, `前章第${i}行。`),
+              ),
+            },
+            {
+              ...firstChapter,
+              id: 'ch-new',
+              // 60 段、每段 40 个汉字：段数与字数都没到上限，按字节算却装不下
+              content: Array.from({ length: 60 }, (_, i) => ({
+                id: `pn${String(i).padStart(6, '0')}`,
+                text: `${i === 0 ? names.join('') : ''}${'漢'.repeat(40)}`,
+                selectedTranslationId: '',
+                translations: [],
+              })),
+            },
+          ],
+        },
+      ],
+    });
+    await useBooksStore().addBook(book);
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+    const fetchChunk = async (args: Record<string, unknown> = {}) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: book.id, chapter_id: 'ch-new', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as {
+        paragraphs: Array<{ index: number }>;
+        matched_characters: unknown[];
+        has_more: boolean;
+      };
+    };
+
+    const first = await fetchChunk();
+    expect(first.matched_characters).toHaveLength(8);
+    expect(bytes(first)).toBeLessThanOrEqual(9000);
+    expect(first.paragraphs.length).toBeGreaterThan(10);
+    expect(first.paragraphs.length).toBeLessThan(60);
+    expect(first.has_more).toBe(true);
+    // 段落从头连续装入
+    expect(first.paragraphs.map((p) => p.index)).toEqual(
+      Array.from({ length: first.paragraphs.length }, (_, i) => i),
+    );
+
+    // compact 的续块没有说明、上一章末尾和标题，同样的预算能多装段落
+    const compactChunk = await fetchChunk({ compact: true });
+    expect(bytes(compactChunk)).toBeLessThanOrEqual(9000);
+    expect(compactChunk.paragraphs.length).toBeGreaterThan(first.paragraphs.length);
+
+    // 客户端能内联更多时用 max_response_bytes 放宽；过小的值按 2000 处理，至少给一段
+    expect((await fetchChunk({ max_response_bytes: 100000 })).paragraphs).toHaveLength(60);
+    const tiny = await fetchChunk({ max_response_bytes: 1 });
+    expect(tiny.paragraphs.length).toBeGreaterThanOrEqual(1);
+    expect((await fetchChunk({ max_response_bytes: 'abc' })).paragraphs).toHaveLength(
+      first.paragraphs.length,
+    );
+  });
+
+  it('get_translation_chunk 并入章末尾巴时整包最多超出字节预算的 5%，超出更多就不并入', async () => {
+    const base = createTestBook();
+    const bookWith = (count: number) =>
+      createTestBook({
+        translationInstructions: '',
+        volumes: [
+          {
+            ...base.volumes![0]!,
+            chapters: [
+              {
+                ...base.volumes![0]!.chapters![0]!,
+                translationInstructions: '',
+                // 每段 30 个字（90 字节），一段约 128 字节
+                content: Array.from({ length: count }, (_, i) => ({
+                  id: `b${String(i).padStart(7, '0')}`,
+                  text: 'あ'.repeat(30),
+                  selectedTranslationId: '',
+                  translations: [],
+                })),
+              },
+            ],
+          },
+        ],
+      });
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+    const fetchChunk = async () => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: base.id, chapter_id: 'ch-1' },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as { paragraphs: unknown[]; has_more: boolean };
+    };
+
+    // 60 段约 8.3 KB；再并入 5 段约 8.9 KB，在 9450 字节以内：并入
+    await useBooksStore().addBook(bookWith(65));
+    const folded = await fetchChunk();
+    expect(folded.paragraphs).toHaveLength(65);
+    expect(folded.has_more).toBe(false);
+    expect(bytes(folded)).toBeLessThanOrEqual(9450);
+
+    // 剩 15 段时并入后约 10.2 KB：不并入，这一块仍在预算之内
+    await useBooksStore().deleteBook(base.id);
+    await useBooksStore().addBook(bookWith(75));
+    const bounded = await fetchChunk();
+    expect(bounded.paragraphs).toHaveLength(60);
+    expect(bounded.has_more).toBe(true);
+    expect(bytes(bounded)).toBeLessThanOrEqual(9000);
+  });
+
+  it('get_translation_chunk 里极短的段落（不计标点不超过 8 个字）按半段计入段数上限，弹幕式的短行不会拆成很多块', async () => {
+    const base = createTestBook();
+    const bookWith = (texts: string[]) =>
+      createTestBook({
+        volumes: [
+          {
+            ...base.volumes![0]!,
+            chapters: [
+              {
+                ...base.volumes![0]!.chapters![0]!,
+                content: texts.map((text, i) => ({
+                  id: `s${String(i).padStart(7, '0')}`,
+                  text,
+                  selectedTranslationId: '',
+                  translations: [],
+                })),
+              },
+            ],
+          },
+        ],
+      });
+    const kernel = createAgentMcpKernel({ tools: agentMcpTranslationTools });
+    const count = async (args: Record<string, unknown> = {}) => {
+      const res = await kernel.callTool(
+        'get_translation_chunk',
+        { book_id: base.id, chapter_id: 'ch-1', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return (res.data as { paragraphs: unknown[] }).paragraphs.length;
+    };
+
+    // 2～5 字的短弹幕、纯符号行：60 段的配额可以放下 120 段，默认的字节预算也装得下
+    await useBooksStore().addBook(
+      bookWith(Array.from({ length: 200 }, (_, i) => (i % 2 === 0 ? 'えっ？' : '……'))),
+    );
+    expect(await count()).toBe(120);
+    expect(await count({ max_paragraphs: 10 })).toBe(20);
+
+    // 恰好 8 个字仍算短段落；9 个字起按一整段计（放宽字节预算，只看段数配额）
+    await useBooksStore().deleteBook(base.id);
+    await useBooksStore().addBook(
+      bookWith(Array.from({ length: 200 }, () => 'あいうえおかきく！')),
+    );
+    expect(await count({ max_response_bytes: 100000 })).toBe(120);
+    await useBooksStore().deleteBook(base.id);
+    await useBooksStore().addBook(
+      bookWith(Array.from({ length: 200 }, () => 'あいうえおかきくけ！')),
+    );
+    expect(await count({ max_response_bytes: 100000 })).toBe(60);
   });
 
   it('get_translation_chunk 把章末剩下的几段并入最后一块，不单独留一个很小的尾块', async () => {
@@ -1082,24 +1453,29 @@ describe('AgentMcp translation tools', () => {
     const chunk = async (args: Record<string, unknown>) => {
       const res = await kernel.callTool(
         'get_translation_chunk',
-        { book_id: base.id, chapter_id: 'ch-1', ...args },
+        // 这里只看段数与字数的规则：放宽整包的字节预算
+        { book_id: base.id, chapter_id: 'ch-1', max_response_bytes: 100000, ...args },
         { channel: 'desktop-mcp' },
       );
       expect(res.isError, res.text).toBe(false);
       return res.data as Chunk;
     };
+    const replaceBook = async (texts: string[]) => {
+      if (useBooksStore().getBookById(base.id)) await useBooksStore().deleteBook(base.id);
+      await useBooksStore().addBook(bookWith(texts));
+    };
 
-    // 85 段：第二块之后只剩 5 段，并入第二块（45 段），不再有第三块
-    await useBooksStore().addBook(bookWith(short(85)));
+    // 135 段：第二块之后只剩 15 段（段数上限的四分之一），并入第二块（75 段），不再有第三块
+    await replaceBook(short(135));
     const first = await chunk({ mode: 'all' });
-    expect(first.paragraphs).toHaveLength(40);
-    expect(first.next_cursor).toBe(40);
-    const last = await chunk({ mode: 'all', cursor: 40 });
-    expect(last.paragraphs).toHaveLength(45);
+    expect(first.paragraphs).toHaveLength(60);
+    expect(first.next_cursor).toBe(60);
+    const last = await chunk({ mode: 'all', cursor: 60 });
+    expect(last.paragraphs).toHaveLength(75);
     expect(last.has_more).toBe(false);
     expect(last.next_cursor).toBeNull();
 
-    // untranslated 模式同理：提交第一块后，剩下的 45 段一次取完
+    // untranslated 模式同理：提交第一块后，剩下的 75 段一次取完
     await kernel.callTool(
       'submit_translations',
       {
@@ -1113,33 +1489,43 @@ describe('AgentMcp translation tools', () => {
       { channel: 'desktop-mcp' },
     );
     const rest = await chunk({});
-    expect(rest.paragraphs).toHaveLength(45);
+    expect(rest.paragraphs).toHaveLength(75);
     expect(rest.has_more).toBe(false);
 
-    // 显式的 max_paragraphs 同样适用，尾巴不超过它的两成
-    expect((await chunk({ mode: 'all', cursor: 61, max_paragraphs: 20 })).paragraphs).toHaveLength(
-      24,
+    // 显式的 max_paragraphs 同样适用，尾巴不超过它的四分之一
+    expect((await chunk({ mode: 'all', cursor: 110, max_paragraphs: 20 })).paragraphs).toHaveLength(
+      25,
     );
-    expect((await chunk({ mode: 'all', cursor: 60, max_paragraphs: 20 })).paragraphs).toHaveLength(
+    expect((await chunk({ mode: 'all', cursor: 109, max_paragraphs: 20 })).paragraphs).toHaveLength(
       20,
     );
-    // 段数上限很小时两成不足一段：不并入
-    expect((await chunk({ mode: 'all', cursor: 80, max_paragraphs: 4 })).paragraphs).toHaveLength(
+    expect((await chunk({ mode: 'all', cursor: 130, max_paragraphs: 4 })).paragraphs).toHaveLength(
+      5,
+    );
+    expect((await chunk({ mode: 'all', cursor: 129, max_paragraphs: 4 })).paragraphs).toHaveLength(
       4,
     );
 
-    // 剩下 11 段超过两成：仍然单独成块
-    await useBooksStore().deleteBook(base.id);
-    await useBooksStore().addBook(bookWith(short(51)));
-    expect((await chunk({ mode: 'all' })).paragraphs).toHaveLength(40);
+    // 剩下 16 段超过四分之一：仍然单独成块
+    await replaceBook(short(76));
+    expect((await chunk({ mode: 'all' })).paragraphs).toHaveLength(60);
 
-    // 剩下的段数虽少但字数多（超过字符预算的三分之一）：不并入，避免响应过大
-    await useBooksStore().deleteBook(base.id);
-    await useBooksStore().addBook(
-      bookWith([...short(40), ...Array.from({ length: 5 }, () => '長'.repeat(400))]),
-    );
+    // 尾巴里的极短段落按半段计：30 段短弹幕只算 15 段，一并带上
+    await replaceBook([...short(60), ...Array.from({ length: 30 }, () => 'えっ？')]);
+    const withShortTail = await chunk({ mode: 'all' });
+    expect(withShortTail.paragraphs).toHaveLength(90);
+    expect(withShortTail.has_more).toBe(false);
+
+    // 并入后合计不超过字符预算的 1.25 倍（默认 4000 → 5000 字）：60 × 50 + 5 × 300 = 4500 字，并入
+    const medium = (count: number) =>
+      Array.from({ length: count }, (_, i) => `${String(i).padStart(2, '0')}${'中'.repeat(48)}`);
+    await replaceBook([...medium(60), ...Array.from({ length: 5 }, () => '長'.repeat(300))]);
+    expect((await chunk({ mode: 'all' })).paragraphs).toHaveLength(65);
+
+    // 60 × 50 + 5 × 500 = 5500 字，超过 1.25 倍：不并入，避免响应过大
+    await replaceBook([...medium(60), ...Array.from({ length: 5 }, () => '長'.repeat(500))]);
     const bounded = await chunk({ mode: 'all' });
-    expect(bounded.paragraphs).toHaveLength(40);
+    expect(bounded.paragraphs).toHaveLength(60);
     expect(bounded.has_more).toBe(true);
   });
 
@@ -1170,7 +1556,8 @@ describe('AgentMcp translation tools', () => {
     const count = async (args: Record<string, unknown>) => {
       const res = await kernel.callTool(
         'get_translation_chunk',
-        { book_id: base.id, chapter_id: 'ch-1', ...args },
+        // 这里只看字符预算：放宽整包的字节预算
+        { book_id: base.id, chapter_id: 'ch-1', max_response_bytes: 100000, ...args },
         { channel: 'desktop-mcp' },
       );
       expect(res.isError, res.text).toBe(false);

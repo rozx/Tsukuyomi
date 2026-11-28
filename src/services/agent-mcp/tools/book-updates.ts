@@ -1,6 +1,8 @@
 import type { BookSyncChangeset, SyncFailure } from 'src/models/book-sync';
 import { BookSyncService } from 'src/services/book-sync/book-sync-service';
 import { agentMcpError, type AgentMcpToolError, type AgentMcpToolSpec } from '../types';
+import { useBooksStore } from 'src/stores/books';
+import { summarizeBookProgress } from './chapter-progress';
 import { describeChapters, refreshBookKeepingOpenChapter, resolveBookFromArgs } from './helpers';
 
 type BookSyncSession = Awaited<ReturnType<typeof BookSyncService.openSession>>;
@@ -85,7 +87,7 @@ export const agentMcpBookUpdateTools: AgentMcpToolSpec[] = [
   {
     name: 'check_book_updates',
     description:
-      'Check the source site of a book for updates. The quick check (default) lists chapters that are new on the site and counts imported chapters whose site date is newer; set deep to true to also compare the text of imported chapters and report which ones changed. Does not change chapter content.',
+      'Check the source site of a book for updates. The quick check (default) lists chapters that are new on the site and counts imported chapters whose site date is newer; set deep to true to also compare the text of imported chapters and report which ones changed. Does not change chapter content. has_updates only covers the source site: local_progress reports the local translation state (chapter counts by status, first_untranslated_chapter, and paragraph_count / translated_count of the latest two chapters with text), so chapters the user imported by hand but nobody translated yet are not missed when has_updates is false.',
     category: 'library',
     permission: 'translate_and_edit',
     readOnlyHint: false,
@@ -113,6 +115,11 @@ export const agentMcpBookUpdateTools: AgentMcpToolSpec[] = [
       const checked = await openAndCheck(bookId, deep);
       if (!checked.ok) return checked.error;
       const { changes } = checked;
+      // 用户可能刚手动导入过新章节：站点上没有新章节时，本地仍可能有没译的章节
+      const localProgress = await summarizeBookProgress(
+        useBooksStore().getBookById(bookId) ?? resolved.book,
+        resolved.targetLanguage,
+      );
 
       return {
         book_id: bookId,
@@ -133,6 +140,7 @@ export const agentMcpBookUpdateTools: AgentMcpToolSpec[] = [
         pending_compare_count: changes.dateNewer.length,
         skipped_count: changes.skipped.length,
         failed: summarizeFailures(changes.failed),
+        local_progress: localProgress,
       };
     },
   },

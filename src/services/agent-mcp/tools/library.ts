@@ -10,9 +10,8 @@ import { v4 } from 'uuid';
 import type { AppLocale } from 'src/models/locale';
 import { isAppLocale } from 'src/models/locale';
 import type { Chapter, Novel, Volume } from 'src/models/novel';
-import { getLanguageTranslation, getNameTranslation } from 'src/services/localization/selection';
+import { getNameTranslation } from 'src/services/localization/selection';
 import { titleOriginal } from 'src/services/localization/title-edit';
-import { scanChapters } from 'src/services/library-query/paragraph-scan';
 import { useBooksStore } from 'src/stores/books';
 import { generateShortId } from 'src/utils/id-generator';
 import { agentMcpError, type AgentMcpToolSpec } from '../types';
@@ -30,6 +29,12 @@ import {
   textToParagraphs,
 } from './library-helpers';
 import { importBookFromUrlTool } from './url-import';
+import {
+  countChapterStats,
+  isUnfinishedChapter,
+  summarizeVolumeProgress,
+  type ChapterStats,
+} from './chapter-progress';
 
 interface ChapterInput {
   title: string;
@@ -113,61 +118,74 @@ const MOVE_CHAPTERS_ERRORS: Record<MoveChaptersFailureCode, string> = {
     'The chapters come from different volumes: say where they go with target_volume_id, before_chapter_id, after_chapter_id or new_volume_title.',
 };
 
-/** 决定 get_book 要列出哪些章节：可限定某一卷、只取末尾若干章，或完全不列 */
+/**
+ * 决定 get_book 要列出哪些章节：可限定某一卷、从第一个没译完的章节开始、只取末尾若干章、
+ * 只取开头若干章，或完全不列。返回按卷章顺序的章节 ID，以及是否因 limit 截断。
+ */
 function selectListedChapters(
   volumes: readonly Volume[],
-  options: { volumeId: string; recentCount: number; includeChapters: boolean },
-): Set<string> {
-  if (!options.includeChapters) return new Set();
-  const ids = volumes
+  options: {
+    volumeId: string;
+    recentCount: number;
+    limit: number;
+    includeChapters: boolean;
+    /** 从第一个没译完的章节开始时用来判断进度 */
+    fromFirstUnfinished: ChapterStats | null;
+  },
+): { ids: Set<string>; truncated: boolean } {
+  if (!options.includeChapters) return { ids: new Set(), truncated: false };
+  let ids = volumes
     .filter((vol) => !options.volumeId || vol.id === options.volumeId)
     .flatMap((vol) => (vol.chapters ?? []).map((ch) => ch.id));
-  return new Set(options.recentCount > 0 ? ids.slice(-options.recentCount) : ids);
+  const progress = options.fromFirstUnfinished;
+  if (progress) {
+    const start = ids.findIndex((id) => isUnfinishedChapter(progress.get(id)));
+    ids = start >= 0 ? ids.slice(start) : [];
+  }
+  if (options.recentCount > 0) ids = ids.slice(-options.recentCount);
+  const truncated = options.limit > 0 && ids.length > options.limit;
+  return { ids: new Set(truncated ? ids.slice(0, options.limit) : ids), truncated };
 }
 
-/** 各章的段落数与已译段落数（空段落不计）；正文不在内存里的章节分批读取 */
-async function countChapterStats(chapters: readonly Chapter[], language: AppLocale) {
-  const stats = new Map<string, { paragraph_count: number; translated_count: number }>();
-  for await (const { chapter, paragraphs } of scanChapters(chapters)) {
-    const nonEmpty = paragraphs.filter((p) => p.text.trim().length > 0);
-    stats.set(chapter.id, {
-      paragraph_count: nonEmpty.length,
-      translated_count: nonEmpty.filter((p) =>
-        Boolean(getLanguageTranslation(p, language)?.translation.trim()),
-      ).length,
-    });
-  }
-  return stats;
-}
-
-type ChapterStats = Awaited<ReturnType<typeof countChapterStats>>;
-
-/**
- * 一卷的翻译进度：已译完、译了一部分、还没开始的章节数，以及按顺序第一个没译完的章节。
- * 没有正文的章节不计入任何一类。
- */
-function summarizeVolumeProgress(volume: Volume, stats: ChapterStats) {
-  let translated = 0;
-  let inProgress = 0;
-  let untranslated = 0;
-  let firstUntranslated: { chapter_id: string; title_original: string } | null = null;
-  for (const ch of volume.chapters ?? []) {
-    const stat = stats.get(ch.id);
-    if (!stat || stat.paragraph_count === 0) continue;
-    if (stat.translated_count >= stat.paragraph_count) {
-      translated += 1;
-      continue;
-    }
-    if (stat.translated_count > 0) inProgress += 1;
-    else untranslated += 1;
-    firstUntranslated ??= { chapter_id: ch.id, title_original: titleOriginal(ch.title) };
-  }
-  return {
-    translated_chapter_count: translated,
-    in_progress_chapter_count: inProgress,
-    untranslated_chapter_count: untranslated,
-    first_untranslated_chapter: firstUntranslated,
-  };
+/** get_book 的卷列表：每卷的概览与进度，以及选中要列出的章节 */
+function formatBookVolumes(
+  volumes: readonly Volume[],
+  language: AppLocale,
+  options: {
+    listed: ReadonlySet<string>;
+    stats: ChapterStats | null;
+    includeUrls: boolean;
+    includeChapters: boolean;
+  },
+) {
+  const { listed, stats } = options;
+  return volumes.map((vol) => {
+    const volTitle = formatTitle(vol.title, language);
+    return {
+      id: vol.id,
+      title_original: volTitle.original,
+      title_translation: volTitle.translation,
+      chapter_count: vol.chapters?.length ?? 0,
+      ...(stats ? summarizeVolumeProgress(vol, stats) : {}),
+      // 没有列出章节的卷只给概览，不带空的 chapters 数组
+      ...(options.includeChapters
+        ? {
+            chapters: (vol.chapters ?? [])
+              .filter((ch) => listed.has(ch.id))
+              .map((ch) => {
+                const chTitle = formatTitle(ch.title, language);
+                return {
+                  id: ch.id,
+                  title_original: chTitle.original,
+                  title_translation: chTitle.translation,
+                  ...(stats?.get(ch.id) ?? {}),
+                  ...(options.includeUrls && ch.webUrl ? { web_url: ch.webUrl } : {}),
+                };
+              }),
+          }
+        : {}),
+    };
+  });
 }
 
 /**
@@ -236,7 +254,7 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
   {
     name: 'get_book',
     description:
-      'Get metadata, volumes, chapters, and per-chapter translation progress for a book. Each volume also reports translated_chapter_count, in_progress_chapter_count, untranslated_chapter_count (chapters without text are not counted) and first_untranslated_chapter, so include_chapters=false is enough to see where translation stands. For long books, narrow the chapter list with recent_chapters (only the latest N chapters), volume_id (one volume), or include_chapters=false (volume outline only) instead of fetching the whole table of contents.',
+      'Get metadata, volumes, chapters, and per-chapter translation progress for a book. Each volume also reports translated_chapter_count, in_progress_chapter_count, untranslated_chapter_count (chapters without text are not counted) and first_untranslated_chapter, so include_chapters=false is enough to see where translation stands. For long books, narrow the chapter list with recent_chapters (only the latest N chapters), volume_id (one volume), from_first_untranslated with limit (the next N chapters to translate, e.g. to get the IDs of chapters 28-33 when chapter 28 is the first untranslated one), or include_chapters=false (volume outline only) instead of fetching the whole table of contents.',
     category: 'library',
     permission: 'read_only',
     readOnlyHint: true,
@@ -255,6 +273,16 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
         recent_chapters: {
           type: 'number',
           description: 'Only list the last N chapters of the book (or of volume_id when given).',
+        },
+        from_first_untranslated: {
+          type: 'boolean',
+          description:
+            'Start the chapter list at the first chapter that is not fully translated (in the whole book, or in volume_id when given); combine with limit to get just the next few chapters to translate. Reads chapter text like include_chapter_stats.',
+        },
+        limit: {
+          type: 'number',
+          description:
+            'List at most N chapters, counted from the start of the selection; has_more_chapters tells whether more were cut off.',
         },
         include_chapters: {
           type: 'boolean',
@@ -287,47 +315,35 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
       if (volumeId && !volumes.some((vol) => vol.id === volumeId)) {
         return agentMcpError('VOLUME_NOT_FOUND', `Volume not found: ${volumeId}`);
       }
+      const includeStats = args.include_chapter_stats !== false;
+      const fromFirstUntranslated = args.from_first_untranslated === true;
+      const includeUrls = args.include_urls === true;
+      // 进度统计要读正文：分批读取，长篇不必一章一章单独读。
+      // 各卷的进度按整卷统计，所以即使只列出部分章节也要读全书；
+      // 从第一个没译完的章节开始列时，定位本身也要用到进度
+      const progress =
+        includeStats || fromFirstUntranslated
+          ? await countChapterStats(
+              volumes.flatMap((vol) => vol.chapters ?? []),
+              targetLanguage,
+            )
+          : null;
+      const stats = includeStats ? progress : null;
+      const limit = parseNonNegativeInt(args.limit, 0);
       const listed = selectListedChapters(volumes, {
         volumeId,
         recentCount: parseNonNegativeInt(args.recent_chapters, 0),
+        limit,
+        includeChapters: args.include_chapters !== false,
+        fromFirstUnfinished: fromFirstUntranslated ? progress : null,
+      });
+
+      const formattedVolumes = formatBookVolumes(volumes, targetLanguage, {
+        listed: listed.ids,
+        stats,
+        includeUrls,
         includeChapters: args.include_chapters !== false,
       });
-      const includeStats = args.include_chapter_stats !== false;
-      const includeUrls = args.include_urls === true;
-      // 进度统计要读正文：分批读取，长篇不必一章一章单独读。
-      // 各卷的进度按整卷统计，所以即使只列出部分章节也要读全书
-      const stats = includeStats
-        ? await countChapterStats(
-            volumes.flatMap((vol) => vol.chapters ?? []),
-            targetLanguage,
-          )
-        : null;
-
-      const formattedVolumes = [];
-      for (const vol of volumes) {
-        const formattedChapters = [];
-        for (const ch of vol.chapters ?? []) {
-          if (!listed.has(ch.id)) continue;
-          const chTitle = formatTitle(ch.title, targetLanguage);
-          formattedChapters.push({
-            id: ch.id,
-            title_original: chTitle.original,
-            title_translation: chTitle.translation,
-            ...(stats?.get(ch.id) ?? {}),
-            ...(includeUrls && ch.webUrl ? { web_url: ch.webUrl } : {}),
-          });
-        }
-        const volTitle = formatTitle(vol.title, targetLanguage);
-        formattedVolumes.push({
-          id: vol.id,
-          title_original: volTitle.original,
-          title_translation: volTitle.translation,
-          chapter_count: vol.chapters?.length ?? 0,
-          ...(stats ? summarizeVolumeProgress(vol, stats) : {}),
-          // 没有列出章节的卷只给概览，不带空的 chapters 数组
-          ...(args.include_chapters !== false ? { chapters: formattedChapters } : {}),
-        });
-      }
 
       return {
         id: book.id,
@@ -341,7 +357,8 @@ export const agentMcpLibraryTools: AgentMcpToolSpec[] = [
         translation_chunk_size: book.translationChunkSize ?? null,
         volume_count: formattedVolumes.length,
         chapter_count: countChaptersInVolumes(volumes),
-        returned_chapter_count: listed.size,
+        returned_chapter_count: listed.ids.size,
+        ...(limit > 0 ? { has_more_chapters: listed.truncated } : {}),
         volumes: formattedVolumes,
       };
     },

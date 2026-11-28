@@ -1080,6 +1080,50 @@ describe('AgentMcp context & library tools', () => {
 
     // 统计进度要读全书正文：桌面端按长耗时工具放宽超时
     expect(DESKTOP_MCP_LONG_OPERATION_TOOLS).toContain('get_book');
+
+    // 从第一个没译完的章节开始列，并只取几章：几百章的长卷不必拉整卷目录
+    type ListResult = {
+      returned_chapter_count: number;
+      has_more_chapters?: boolean;
+      volumes: VolumeResult[];
+    };
+    const list = async (args: Record<string, unknown>) => {
+      const res = await kernel.callTool(
+        'get_book',
+        { book_id: bookId, ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as ListResult;
+    };
+    const ids = (result: ListResult) =>
+      result.volumes.flatMap((v) => (v.chapters ?? []).map((c) => c.id));
+    const fromFirst = await list({ from_first_untranslated: true, limit: 3 });
+    expect(ids(fromFirst)).toEqual(['a2', 'a3', 'b1']);
+    expect(fromFirst.returned_chapter_count).toBe(3);
+    expect(fromFirst.has_more_chapters).toBe(true);
+    expect(ids(await list({ from_first_untranslated: true }))).toEqual([
+      'a2',
+      'a3',
+      'b1',
+      'b2',
+      'c1',
+    ]);
+    // 不要统计时仍按进度定位（定位本身要读正文）
+    expect(
+      ids(await list({ from_first_untranslated: true, include_chapter_stats: false, limit: 1 })),
+    ).toEqual(['a2']);
+    // 限定一卷时从这卷第一个没译完的章节开始；这卷都译完了就不列章节
+    expect(ids(await list({ volume_id: 'vol-b', from_first_untranslated: true }))).toEqual([
+      'b1',
+      'b2',
+    ]);
+    expect(ids(await list({ volume_id: 'vol-c', from_first_untranslated: true }))).toEqual([]);
+    // 只给 limit 时从头列；没有截断时 has_more_chapters 为 false
+    const head = await list({ limit: 2 });
+    expect(ids(head)).toEqual(['a1', 'a2']);
+    expect(head.has_more_chapters).toBe(true);
+    expect((await list({ limit: 10 })).has_more_chapters).toBe(false);
   });
 
   it('update_book 修改作者、简介、标签与别名，只改传入的字段；什么都没传时报错', async () => {

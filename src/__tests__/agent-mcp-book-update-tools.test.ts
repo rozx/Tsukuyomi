@@ -113,6 +113,76 @@ describe('AgentMcp book update tools', () => {
     );
   });
 
+  it('check_book_updates 同时给出本地的翻译进度：来源站点没有新章节时，也能看出刚手动导入、还没译的章节', async () => {
+    const now = new Date();
+    const para = (id: string, translation?: string) => ({
+      id,
+      text: `原文${id}`,
+      selectedTranslationId: translation ? `tr-${id}` : '',
+      translations: translation
+        ? [{ id: `tr-${id}`, translation, aiModelId: 'm', language: 'zh-CN' as const }]
+        : [],
+    });
+    const chapter = (id: string, content: ReturnType<typeof para>[]) => ({
+      id,
+      title: {
+        original: `${id}话`,
+        translation: { id: `t-${id}`, translation: '', aiModelId: '' },
+      },
+      content,
+      contentLoaded: true,
+      createdAt: now,
+      lastEdited: now,
+    });
+    await useBooksStore().addBook({
+      id: 'book-local',
+      title: '本地进度',
+      targetLanguage: 'zh-CN',
+      volumes: [
+        {
+          id: 'v1',
+          title: '第一卷',
+          chapters: [
+            chapter('c1', [para('p1', '一')]),
+            chapter('c2', [para('p2', '二'), para('p3')]),
+          ],
+        },
+        {
+          id: 'v2',
+          title: '第二卷',
+          chapters: [
+            chapter('c3', [para('p4'), para('p5')]),
+            // 没有正文的章节不计入，也不算最新章节
+            chapter('c4', []),
+          ],
+        },
+      ],
+      createdAt: now,
+      lastEdited: now,
+    });
+    await useBooksStore().refreshBookFromStorage('book-local');
+    fakeSession(changeset());
+
+    const res = await kernel.callTool(
+      'check_book_updates',
+      { book_id: 'book-local' },
+      { channel: 'desktop-mcp' },
+    );
+    expect(res.isError, res.text).toBe(false);
+    const data = res.data as { has_updates: boolean; local_progress: unknown };
+    expect(data.has_updates).toBe(false);
+    expect(data.local_progress).toEqual({
+      translated_chapter_count: 1,
+      in_progress_chapter_count: 1,
+      untranslated_chapter_count: 1,
+      first_untranslated_chapter: { chapter_id: 'c2', volume_id: 'v1', title_original: 'c2话' },
+      latest_chapters: [
+        { chapter_id: 'c2', title_original: 'c2话', paragraph_count: 2, translated_count: 1 },
+        { chapter_id: 'c3', title_original: 'c3话', paragraph_count: 2, translated_count: 0 },
+      ],
+    });
+  });
+
   it('check_book_updates 快速检查返回新章节与待比对章节，deep 时比对正文并返回变化统计', async () => {
     const quick = changeset({
       new: [NEW_1, NEW_2],

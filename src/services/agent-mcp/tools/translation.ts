@@ -1,6 +1,6 @@
 import { fuzzyMatchIndexes } from 'src/services/library-query/keyword-match';
 import type { AppLocale } from 'src/models/locale';
-import type { Chapter, CharacterSetting, Paragraph, Terminology } from 'src/models/novel';
+import type { Chapter, CharacterSetting, Novel, Paragraph, Terminology } from 'src/models/novel';
 import type { AgentMcpWriteMode } from 'src/models/settings';
 import {
   buildChunks,
@@ -28,17 +28,20 @@ import {
   collectRecentChapterTitles,
   collectTranslatedBefore,
   listChaptersBefore,
-  type ChapterTitleRef,
+  type ContinuityParagraph,
+  type PreviousChapterTail,
 } from 'src/services/library-query/chunk-context';
-import { findRepeatedPassages } from 'src/services/library-query/repeated-passages';
+import {
+  findRepeatedPassages,
+  type RepeatedPassage,
+} from 'src/services/library-query/repeated-passages';
+import {
+  collectTranslationStyleHints,
+  type TranslationStyleHints,
+} from 'src/services/library-query/translation-style';
 import { isEmptyParagraph } from 'src/utils/text-utils';
 import { buildExternalTranslationModelId } from 'src/utils/translation-model-label';
-import {
-  agentMcpError,
-  isAgentMcpToolError,
-  type AgentMcpExecutionContext,
-  type AgentMcpToolSpec,
-} from '../types';
+import { agentMcpError, type AgentMcpExecutionContext, type AgentMcpToolSpec } from '../types';
 import {
   formatCharacterSummary,
   formatTermSummary,
@@ -53,10 +56,11 @@ import {
 /**
  * 一块默认最多多少段。字符预算（书籍的分块大小）是按站内翻译定的，短段落多的章节一块能有
  * 一两百段：响应容易超出 Agent 客户端的单次输出上限，也远多于一次提交适合带的段数。
- * 限到这个数之后，取一块正好对应一次提交和一次复核。50 段时带上术语、记忆等之后
- * 响应仍常超出客户端内联显示的上限（被存成文件，要多一轮读取），所以取 40。
+ * 限到这个数之后，取一块正好对应一次提交和一次复核。响应的大小另由字节预算控制
+ * （DEFAULT_RESPONSE_BYTE_BUDGET），段数上限只管一次提交的规模：40 段时网文的短段落、
+ * compact 的续块明明还装得下，一章也要拆成五六块，所以放宽到 60。
  */
-const DEFAULT_CHUNK_PARAGRAPH_LIMIT = 40;
+const DEFAULT_CHUNK_PARAGRAPH_LIMIT = 60;
 const MAX_CHUNK_PARAGRAPH_LIMIT = 200;
 /**
  * 默认字符预算的上限（原文字数）。书籍的分块大小可以设到 50000，那是给站内翻译用的；
@@ -66,11 +70,59 @@ const MAX_CHUNK_PARAGRAPH_LIMIT = 200;
 const DEFAULT_CHUNK_CHARACTER_LIMIT = 4000;
 
 /**
- * 这一块之后只剩很少几段时并入这一块，省掉一轮只有几段的「取块 → 提交」。
- * 剩下的段数不超过段数上限的这个比例、字数不到字符预算的三分之一时才并入
- * （字数的条件与站内分块 buildChunks 合并小尾块的条件相同）。
+ * 整个响应（JSON 的 UTF-8 字节数）默认的预算。Antigravity 等客户端把超过 10 KiB 的工具结果
+ * 存成文件，Agent 要多一轮读取；中日文每字 3 字节，正文之外还有角色、术语、记忆和上一章末尾，
+ * 只按段数或原文字数都控制不住。先放上下文，剩下的空间再装段落：第一块自然少几段，
+ * compact 的续块与短段落多的章节能多装。
  */
-const TAIL_PARAGRAPH_RATIO = 0.2;
+const DEFAULT_RESPONSE_BYTE_BUDGET = 9000;
+const MIN_RESPONSE_BYTE_BUDGET = 2000;
+const MAX_RESPONSE_BYTE_BUDGET = 1_000_000;
+/** 并入章末尾巴时允许超出字节预算的比例（默认 9450 字节，仍低于 10 KiB） */
+const TAIL_BYTE_RATIO = 1.05;
+
+const utf8 = new TextEncoder();
+const jsonByteLength = (value: unknown): number => utf8.encode(JSON.stringify(value)).length;
+
+/**
+ * 去掉空白、标点与符号后不超过这么多个字的段落算极短段落（「えっ？」「……」、弹幕式的短行），
+ * 按半段计入段数上限：它们几乎不占响应和提交的体积，按整段算会让一章拆成很多块。
+ */
+const SHORT_PARAGRAPH_TEXT_LENGTH = 8;
+const SHORT_PARAGRAPH_WEIGHT = 0.5;
+const NON_CONTENT = /[\s\p{P}\p{S}]/gu;
+
+/**
+ * 这一块之后只剩很少几段时并入这一块，省掉一轮只有十来段的「取块 → 提交」。
+ * 剩下的段数（按段数配额折算）不超过段数上限的四分之一、并入后合计不超过字符预算的
+ * 1.25 倍时才并入；并入后整个响应的字节数另由 buildTranslationChunk 检查（TAIL_BYTE_RATIO）。
+ */
+const TAIL_PARAGRAPH_RATIO = 0.25;
+const TAIL_CHARACTER_RATIO = 1.25;
+
+function paragraphWeight(paragraph: Paragraph): number {
+  const length = Array.from(paragraph.text.replace(NON_CONTENT, '')).length;
+  return length <= SHORT_PARAGRAPH_TEXT_LENGTH ? SHORT_PARAGRAPH_WEIGHT : 1;
+}
+
+const totalWeight = (paragraphs: readonly Paragraph[]) =>
+  paragraphs.reduce((sum, p) => sum + paragraphWeight(p), 0);
+
+const totalLength = (paragraphs: readonly Paragraph[]) =>
+  paragraphs.reduce((sum, p) => sum + p.text.length, 0);
+
+/** 按顺序取到段数配额用完为止；第一段总会取到（配额至少为 1，每段最多计 1） */
+function takeWithinParagraphQuota(paragraphs: readonly Paragraph[], quota: number): Paragraph[] {
+  const taken: Paragraph[] = [];
+  let used = 0;
+  for (const paragraph of paragraphs) {
+    const weight = paragraphWeight(paragraph);
+    if (used + weight > quota) break;
+    used += weight;
+    taken.push(paragraph);
+  }
+  return taken;
+}
 
 function absorbShortTail(
   chunk: Paragraph[],
@@ -80,11 +132,12 @@ function absorbShortTail(
 ): Paragraph[] {
   // 这一块是候选段落的开头一段，其后的就是剩下的
   const tail = candidates.slice(chunk.length);
-  if (tail.length === 0 || tail.length > Math.floor(maxParagraphs * TAIL_PARAGRAPH_RATIO)) {
+  if (tail.length === 0 || totalWeight(tail) > Math.floor(maxParagraphs * TAIL_PARAGRAPH_RATIO)) {
     return chunk;
   }
-  const tailLength = tail.reduce((sum, p) => sum + p.text.length, 0);
-  return tailLength * 3 < chunkSize ? [...chunk, ...tail] : chunk;
+  return totalLength(chunk) + totalLength(tail) <= chunkSize * TAIL_CHARACTER_RATIO
+    ? [...chunk, ...tail]
+    : chunk;
 }
 
 interface FailedBatchItem {
@@ -184,48 +237,73 @@ function getChapterTitleTranslation(chapter: Chapter, language: AppLocale): stri
   return getNameTranslation(chapter.title, language)?.translation ?? '';
 }
 
-function formatChapterTitle(title: ChapterTitleRef) {
-  return {
-    chapter_id: title.chapter.id,
-    title_original: title.original,
-    title_translation: title.translation,
-  };
-}
-
 /**
- * 翻译块里术语与角色的说明最多带这么多字。说明常常是大段的剧情简介，一块命中十来个角色时
+ * 翻译块里每条术语与角色的说明最多带这么多字。说明常常是大段的剧情简介，一块命中十来个角色时
  * 光说明就有几千字，新章节的第一块（不能用 compact）容易超出 Agent 客户端内联显示的上限。
  */
 const CHUNK_DESCRIPTION_LIMIT = 150;
+/** 一块里说明合计最多带这么多字：命中的条目多时，长说明的截短长度随之收紧 */
+const CHUNK_DESCRIPTION_BUDGET = 600;
+/** 条目再多，每条说明也至少保留这么多字 */
+const MIN_CHUNK_DESCRIPTION_LIMIT = 40;
+
+/**
+ * 每条说明的截短长度：短说明照常带全，剩下的预算由长说明平分，
+ * 结果限制在 MIN_CHUNK_DESCRIPTION_LIMIT..CHUNK_DESCRIPTION_LIMIT 之间。
+ */
+function resolveDescriptionLimit(descriptions: readonly string[]): number {
+  const lengths = descriptions.map((d) => Array.from(d).length).sort((a, b) => a - b);
+  let remaining = CHUNK_DESCRIPTION_BUDGET;
+  for (let i = 0; i < lengths.length; i++) {
+    const share = remaining / (lengths.length - i);
+    const length = lengths[i]!;
+    if (length > share) {
+      return Math.max(
+        MIN_CHUNK_DESCRIPTION_LIMIT,
+        Math.min(CHUNK_DESCRIPTION_LIMIT, Math.floor(share)),
+      );
+    }
+    remaining -= length;
+  }
+  return CHUNK_DESCRIPTION_LIMIT;
+}
 
 /** 说明过长时只留开头并标明；全文可用 list_terms / list_characters 读取 */
 function clipDescription<T extends { description: string }>(
   summary: T,
+  limit: number,
 ): T & { description_truncated?: true } {
   const chars = Array.from(summary.description);
-  if (chars.length <= CHUNK_DESCRIPTION_LIMIT) return summary;
+  if (chars.length <= limit) return summary;
   return {
     ...summary,
-    description: `${chars.slice(0, CHUNK_DESCRIPTION_LIMIT).join('')}…`,
+    description: `${chars.slice(0, limit).join('')}…`,
     description_truncated: true,
   };
 }
 
-/** compact 模式下术语只给名称与译法：同一章的后续块里这些说明都是重复的 */
-function formatChunkTerm(term: Terminology, language: AppLocale, compact: boolean) {
+/** 说明的截短长度；null 表示不带说明（compact，或 include_descriptions: false） */
+type DescriptionLimit = number | null;
+
+/** 不带说明时术语只给名称与译法：同一章的后续块里这些说明都是重复的 */
+function formatChunkTerm(term: Terminology, language: AppLocale, limit: DescriptionLimit) {
   const full = formatTermSummary(term, language);
-  return compact
+  return limit === null
     ? { id: full.id, name: full.name, translation: full.translation }
-    : clipDescription(full);
+    : clipDescription(full, limit);
 }
 
 /**
- * compact 模式下角色省略描述，保留性别与说话风格：后续块才出场的角色同样需要口吻，
+ * 不带说明时角色仍保留性别与说话风格：后续块才出场的角色同样需要口吻，
  * 说话风格空着时 Agent 也能看出需要补全。
  */
-function formatChunkCharacter(char: CharacterSetting, language: AppLocale, compact: boolean) {
+function formatChunkCharacter(
+  char: CharacterSetting,
+  language: AppLocale,
+  limit: DescriptionLimit,
+) {
   const full = formatCharacterSummary(char, language);
-  if (!compact) return clipDescription(full);
+  if (limit !== null) return clipDescription(full, limit);
   const { description: _description, ...rest } = full;
   return rest;
 }
@@ -425,64 +503,285 @@ function parseSingleSubmissionItem(
   };
 }
 
-async function executeGetTranslationChunk(
-  args: Record<string, unknown>,
-  ctx: AgentMcpExecutionContext,
+type ChunkMode = 'untranslated' | 'all';
+
+interface ChunkOptions {
+  mode: ChunkMode;
+  cursor: number;
+  contextBeforeCount: number;
+  chunkSize: number;
+  taskType: 'translation' | 'polish' | 'proofreading';
+  compact: boolean;
+  includeDescriptions: boolean;
+  maxParagraphs: number;
+  byteBudget: number;
+}
+
+function parseByteBudget(raw: unknown): number {
+  const value = Number(raw);
+  if (raw === undefined || raw === null || !Number.isFinite(value) || value <= 0) {
+    return DEFAULT_RESPONSE_BYTE_BUDGET;
+  }
+  return Math.min(MAX_RESPONSE_BYTE_BUDGET, Math.max(MIN_RESPONSE_BYTE_BUDGET, Math.trunc(value)));
+}
+
+function parseChunkOptions(args: Record<string, unknown>, book: Novel): ChunkOptions {
+  const compact = args.compact === true;
+  return {
+    mode: args.mode === 'all' ? 'all' : 'untranslated',
+    cursor: parseNonNegativeInt(args.cursor, 0),
+    contextBeforeCount: Math.min(10, parseNonNegativeInt(args.context_before, 3)),
+    chunkSize:
+      args.chunk_size !== undefined
+        ? resolveRuntimeTaskChunkSize(Number(args.chunk_size))
+        : Math.min(resolveTaskChunkSize(book.translationChunkSize), DEFAULT_CHUNK_CHARACTER_LIMIT),
+    taskType:
+      args.task_type === 'polish' || args.task_type === 'proofreading'
+        ? args.task_type
+        : 'translation',
+    compact,
+    includeDescriptions: !compact && args.include_descriptions !== false,
+    maxParagraphs: parseLimit(
+      // 0 与非法值都按默认值处理
+      Number(args.max_paragraphs) >= 1 ? args.max_paragraphs : undefined,
+      DEFAULT_CHUNK_PARAGRAPH_LIMIT,
+      MAX_CHUNK_PARAGRAPH_LIMIT,
+    ),
+    byteBudget: parseByteBudget(args.max_response_bytes),
+  };
+}
+
+/** 本块要用到的上下文：按段数与字符预算取出的最大一块算一次，裁短后沿用 */
+interface ChunkContext {
+  contextBefore: ContinuityParagraph[];
+  previousTail: PreviousChapterTail | null;
+  styleHints: TranslationStyleHints | null;
+  memories: Array<{ id: string; summary: string; content: string }>;
+  repeatedPassages: RepeatedPassage[];
+}
+
+interface ChunkState {
+  book: Novel;
+  language: AppLocale;
+  options: ChunkOptions;
+  allParagraphs: Paragraph[];
+  indexById: Map<string, number>;
+  progress: ReturnType<typeof countChapterProgress>;
+  basePayload: Record<string, unknown>;
+  context: ChunkContext;
+}
+
+function formatChunkParagraph(paragraph: Paragraph, state: ChunkState) {
+  return {
+    index: state.indexById.get(paragraph.id) ?? 0,
+    id: paragraph.id,
+    text: paragraph.text,
+    ...(state.options.mode === 'all'
+      ? {
+          current_translation:
+            getLanguageTranslation(paragraph, state.language)?.translation ?? null,
+        }
+      : {}),
+  };
+}
+
+/** 上一章末尾只用来对齐语气与标点：不带段落 ID 与序号，省下响应体积 */
+function formatPreviousTail(tail: PreviousChapterTail | null) {
+  if (!tail) return null;
+  return {
+    chapter_id: tail.title.chapter.id,
+    title_original: tail.title.original,
+    title_translation: tail.title.translation,
+    paragraphs: tail.paragraphs.map((p) => ({ original: p.original, translation: p.translation })),
+  };
+}
+
+/** 本块命中的术语与角色，以及说明的截短长度 */
+function formatChunkEntities(state: ChunkState, chunkText: string) {
+  const { language } = state;
+  const { terms, characters, nearTerms, nearCharacters } = collectChunkEntities(
+    state.book,
+    chunkText,
+  );
+  const limit: DescriptionLimit = state.options.includeDescriptions
+    ? resolveDescriptionLimit(
+        [
+          ...terms,
+          ...characters,
+          ...nearTerms.map((m) => m.item),
+          ...nearCharacters.map((m) => m.item),
+        ].map((entity) => entity.description ?? ''),
+      )
+    : null;
+  return {
+    matched_terms: terms.map((term) => formatChunkTerm(term, language, limit)),
+    matched_characters: characters.map((char) => formatChunkCharacter(char, language, limit)),
+    // 原文写法与名称接近但不完全相同（错字、异写）：不是确定命中，由 Agent 自行确认
+    possible_terms: nearTerms.map((match) => ({
+      ...formatChunkTerm(match.item, language, limit),
+      text_in_source: match.matchedText,
+    })),
+    possible_characters: nearCharacters.map((match) => ({
+      ...formatChunkCharacter(match.item, language, limit),
+      text_in_source: match.matchedText,
+    })),
+  };
+}
+
+/** 按选定的段落组装响应；compact 时去掉续块里重复和为空的字段 */
+function assembleChunk(state: ChunkState, selected: readonly Paragraph[]): Record<string, unknown> {
+  const { options, progress, context } = state;
+  const lastIndex = state.indexById.get(selected[selected.length - 1]!.id) ?? 0;
+  const nextInOrder = findNextCursor(state.allParagraphs, lastIndex, options.mode, state.language);
+  const selectedIds = new Set(selected.map((p) => p.id));
+  const payload = {
+    ...state.basePayload,
+    completed: false,
+    // 这一块之后是否还有下一块：all 模式看章末，untranslated 模式看本块之外是否还有未译段落
+    has_more:
+      options.mode === 'all'
+        ? nextInOrder !== null
+        : progress.remainingUntranslated > selected.length,
+    paragraphs: selected.map((p) => formatChunkParagraph(p, state)),
+    context_before: context.contextBefore,
+    previous_chapter_tail: formatPreviousTail(context.previousTail),
+    ...(context.styleHints ? { style_hints: context.styleHints } : {}),
+    ...formatChunkEntities(state, selected.map((p) => p.text).join('\n')),
+    repeated_passages: context.repeatedPassages
+      .filter((passage) => selectedIds.has(passage.paragraphId))
+      .map((passage) => ({
+        paragraph_id: passage.paragraphId,
+        chapter_id: passage.chapter.id,
+        title_original: titleOriginal(passage.chapter.title),
+        index: passage.index,
+        translation: passage.translation,
+      })),
+    memories: context.memories,
+    // untranslated 模式返回当前最早未翻索引，确保即使调用方直接透传该游标也不会跳过本块中提交失败的段落
+    next_cursor: options.mode === 'untranslated' ? progress.firstUntranslatedIndex : nextInOrder,
+  };
+  return options.compact ? compactChunkPayload(payload) : payload;
+}
+
+/**
+ * 段落之外的部分放不下时，从这一块的开头起按字节装段落，直到装满预算（至少一段）。
+ * 段落之外的体积按裁短前算：裁短后命中的术语、角色只会更少，实际只会更小。
+ */
+function fitParagraphsToBudget(
+  state: ChunkState,
+  fullPayload: Record<string, unknown>,
+  paragraphs: readonly Paragraph[],
+): Paragraph[] {
+  let used = jsonByteLength(fullPayload) - jsonByteLength(fullPayload.paragraphs) + 2;
+  const kept: Paragraph[] = [];
+  for (const paragraph of paragraphs) {
+    const size = jsonByteLength(formatChunkParagraph(paragraph, state)) + (kept.length > 0 ? 1 : 0);
+    if (kept.length > 0 && used + size > state.options.byteBudget) break;
+    used += size;
+    kept.push(paragraph);
+  }
+  return kept;
+}
+
+async function loadChunkContext(
+  book: Novel,
+  chapter: Chapter,
+  language: AppLocale,
+  options: ChunkOptions,
+  allParagraphs: Paragraph[],
+  chunk: readonly Paragraph[],
+  firstIndex: number,
+): Promise<ChunkContext> {
+  const previousChapters = listChaptersBefore(book, chapter.id);
+  const chunkText = chunk.map((p) => p.text).join('\n');
+  // 与站内翻译用同一套匹配（姓名拆分、注音归一化），并且只把本块命中的术语和角色交给记忆打分：
+  // 关键词得分是「命中数 ÷ 传入的实体数」，传全书的设定会把得分稀释到阈值以下
+  const { terms, characters } = collectChunkEntities(book, chunkText);
+  const selectedMemories = await selectRelevantMemoriesForChunk(
+    book.id,
+    chunkText,
+    terms,
+    characters,
+    buildChapterSemanticQuery(chapter, language),
+    language,
+  );
+  const contextBefore = collectTranslatedBefore(
+    allParagraphs,
+    firstIndex,
+    options.contextBeforeCount,
+    language,
+  );
+  return {
+    contextBefore,
+    previousTail:
+      contextBefore.length === 0
+        ? await collectPreviousChapterTail(
+            previousChapters[previousChapters.length - 1],
+            options.contextBeforeCount,
+            language,
+          )
+        : null,
+    // 书籍没写标点约定时，Agent 靠它对齐前文的写法；续块已经看过，不再重复统计
+    styleHints: options.compact
+      ? null
+      : await collectTranslationStyleHints(allParagraphs, previousChapters, language),
+    memories: selectedMemories.memories.map((m) => ({
+      id: m.id,
+      summary: m.summary,
+      content: m.content,
+    })),
+    // 回忆、首尾呼应、前后篇里原样重复的句子：带上前文的译法，紧邻的 context_before 看不到它们
+    repeatedPassages: await findRepeatedPassages({
+      targets: chunk,
+      currentChapter: chapter,
+      currentParagraphs: allParagraphs,
+      beforeIndex: firstIndex,
+      previousChapters,
+      language,
+    }),
+  };
+}
+
+/** 从游标起的候选段落；untranslated 模式下游标之后没有、章节前部仍有未译段时回绕到最早的未译段 */
+function collectChunkCandidates(
+  allParagraphs: readonly Paragraph[],
+  options: ChunkOptions,
+  progress: ReturnType<typeof countChapterProgress>,
+  language: AppLocale,
 ) {
-  const result = await buildTranslationChunk(args, ctx);
-  if (args.compact !== true || isAgentMcpToolError(result)) return result;
-  return compactChunkPayload(result);
+  const found = collectCandidateParagraphs(allParagraphs, options.cursor, options.mode, language);
+  // 绝不在还有未翻/失败段时误报 completed: true
+  if (
+    found.candidates.length === 0 &&
+    options.mode === 'untranslated' &&
+    progress.remainingUntranslated > 0 &&
+    progress.firstUntranslatedIndex !== null
+  ) {
+    return collectCandidateParagraphs(
+      allParagraphs,
+      progress.firstUntranslatedIndex,
+      options.mode,
+      language,
+    );
+  }
+  return found;
 }
 
 async function buildTranslationChunk(args: Record<string, unknown>, ctx: AgentMcpExecutionContext) {
   const resolved = resolveBookAndChapterFromArgs(args, ctx);
   if (!resolved.ok) return resolved.error;
   const { book, chapter, targetLanguage } = resolved;
-
-  const mode = args.mode === 'all' ? 'all' : 'untranslated';
-  const cursor = parseNonNegativeInt(args.cursor, 0);
-  const contextBeforeCount = Math.min(10, parseNonNegativeInt(args.context_before, 3));
-  const chunkSize =
-    args.chunk_size !== undefined
-      ? resolveRuntimeTaskChunkSize(Number(args.chunk_size))
-      : Math.min(resolveTaskChunkSize(book.translationChunkSize), DEFAULT_CHUNK_CHARACTER_LIMIT);
-  const taskType =
-    args.task_type === 'polish' || args.task_type === 'proofreading'
-      ? args.task_type
-      : 'translation';
-  const compact = args.compact === true;
-  const maxParagraphs = parseLimit(
-    // 0 与非法值都按默认值处理
-    Number(args.max_paragraphs) >= 1 ? args.max_paragraphs : undefined,
-    DEFAULT_CHUNK_PARAGRAPH_LIMIT,
-    MAX_CHUNK_PARAGRAPH_LIMIT,
-  );
+  const options = parseChunkOptions(args, book);
 
   const allParagraphs = await loadChapterParagraphs(chapter);
   const progress = countChapterProgress(allParagraphs, targetLanguage);
-  let { candidates, indexById } = collectCandidateParagraphs(
+  const { candidates, indexById } = collectChunkCandidates(
     allParagraphs,
-    cursor,
-    mode,
+    options,
+    progress,
     targetLanguage,
   );
-  // untranslated 模式下，若游标之后无候选但章节前部仍有未翻/失败段，自动回绕到最早未翻段，绝不误报 completed: true
-  if (
-    candidates.length === 0 &&
-    mode === 'untranslated' &&
-    progress.remainingUntranslated > 0 &&
-    progress.firstUntranslatedIndex !== null
-  ) {
-    ({ candidates, indexById } = collectCandidateParagraphs(
-      allParagraphs,
-      progress.firstUntranslatedIndex,
-      mode,
-      targetLanguage,
-    ));
-  }
 
-  // 与上一章的衔接、命中的术语和角色都与站内翻译共用 library-query/chunk-context
-  const previousChapters = listChaptersBefore(book, chapter.id);
   const basePayload = {
     book_id: book.id,
     chapter_id: chapter.id,
@@ -490,22 +789,27 @@ async function buildTranslationChunk(args: Record<string, unknown>, ctx: AgentMc
     chapter_title_translation: getChapterTitleTranslation(chapter, targetLanguage),
     target_language: targetLanguage,
     enable_original_text_validation: Boolean(book.enableOriginalTextValidation),
-    mode,
-    special_instructions: resolveSpecialInstructionsForTask(book, chapter, taskType) ?? '',
+    mode: options.mode,
+    special_instructions: resolveSpecialInstructionsForTask(book, chapter, options.taskType) ?? '',
     chapter_total_count: progress.total,
     chapter_translated_count: progress.translated,
     remaining_untranslated_count: progress.remainingUntranslated,
-    ...(compact
+    ...(options.compact
       ? {}
       : {
-          recent_chapter_titles: collectRecentChapterTitles(previousChapters, targetLanguage).map(
-            formatChapterTitle,
-          ),
+          // 只用来对齐标题格式：不带章节 ID
+          recent_chapter_titles: collectRecentChapterTitles(
+            listChaptersBefore(book, chapter.id),
+            targetLanguage,
+          ).map((title) => ({
+            title_original: title.original,
+            title_translation: title.translation,
+          })),
         }),
   };
 
   if (candidates.length === 0) {
-    return {
+    const done = {
       ...basePayload,
       completed: true,
       has_more: false,
@@ -520,114 +824,45 @@ async function buildTranslationChunk(args: Record<string, unknown>, ctx: AgentMc
       memories: [],
       next_cursor: null,
     };
+    return options.compact ? compactChunkPayload(done) : done;
   }
 
-  const chunks = buildChunks(candidates, chunkSize, (p) => p.text);
+  // 先按段数配额与字符预算取出最大的一块（含并入的章末尾巴），上下文按它算一次
   const candidateMap = new Map(candidates.map((p) => [p.id, p]));
-  const chunkParagraphs = absorbShortTail(
-    chunks[0]!.paragraphIds
-      .slice(0, maxParagraphs)
-      .map((id) => candidateMap.get(id))
+  const quota = takeWithinParagraphQuota(
+    buildChunks(candidates, options.chunkSize, (p) => p.text)[0]!
+      .paragraphIds.map((id) => candidateMap.get(id))
       .filter((p): p is Paragraph => Boolean(p)),
-    candidates,
-    maxParagraphs,
-    chunkSize,
+    options.maxParagraphs,
   );
-
-  const firstOriginalIdx = indexById.get(chunkParagraphs[0]!.id) ?? 0;
-  const lastOriginalIdx = indexById.get(chunkParagraphs[chunkParagraphs.length - 1]!.id) ?? 0;
-  const chunkText = chunkParagraphs.map((p) => p.text).join('\n');
-
-  // 与站内翻译用同一套匹配（姓名拆分、注音归一化），并且只把本块命中的术语和角色交给记忆打分：
-  // 关键词得分是「命中数 ÷ 传入的实体数」，传全书的设定会把得分稀释到阈值以下
-  const {
-    terms: matchedTerms,
-    characters: matchedCharacters,
-    nearTerms,
-    nearCharacters,
-  } = collectChunkEntities(book, chunkText);
-  const selectedMemories = await selectRelevantMemoriesForChunk(
-    book.id,
-    chunkText,
-    matchedTerms,
-    matchedCharacters,
-    buildChapterSemanticQuery(chapter, targetLanguage),
-    targetLanguage,
-  );
-
-  const contextBefore = collectTranslatedBefore(
-    allParagraphs,
-    firstOriginalIdx,
-    contextBeforeCount,
-    targetLanguage,
-  );
-  const previousTail =
-    contextBefore.length === 0
-      ? await collectPreviousChapterTail(
-          previousChapters[previousChapters.length - 1],
-          contextBeforeCount,
-          targetLanguage,
-        )
-      : null;
-  const nextInOrder = findNextCursor(allParagraphs, lastOriginalIdx, mode, targetLanguage);
-  // 回忆、首尾呼应、前后篇里原样重复的句子：带上前文的译法，紧邻的 context_before 看不到它们
-  const repeatedPassages = await findRepeatedPassages({
-    targets: chunkParagraphs,
-    currentChapter: chapter,
-    currentParagraphs: allParagraphs,
-    beforeIndex: firstOriginalIdx,
-    previousChapters,
+  const upper = absorbShortTail(quota, candidates, options.maxParagraphs, options.chunkSize);
+  const state: ChunkState = {
+    book,
     language: targetLanguage,
-  });
-
-  return {
-    ...basePayload,
-    completed: false,
-    // 这一块之后是否还有下一块：all 模式看章末，untranslated 模式看本块之外是否还有未译段落
-    has_more:
-      mode === 'all'
-        ? nextInOrder !== null
-        : progress.remainingUntranslated > chunkParagraphs.length,
-    paragraphs: chunkParagraphs.map((p) => ({
-      index: indexById.get(p.id) ?? 0,
-      id: p.id,
-      text: p.text,
-      ...(mode === 'all'
-        ? { current_translation: getLanguageTranslation(p, targetLanguage)?.translation ?? null }
-        : {}),
-    })),
-    context_before: contextBefore,
-    previous_chapter_tail: previousTail
-      ? { ...formatChapterTitle(previousTail.title), paragraphs: previousTail.paragraphs }
-      : null,
-    matched_terms: matchedTerms.map((term) => formatChunkTerm(term, targetLanguage, compact)),
-    matched_characters: matchedCharacters.map((char) =>
-      formatChunkCharacter(char, targetLanguage, compact),
+    options,
+    allParagraphs,
+    indexById,
+    progress,
+    basePayload,
+    context: await loadChunkContext(
+      book,
+      chapter,
+      targetLanguage,
+      options,
+      allParagraphs,
+      upper,
+      indexById.get(upper[0]!.id) ?? 0,
     ),
-    // 原文写法与名称接近但不完全相同（错字、异写）：不是确定命中，由 Agent 自行确认
-    possible_terms: nearTerms.map((match) => ({
-      ...formatChunkTerm(match.item, targetLanguage, compact),
-      text_in_source: match.matchedText,
-    })),
-    possible_characters: nearCharacters.map((match) => ({
-      ...formatChunkCharacter(match.item, targetLanguage, compact),
-      text_in_source: match.matchedText,
-    })),
-    repeated_passages: repeatedPassages.map((passage) => ({
-      paragraph_id: passage.paragraphId,
-      chapter_id: passage.chapter.id,
-      title_original: titleOriginal(passage.chapter.title),
-      index: passage.index,
-      translation: passage.translation,
-    })),
-    memories: selectedMemories.memories.map((m) => ({
-      id: m.id,
-      summary: m.summary,
-      content: m.content,
-    })),
-    // untranslated 模式返回当前最早未翻索引，确保即使调用方直接透传该游标也不会跳过本块中提交失败的段落
-    next_cursor: mode === 'untranslated' ? progress.firstUntranslatedIndex : nextInOrder,
   };
+
+  // 再按整个响应的字节预算收口：并入尾巴时可略微超出，超出更多就不并入并裁短
+  const full = assembleChunk(state, upper);
+  const limit =
+    upper.length > quota.length
+      ? Math.floor(options.byteBudget * TAIL_BYTE_RATIO)
+      : options.byteBudget;
+  if (jsonByteLength(full) <= limit) return full;
+  return assembleChunk(state, fitParagraphsToBudget(state, full, quota));
 }
 
 async function executeSubmitTranslations(
@@ -721,7 +956,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
   {
     name: 'get_translation_chunk',
     description:
-      'Fetch the next chunk of paragraphs to translate or review, bundled with preceding translated context (context_before; for the first chunk of a chapter, previous_chapter_tail carries the end of the previous chapter instead), recent_chapter_titles for title formatting, matched terms and characters (plus possible_terms / possible_characters: near matches where the source spelling differs slightly, e.g. a typo; text_in_source shows the spelling, confirm before applying; term and character descriptions longer than 150 characters are cut and marked description_truncated: true, so read the full text with list_terms / list_characters before editing one), repeated_passages (paragraphs of this chunk whose source text also appears, already translated, earlier in this chapter or in the previous 30 chapters, such as flashbacks and callbacks, with that earlier translation; only exact repeats with 10+ characters of text, punctuation not counted; a short line under 24 characters is left out when its two most recent earlier translations differ, since its wording follows the context; search_paragraphs is still needed for older or merely similar lines), top relevant memories, special instructions, target language, and continuation cursor. A chunk holds at most 40 paragraphs and about 4000 source characters by default, sized to be translated and submitted in one submit_translations call; when only a few short paragraphs would be left after it, they are folded in, so the last chunk of a chapter can run slightly over. has_more tells whether another chunk follows this one; completed is true only when the call returned no paragraphs (nothing left in this mode), so always process the returned paragraphs first.',
+      'Fetch the next chunk of paragraphs to translate or review, bundled with preceding translated context (context_before; for the first chunk of a chapter, previous_chapter_tail carries the end of the previous chapter instead), recent_chapter_titles for title formatting, style_hints (first chunk only: counts of the quote, dash, ellipsis, dialogue-final period, digit and space styles in up to 200 existing translations of this and the previous 5 chapters; follow the dominant style unless special_instructions say otherwise; omitted when fewer than 10 translated paragraphs exist), matched terms and characters (plus possible_terms / possible_characters: near matches where the source spelling differs slightly, e.g. a typo; text_in_source shows the spelling, confirm before applying; descriptions are cut to at most 150 characters, less when many entries match, so that together they stay around 600 characters, and marked description_truncated: true; read the full text with list_terms / list_characters before rewriting a description), repeated_passages (paragraphs of this chunk whose source text also appears, already translated, earlier in this chapter or in the previous 30 chapters, such as flashbacks and callbacks, with that earlier translation; only exact repeats with 10+ characters of text, punctuation not counted; a short line under 24 characters is left out when its two most recent earlier translations differ, since its wording follows the context; search_paragraphs is still needed for older or merely similar lines), top relevant memories, special instructions, target language, and continuation cursor. A chunk holds at most 60 paragraphs and about 4000 source characters by default, sized to be translated and submitted in one submit_translations call; a paragraph with 8 or fewer characters of text (punctuation not counted), such as a short interjection or a symbol-only line, counts as half a paragraph. The whole JSON response is also kept within max_response_bytes (default 9000 UTF-8 bytes, below the roughly 10 KiB some clients show inline before saving a result to a file): the context above is placed first and the paragraphs fill the rest, so a first chunk with many characters holds fewer paragraphs and compact follow-up chunks hold more. When the rest of the chapter after a chunk is at most a quarter of the paragraph limit, the combined chunk stays within 1.25 times the character budget and the response within 5% over max_response_bytes, it is folded in, so the last chunk can run over. has_more tells whether another chunk follows this one; completed is true only when the call returned no paragraphs (nothing left in this mode), so always process the returned paragraphs first.',
     category: 'translation',
     permission: 'read_only',
     readOnlyHint: true,
@@ -753,7 +988,7 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
         max_paragraphs: {
           type: 'number',
           description:
-            'Maximum paragraphs in this chunk (default 40, max 200); the chunk ends at whichever of this and chunk_size is reached first. A short remainder (at most 20% of this many paragraphs and under a third of the character budget) is folded into the chunk instead of becoming a tiny extra one. Lower it if responses get truncated by your client.',
+            'Maximum paragraphs in this chunk (default 60, max 200; paragraphs with 8 or fewer characters of text count as half); the chunk ends at whichever of this and chunk_size is reached first. A short remainder (at most a quarter of this many paragraphs, and the combined chunk within 1.25 times the character budget) is folded into the chunk instead of becoming a tiny extra one. Lower it if responses get truncated by your client.',
         },
         context_before: {
           type: 'number',
@@ -765,20 +1000,30 @@ export const agentMcpTranslationTools: AgentMcpToolSpec[] = [
           enum: ['translation', 'polish', 'proofreading'],
           description: 'Which special instruction set to resolve (default translation).',
         },
+        max_response_bytes: {
+          type: 'number',
+          description:
+            'Size budget for the whole JSON response in UTF-8 bytes (default 9000, min 2000). Chinese and Japanese text takes 3 bytes per character. Raise it if your client shows larger tool results inline, lower it if responses still get saved to a file.',
+        },
+        include_descriptions: {
+          type: 'boolean',
+          description:
+            'Include the (possibly shortened) descriptions of matched terms and characters (default true; compact never includes them). Set false to keep a first chunk small when your client stores large responses in a file; translation, sex, speaking_style and aliases are always included.',
+        },
         compact: {
           type: 'boolean',
           description:
-            'Smaller response for follow-up chunks of a chapter you already started (default false): omits what the first chunk already gave (recent_chapter_titles, chapter_title_original / chapter_title_translation, target_language, enable_original_text_validation, mode) and the descriptions of terms and characters, and leaves out context_before, matched_terms, matched_characters, possible_terms, possible_characters, repeated_passages and memories when empty, previous_chapter_tail when null and special_instructions when empty: a missing field means there is none. Characters keep sex, speaking_style and aliases, so one who first appears in a later chunk still comes with a voice. Paragraphs, progress counts, has_more, completed and next_cursor are always present.',
+            'Smaller response for follow-up chunks of a chapter you already started (default false): omits what the first chunk already gave (recent_chapter_titles, style_hints, chapter_title_original / chapter_title_translation, target_language, enable_original_text_validation, mode) and the descriptions of terms and characters, and leaves out context_before, matched_terms, matched_characters, possible_terms, possible_characters, repeated_passages and memories when empty, previous_chapter_tail when null and special_instructions when empty: a missing field means there is none. Characters keep sex, speaking_style and aliases, so one who first appears in a later chunk still comes with a voice. Paragraphs, progress counts, has_more, completed and next_cursor are always present.',
         },
       },
       required: ['chapter_id'],
     },
-    execute: executeGetTranslationChunk,
+    execute: buildTranslationChunk,
   },
   {
     name: 'submit_translations',
     description:
-      'Validate and persist a batch of paragraph translations (and optional chapter title translation) to the local library, refreshing the live UI immediately. Submit one chunk from get_translation_chunk per call (at most 40 paragraphs by default); send calls one after another, waiting for each result. Submissions to the same book are applied one at a time, so parallel calls gain nothing; get_translation_chunk is read-only, so the next chunk can be fetched while a review correction (write_mode overwrite) is being saved.',
+      'Validate and persist a batch of paragraph translations (and optional chapter title translation) to the local library, refreshing the live UI immediately. Submit one chunk from get_translation_chunk per call (at most 60 paragraphs by default); send calls one after another, waiting for each result. Submissions to the same book are applied one at a time, so parallel calls gain nothing; get_translation_chunk is read-only, so the next chunk can be fetched while a review correction (write_mode overwrite) is being saved.',
     category: 'translation',
     permission: 'translate_and_edit',
     readOnlyHint: false,

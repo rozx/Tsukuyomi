@@ -8,6 +8,7 @@ import {
 import { mergeInstructions } from 'src/services/ai/tools/special-instruction-tools';
 import { describeTool, stringToolParameter } from 'src/services/ai/tools/tool-localization';
 import type { Memory } from 'src/models/memory';
+import type { CharacterSetting } from 'src/models/novel';
 import { CharacterSettingService } from 'src/services/character-setting-service';
 import { MemoryService } from 'src/services/memory-service';
 import { TerminologyService } from 'src/services/terminology-service';
@@ -39,6 +40,8 @@ function parseSex(raw: unknown): 'male' | 'female' | 'other' | undefined {
   return undefined;
 }
 
+type AliasInput = { id?: string; name: string; translation?: string };
+
 function parseAliases(raw: unknown): Array<{ name: string; translation: string }> | undefined {
   if (!Array.isArray(raw)) return undefined;
   return raw
@@ -50,25 +53,57 @@ function parseAliases(raw: unknown): Array<{ name: string; translation: string }
     .filter((a) => a.name.length > 0 && a.translation.length > 0);
 }
 
+/**
+ * 算出要写入的别名列表。aliases 整体替换；append_aliases 在此基础上（没给 aliases 时
+ * 在已有别名上）追加，名称已存在的改写它的译名。返回 undefined 表示别名不变。
+ * 沿用的已有别名只带 id、不带译名，保留它在其他语言下的译名。
+ */
+function resolveAliasUpdate(
+  existing: CharacterSetting | undefined,
+  replace: Array<{ name: string; translation: string }> | undefined,
+  append: Array<{ name: string; translation: string }> | undefined,
+): AliasInput[] | undefined {
+  if (!append || append.length === 0) return replace;
+  const merged: AliasInput[] =
+    replace ??
+    (existing?.aliases ?? []).map((alias) => ({
+      ...(alias.id ? { id: alias.id } : {}),
+      name: alias.name,
+    }));
+  for (const alias of append) {
+    const index = merged.findIndex((entry) => entry.name === alias.name);
+    if (index >= 0) merged[index] = { ...merged[index]!, translation: alias.translation };
+    else merged.push(alias);
+  }
+  return merged;
+}
+
+/** 解析出的条目：更新时 name、translation 都可以省略（保留原值），id 与 name 至少给一个 */
+interface NamedEntityItem {
+  rec: Record<string, unknown>;
+  id: string;
+  name: string;
+  translation: string | undefined;
+}
+
 function parseNamedEntityItem(
   item: unknown,
-):
-  | { ok: true; rec: Record<string, unknown>; id: string; name: string; translation: string }
-  | { ok: false; failure: UpsertItemResult } {
+): { ok: true; item: NamedEntityItem } | { ok: false; failure: UpsertItemResult } {
   if (!item || typeof item !== 'object') {
     return { ok: false, failure: { name: '', action: 'failed', error: 'Item must be an object.' } };
   }
   const rec = item as Record<string, unknown>;
   const id = readTrimmedString(rec.id);
   const name = readTrimmedString(rec.name);
-  const translation = readTrimmedString(rec.translation);
-  if (!name || !translation) {
+  // 空字符串的译名按省略处理：清空译名没有意义，误传时也不会把译名抹掉
+  const translation = readTrimmedString(rec.translation) || undefined;
+  if (!id && !name) {
     return {
       ok: false,
-      failure: { name, action: 'failed', error: 'Both name and translation must be non-empty.' },
+      failure: { name, action: 'failed', error: 'Give id or name to identify the entry.' },
     };
   }
-  return { ok: true, rec, id, name, translation };
+  return { ok: true, item: { rec, id, name, translation } };
 }
 
 /**
@@ -92,35 +127,50 @@ const missingIdFailure = (name: string, id: string): UpsertItemResult => ({
   error: `No entry with id ${id}. Omit id to update by name or create a new entry.`,
 });
 
-async function upsertSingleTerm(
-  bookId: string,
-  language: AppLocale,
+/**
+ * 新增或按补丁更新一个术语 / 角色：省略的字段保留原值。
+ * 新建时名称与译名都必须给；更新时都可以省略。
+ */
+async function upsertNamedEntity<E extends { id: string; name: string }, F extends object>(
   item: unknown,
+  options: {
+    entries: () => readonly E[];
+    /** 名称、译名以外要写入的字段（未传的字段不出现） */
+    fields: (rec: Record<string, unknown>, existing: E | undefined) => F;
+    update: (
+      existing: E,
+      payload: { name?: string; translation?: string } & F,
+    ) => Promise<{ id: string; name: string }>;
+    create: (payload: { name: string; translation: string } & F) => Promise<{
+      id: string;
+      name: string;
+    }>;
+  },
 ): Promise<UpsertItemResult> {
   const parsed = parseNamedEntityItem(item);
   if (!parsed.ok) return parsed.failure;
-  const { rec, id, name, translation } = parsed;
-  const description = readOptionalTrimmedString(rec.description);
+  const { rec, id, name, translation } = parsed.item;
 
   try {
-    const freshBook = useBooksStore().getBookById(bookId);
-    const { existing, missingId } = findUpsertTarget(freshBook?.terminologies ?? [], id, name);
+    const { existing, missingId } = findUpsertTarget(options.entries(), id, name);
     if (missingId) return missingIdFailure(name, id);
-    const payload = {
-      name,
-      translation,
-      ...(description !== undefined ? { description } : {}),
-    };
+    const fields = options.fields(rec, existing);
     if (existing) {
-      const updated = await TerminologyService.updateTerminology(
-        bookId,
-        existing.id,
-        payload,
-        language,
-      );
+      const updated = await options.update(existing, {
+        ...(name ? { name } : {}),
+        ...(translation !== undefined ? { translation } : {}),
+        ...fields,
+      });
       return { id: updated.id, name: updated.name, action: 'updated' };
     }
-    const created = await TerminologyService.addTerminology(bookId, payload, language);
+    if (!name || translation === undefined) {
+      return {
+        name,
+        action: 'failed',
+        error: 'No existing entry matched: both name and translation are required to create one.',
+      };
+    }
+    const created = await options.create({ name, translation, ...fields });
     return { id: created.id, name: created.name, action: 'created' };
   } catch (error) {
     return {
@@ -131,51 +181,55 @@ async function upsertSingleTerm(
   }
 }
 
-async function upsertSingleCharacter(
+function upsertSingleTerm(
   bookId: string,
   language: AppLocale,
   item: unknown,
 ): Promise<UpsertItemResult> {
-  const parsed = parseNamedEntityItem(item);
-  if (!parsed.ok) return parsed.failure;
-  const { rec, id, name, translation } = parsed;
-
-  const sex = parseSex(rec.sex);
-  const description = readOptionalTrimmedString(rec.description);
-  const speakingStyle = readOptionalTrimmedString(rec.speaking_style);
-  const aliases = parseAliases(rec.aliases);
-  const payload = {
-    name,
-    translation,
-    ...(sex !== undefined ? { sex } : {}),
-    ...(description !== undefined ? { description } : {}),
-    ...(speakingStyle !== undefined ? { speakingStyle } : {}),
-    ...(aliases !== undefined ? { aliases } : {}),
-  };
-
-  try {
-    const freshBook = useBooksStore().getBookById(bookId);
-    const { existing, missingId } = findUpsertTarget(freshBook?.characterSettings ?? [], id, name);
-    if (missingId) return missingIdFailure(name, id);
-    if (existing) {
-      const updated = await CharacterSettingService.updateCharacterSetting(
-        bookId,
-        existing.id,
-        payload,
-        language,
-      );
-      return { id: updated.id, name: updated.name, action: 'updated' };
-    }
-    const created = await CharacterSettingService.addCharacterSetting(bookId, payload, language);
-    return { id: created.id, name: created.name, action: 'created' };
-  } catch (error) {
-    return {
-      name,
-      action: 'failed',
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return upsertNamedEntity(item, {
+    entries: () => useBooksStore().getBookById(bookId)?.terminologies ?? [],
+    fields: (rec) => {
+      const description = readOptionalTrimmedString(rec.description);
+      return description !== undefined ? { description } : {};
+    },
+    update: (existing, payload) =>
+      TerminologyService.updateTerminology(bookId, existing.id, payload, language),
+    create: (payload) => TerminologyService.addTerminology(bookId, payload, language),
+  });
 }
+
+function upsertSingleCharacter(
+  bookId: string,
+  language: AppLocale,
+  item: unknown,
+): Promise<UpsertItemResult> {
+  return upsertNamedEntity(item, {
+    entries: () => useBooksStore().getBookById(bookId)?.characterSettings ?? [],
+    fields: (rec, existing: CharacterSetting | undefined) => {
+      const sex = parseSex(rec.sex);
+      const description = readOptionalTrimmedString(rec.description);
+      const speakingStyle = readOptionalTrimmedString(rec.speaking_style);
+      const aliases = resolveAliasUpdate(
+        existing,
+        parseAliases(rec.aliases),
+        parseAliases(rec.append_aliases),
+      );
+      return {
+        ...(sex !== undefined ? { sex } : {}),
+        ...(description !== undefined ? { description } : {}),
+        ...(speakingStyle !== undefined ? { speakingStyle } : {}),
+        ...(aliases !== undefined ? { aliases } : {}),
+      };
+    },
+    update: (existing, payload) =>
+      CharacterSettingService.updateCharacterSetting(bookId, existing.id, payload, language),
+    create: (payload) => CharacterSettingService.addCharacterSetting(bookId, payload, language),
+  });
+}
+
+/** upsert_terms / upsert_characters 共用的补丁语义说明 */
+const UPSERT_PATCH_NOTE =
+  'Updates are patches: fields you omit keep their stored values, so to change one field send only the id (or exact name) and that field; an empty string clears description or speaking_style. Creating a new entry needs both name and translation.';
 
 /** 参数名与书籍 / 章节上的字段 */
 const INSTRUCTION_ARG_FIELDS = [
@@ -408,7 +462,7 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
     // 何时该建术语、每个术语只留一个译名等要求，取自站内 create_term 的同一份说明
     description: withBuiltinGuidance(
       'upsert_terms',
-      'Batch-create or idempotently update terminology entries (matched by id or exact name).',
+      `Batch-create or idempotently update terminology entries (matched by id or exact name). ${UPSERT_PATCH_NOTE}`,
     ),
     category: 'worldbuilding',
     permission: 'translate_and_edit',
@@ -420,7 +474,8 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
         book_id: { type: 'string', description: 'Target book ID (optional if a book is open).' },
         terms: {
           type: 'array',
-          description: 'Terminology items to create or update.',
+          description:
+            'Terminology items to create or update. Give id or name; omitted fields are kept.',
           items: {
             type: 'object',
             properties: {
@@ -429,7 +484,6 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
               translation: stringToolParameter('create_term.parameters.properties.translation'),
               description: stringToolParameter('create_term.parameters.properties.description'),
             },
-            required: ['name', 'translation'],
           },
         },
       },
@@ -475,7 +529,7 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
   {
     name: 'upsert_characters',
     // 术语与角色如何分工、全名与别名怎么放等要求，取自站内的数据管理规则
-    description: `Batch-create or idempotently update character settings (matched by id or exact name). ${getDataManagementRules('external')}`,
+    description: `Batch-create or idempotently update character settings (matched by id or exact name). ${UPSERT_PATCH_NOTE} aliases replaces the whole alias list; append_aliases adds aliases (or retranslates one with the same name) and keeps the rest. ${getDataManagementRules('external')}`,
     category: 'worldbuilding',
     permission: 'translate_and_edit',
     readOnlyHint: false,
@@ -486,7 +540,8 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
         book_id: { type: 'string', description: 'Target book ID (optional if a book is open).' },
         characters: {
           type: 'array',
-          description: 'Character items to create or update.',
+          description:
+            'Character items to create or update. Give id or name; omitted fields are kept.',
           items: {
             type: 'object',
             properties: {
@@ -522,8 +577,20 @@ export const agentMcpWorldbuildingTools: AgentMcpToolSpec[] = [
                   required: ['name', 'translation'],
                 },
               },
+              append_aliases: {
+                type: 'array',
+                description:
+                  'Aliases to add while keeping the existing ones; an alias whose name already exists gets the new translation. Use this instead of aliases to add a nickname or form of address found during review.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string', description: 'Alias as written in the source text.' },
+                    translation: { type: 'string', description: 'Translation of the alias.' },
+                  },
+                  required: ['name', 'translation'],
+                },
+              },
             },
-            required: ['name', 'translation'],
           },
         },
       },

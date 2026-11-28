@@ -157,8 +157,12 @@ describe('buildAgentQuickStartGuide', () => {
   it('翻译一章：一块对应一次提交，复核时就地改写自己的草稿，前文同文的句子沿用原来的译法', () => {
     const guide = desktopGuide();
     const translate = guide.slice(guide.indexOf('### 翻译一章'), guide.indexOf('### 润色校对'));
-    // 一块最多 40 段，取到的一块一次提交完，不再另行分批
-    expect(translate).toMatch(/最多 40 段[^\n]*max_paragraphs/);
+    // 一块最多 60 段、整个响应不超过约 9000 字节，取到的一块一次提交完，不再另行分批
+    expect(translate).toMatch(
+      /最多 60 段[^\n]*9000 字节[^\n]*max_paragraphs[^\n]*max_response_bytes/,
+    );
+    // 书籍没写标点约定时按第一块的 style_hints 对齐前文写法
+    expect(translate).toMatch(/style_hints[^\n]*特殊指令没有规定时照多数/);
     expect(translate).toMatch(/一块[^\n]*一次提交/);
     expect(guide).not.toMatch(/30\s*~\s*50/);
     // 续取同一章的后续块用 compact 省略重复的说明
@@ -231,6 +235,7 @@ describe('buildAgentQuickStartGuide', () => {
     const guide = desktopGuide();
     for (const field of [
       'recent_chapters',
+      'from_first_untranslated',
       'compact',
       'previous_chapter_tail',
       'recent_chapter_titles',
@@ -248,6 +253,9 @@ describe('buildAgentQuickStartGuide', () => {
     expect(guide).not.toMatch(/特殊指令[^\n]*常用词/);
     expect(guide).toMatch(/多种常见译法[^\n]*全书统一[^\n]*术语/);
     expect(guide).toMatch(/翻译决定[^\n]*upsert_memory/);
+    // 更新设定按补丁：只传要改的字段，补别名不覆盖已有的
+    expect(guide).toMatch(/upsert_characters[^\n]*省略的字段保留原值[^\n]*append_aliases/);
+    expect(desktopGuide('en-US')).toMatch(/Updates are patches[^\n]*append_aliases/);
   });
 
   it('浏览器通道说明来源数为 0 时怎么排查', () => {
@@ -334,6 +342,9 @@ describe('buildAgentQuickStartGuide', () => {
     expect(guide).toContain('next_cursor');
     expect(guide).toMatch(/replace_in_translations[\s\S]*cursor/);
     expect(guide).toContain('partial');
+    // 站点上没有新章节时也要看本地还有没有没译完的章节（用户可能刚手动导入过）
+    expect(guide).toMatch(/check_book_updates[^\n]*local_progress[^\n]*has_updates 为 false/);
+    expect(desktopGuide('en-US')).toMatch(/local_progress[^\n]*has_updates is false/);
   });
 
   it('是通用说明而不是具体任务：不包含书名或待填占位', () => {

@@ -241,6 +241,102 @@ describe('AgentMcp worldbuilding tools', () => {
     expect(chars[0]?.aliases).toHaveLength(1);
   });
 
+  it('upsert_characters / upsert_terms 按补丁更新：省略的字段保留原值，更新时可只给 id；append_aliases 追加或改写单个别名而不覆盖其余别名', async () => {
+    const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
+    const call = async (tool: string, args: Record<string, unknown>) => {
+      const res = await kernel.callTool(
+        tool,
+        { book_id: 'book-wb-1', ...args },
+        { channel: 'desktop-mcp' },
+      );
+      expect(res.isError, res.text).toBe(false);
+      return res.data as {
+        results: Array<{ id?: string; name: string; action: string; error?: string }>;
+      };
+    };
+    const longDescription = '長い紹介文。'.repeat(60);
+    const created = await call('upsert_characters', {
+      characters: [
+        {
+          name: 'レオン',
+          translation: '莱昂',
+          sex: 'male',
+          description: longDescription,
+          speaking_style: '沉稳',
+          aliases: [{ name: '黒騎士', translation: '黑骑士' }],
+        },
+      ],
+    });
+    const id = created.results[0]!.id!;
+    const stored = () => useBooksStore().getBookById('book-wb-1')!.characterSettings![0]!;
+    // 别名的先后由存储层的合并决定，这里只比较内容
+    const aliasPairs = () =>
+      stored()
+        .aliases.map((alias) => [alias.name, alias.translation.translation])
+        .sort(([a], [b]) => a!.localeCompare(b!));
+
+    // 只给 id 和要追加的别名：名称、译名、说明、口吻、已有别名都保留
+    const appended = await call('upsert_characters', {
+      characters: [{ id, append_aliases: [{ name: 'レオ', translation: '小莱' }] }],
+    });
+    expect(appended.results[0]).toMatchObject({ id, name: 'レオン', action: 'updated' });
+    expect(stored()).toMatchObject({
+      name: 'レオン',
+      sex: 'male',
+      description: longDescription,
+      speakingStyle: '沉稳',
+    });
+    expect(stored().translation.translation).toBe('莱昂');
+    expect(aliasPairs()).toEqual([
+      ['レオ', '小莱'],
+      ['黒騎士', '黑骑士'],
+    ]);
+
+    // 追加已有的别名名称时改写它的译名，不重复添加
+    await call('upsert_characters', {
+      characters: [
+        { name: 'レオン', append_aliases: [{ name: '黒騎士', translation: '漆黑骑士' }] },
+      ],
+    });
+    expect(aliasPairs()).toEqual([
+      ['レオ', '小莱'],
+      ['黒騎士', '漆黑骑士'],
+    ]);
+
+    // 按名称只补口吻，不传译名：译名与说明不变
+    await call('upsert_characters', {
+      characters: [{ name: 'レオン', speaking_style: '克制冷峻' }],
+    });
+    expect(stored()).toMatchObject({ speakingStyle: '克制冷峻', description: longDescription });
+    expect(stored().translation.translation).toBe('莱昂');
+
+    // aliases 仍是整体替换；空字符串清空说明
+    await call('upsert_characters', {
+      characters: [{ id, aliases: [{ name: 'レオ', translation: '小莱' }], description: '' }],
+    });
+    expect(aliasPairs()).toEqual([['レオ', '小莱']]);
+    expect(stored().description).toBeUndefined();
+
+    // 新建时名称和译名都必须给
+    const missing = await call('upsert_characters', {
+      characters: [{ name: '新キャラ', speaking_style: '活泼' }, { speaking_style: '活泼' }],
+    });
+    expect(missing.results.map((r) => r.action)).toEqual(['failed', 'failed']);
+    expect(missing.results[0]!.error).toContain('translation');
+
+    // 术语同样：只给说明时译名保留，只给 id 也能更新
+    const term = (
+      await call('upsert_terms', {
+        terms: [{ name: '魔導具', translation: '魔导具', description: '魔力驱动的道具' }],
+      })
+    ).results[0]!;
+    await call('upsert_terms', { terms: [{ name: '魔導具', description: '魔力驱动的器具' }] });
+    await call('upsert_terms', { terms: [{ id: term.id, translation: '魔道具' }] });
+    const storedTerm = useBooksStore().getBookById('book-wb-1')!.terminologies![0]!;
+    expect(storedTerm).toMatchObject({ name: '魔導具', description: '魔力驱动的器具' });
+    expect(storedTerm.translation.translation).toBe('魔道具');
+  });
+
   it('upsert_memory 与 search_memories 支持新增、更新和检索记忆', async () => {
     const kernel = createAgentMcpKernel({ tools: agentMcpWorldbuildingTools });
 

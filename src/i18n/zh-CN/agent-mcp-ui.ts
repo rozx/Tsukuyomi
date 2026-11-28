@@ -77,7 +77,7 @@ export default {
       overviewContext:
         'get_app_context：用户现在在哪个页面、打开的书和章节（含翻译进度）、选中的段落及其原文与译文、在页面上划选的文字（selected_text），以及界面语言。用户说「这一段」「这一章」「这里」时先调用它，不要猜。',
       overviewLibrary:
-        'list_books 列出书库；get_book 查看一本书的章节列表与各章翻译进度。长篇不要读整本目录：用 recent_chapters 只取最近几章，用 volume_id 只看某一卷，或把 include_chapters 设为 false 只看卷的概览。术语、角色很多时，list_terms / list_characters 用 limit、offset 分页并把 compact 设为 true。',
+        'list_books 列出书库；get_book 查看一本书的章节列表与各章翻译进度。长篇不要读整本目录：用 recent_chapters 只取最近几章，用 volume_id 只看某一卷，用 from_first_untranslated 配合 limit 只取从第一个没译完的章节起的几章，或把 include_chapters 设为 false 只看卷的概览。术语、角色很多时，list_terms / list_characters 用 limit、offset 分页并把 compact 设为 true。',
       overviewSearch:
         '要知道一个词在全书哪些地方出现，用 search_paragraphs（可搜原文、译文，支持正则）或 count_occurrences（统计次数与章节分布），不要逐章读取；开启了本地嵌入时还可以用 search_chapters 按内容描述找章节。这些搜索以及 get_chapter_paragraphs、list_terms、list_characters、search_help_docs 的关键词默认都是精确匹配；记不清确切写法，或原文可能有错字、异写时，加上 fuzzy: true 做模糊匹配。',
       overviewHelp:
@@ -117,9 +117,9 @@ export default {
       workflowsNote: '下面是每类任务的步骤，照着执行即可。',
       wfTranslateTitle: '翻译一章',
       wfTranslate1:
-        '调用 get_translation_chunk，传入 chapter_id，mode 设为 "untranslated"。一块最多 40 段、约 4000 字原文（可用 max_paragraphs、chunk_size 调整），正好一次译完、一次提交；续取同一章的后续块时加上 compact: true，省略第一块已给过的信息和为空的列表。',
+        '调用 get_translation_chunk，传入 chapter_id，mode 设为 "untranslated"。一块最多 60 段（不计标点不超过 8 个字的短行算半段）、约 4000 字原文，整个响应不超过约 9000 字节（可用 max_paragraphs、chunk_size、max_response_bytes 调整），正好一次译完、一次提交；续取同一章的后续块时加上 compact: true，省略第一块已给过的信息和为空的列表。',
       wfTranslate2:
-        '返回的 paragraphs 是待翻译段落（含 id 与原文）；context_before 是本章前文已有的译文，用来衔接语气；本章还没有译文时改看 previous_chapter_tail，它是上一章末尾的原文与译文，标点习惯和章末固定用语要与它保持一致；recent_chapter_titles 是最近几章的标题原文与译名，新章节的标题格式要与它们一致。matched_terms、matched_characters 是这一块命中的术语和角色；possible_terms、possible_characters 是原文写法略有出入的近似命中（text_in_source 是原文里的写法），可能是原文的错字或异写，确认是同一个词后再使用。repeated_passages 列出本块里与前文同文的段落（本章前文或之前 30 章里原文完全相同、已有译文）和当时的译法：回忆、首尾呼应的句子沿用它，语境不同时再调整；更早的章节和只是相近的句子不会列出，遇到前后篇、回忆、复述前文的段落时用 search_paragraphs 查前文的译法。memories 是相关记忆，special_instructions 是特殊指令，target_language 是目标语言。',
+        '返回的 paragraphs 是待翻译段落（含 id 与原文）；context_before 是本章前文已有的译文，用来衔接语气；本章还没有译文时改看 previous_chapter_tail，它是上一章末尾的原文与译文，标点习惯和章末固定用语要与它保持一致；style_hints（只在第一块）统计了前文译文的引号、破折号、省略号、对白句末句号、数字与空格的写法，特殊指令没有规定时照多数的写法；recent_chapter_titles 是最近几章的标题原文与译名，新章节的标题格式要与它们一致。matched_terms、matched_characters 是这一块命中的术语和角色；possible_terms、possible_characters 是原文写法略有出入的近似命中（text_in_source 是原文里的写法），可能是原文的错字或异写，确认是同一个词后再使用。repeated_passages 列出本块里与前文同文的段落（本章前文或之前 30 章里原文完全相同、已有译文）和当时的译法：回忆、首尾呼应的句子沿用它，语境不同时再调整；更早的章节和只是相近的句子不会列出，遇到前后篇、回忆、复述前文的段落时用 search_paragraphs 查前文的译法。memories 是相关记忆，special_instructions 是特殊指令，target_language 是目标语言。',
       wfTranslate3:
         '逐段翻译：一个原文段落对应一个译文段落，不合并、不拆分、不省略；术语和角色名使用给出的译法。',
       wfTranslate4:
@@ -148,7 +148,8 @@ export default {
       wfImport3:
         '站点不受支持或抓取失败时，自行获取正文，用 create_book 建书，再用 add_chapters 写入章节。错误里带有 book_id 时说明书已存在，只需要 add_chapters，不要重新建书。',
       wfUpdateTitle: '跟进连载更新',
-      wfUpdate1: '调用 check_book_updates 查看来源站点的新章节。',
+      wfUpdate1:
+        '调用 check_book_updates 查看来源站点的新章节。返回的 local_progress 给出本地的翻译进度：用户可能已经手动导入了新章节，has_updates 为 false 时也要看还有没有没译完的章节。',
       wfUpdate2:
         '调用 apply_book_updates 导入，默认只导入新章节。返回的 applied_chapters 里就有新章节的 chapter_id，不需要再读整本目录。status 为 partial 表示有章节没能检查或导入，见 failed，不要当作已经更新完。',
       wfUpdate3:
@@ -158,7 +159,7 @@ export default {
       wfWorld1:
         '开始翻译一本书之前，先用 list_terms 和 list_characters 了解已有的译法。get_app_context 返回 local_embedding_enabled: false 时，记忆只按关键词带出：再用 list_memories 浏览全部摘要，确认标点、称呼等全书约定。',
       wfWorld2:
-        '遇到作品特有的新术语或新角色时，用 upsert_terms、upsert_characters 记录下来，之后全书沿用。无歧义的日常词不建术语；有多种常见译法、需要全书统一的词（职业、魔物类别、设定高频词，如魔道具、アンデッド）要建，按块带出；人名放角色表，不放术语表；建角色前先确认它不是已有角色的别名。',
+        '遇到作品特有的新术语或新角色时，用 upsert_terms、upsert_characters 记录下来，之后全书沿用。无歧义的日常词不建术语；有多种常见译法、需要全书统一的词（职业、魔物类别、设定高频词，如魔道具、アンデッド）要建，按块带出；人名放角色表，不放术语表；建角色前先确认它不是已有角色的别名。更新时只传 id（或名称）和要改的字段，省略的字段保留原值；给角色补别名用 append_aliases，不会覆盖已有的别名。',
       wfWorld3:
         '可复用的翻译决定（称呼怎么译、某个词固定怎么译、文风偏好、固定用语）用 upsert_memory 记下，取翻译块时会按相关度自动带出；剧情、背景和世界观不要写进记忆。需要查找时用 search_memories，结果按相关度排序并带有分数。',
       wfWorld4:
@@ -293,18 +294,20 @@ export default {
       search_help_docs: '按标题、简介和正文搜索内置使用文档；不带搜索词时列出全部文档。',
       get_help_doc: '读取一篇内置使用文档的全文。',
       list_books: '列出本地书库全部书籍的元数据、卷章数与目标翻译语言。',
-      get_book: '获取单本书籍完整卷章目录及各章翻译进度统计。',
+      get_book: '获取单本书籍卷章目录及各章翻译进度，可从第一个没译完的章节起只取几章。',
       create_book: '在本地书库创建新书籍，支持同时写入初始章节。',
       add_chapters: '按纯文本分段或段落数组向指定卷批量新增章节。',
       update_book: '修改书籍的作者、简介、标签与别名。',
       move_chapters: '调整章节在卷内的顺序，或把章节移到另一卷（可新建一卷）。',
       import_book_from_url: '通过内置站点能力从受支持 URL 导入或增量更新书籍及章节正文。',
-      check_book_updates: '检查书籍来源站点是否有新章节，可选比对已导入章节的正文是否改动。',
+      check_book_updates:
+        '检查书籍来源站点是否有新章节，可选比对已导入章节的正文，并附带本地翻译进度。',
       apply_book_updates:
         '把来源站点的更新导入书籍：默认只导入新章节，可选应用已导入章节的正文改动。',
       search_chapters: '按内容描述找出最相关的章节（需要开启本地嵌入）。',
       delete_book: '永久删除指定书籍及章节（仅完全控制模式可用）。',
-      get_translation_chunk: '按字符预算打包待翻段落、前文衔接、命中术语/角色/记忆与特殊指令。',
+      get_translation_chunk:
+        '按段数、字数与响应大小打包待翻段落、前文衔接、命中术语/角色/记忆、标点习惯与特殊指令。',
       submit_translations: '校验并批量持久化段落译文及可选章节标题译文，实时刷新界面。',
       get_chapter_paragraphs: '按索引区间或关键词读取章节段落、当前译文及可选历史版本。',
       update_chapter_title: '更新指定章节在目标语言下的译文标题。',
@@ -312,9 +315,9 @@ export default {
       count_occurrences: '统计关键词在全书原文或译文里出现的次数、段落数与章节分布。',
       replace_in_translations: '在全书或单个章节当前选用的译文里查找并替换文字，可先预览再写入。',
       list_terms: '列出书籍全部术语及当前目标语言译法。',
-      upsert_terms: '按名称批量新增或更新术语译法与说明。',
+      upsert_terms: '按名称或 ID 批量新增术语，或按补丁更新译法与说明。',
       list_characters: '列出书籍全部角色设定、别名与说话风格。',
-      upsert_characters: '按角色名批量新增或更新角色设定与别名译法。',
+      upsert_characters: '按角色名或 ID 批量新增角色，或按补丁更新设定、追加别名。',
       search_memories:
         '按自然语言混合检索书籍的记忆（可复用的翻译决定），结果按相关度排序；不带查询时列出最近的记忆。',
       upsert_memory:

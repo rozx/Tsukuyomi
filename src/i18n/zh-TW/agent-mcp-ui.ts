@@ -77,7 +77,7 @@ export default {
       overviewContext:
         'get_app_context：使用者現在在哪個頁面、開啟的書和章節（含翻譯進度）、選取的段落及其原文與譯文、在頁面上反白選取的文字（selected_text），以及介面語言。使用者說「這一段」「這一章」「這裡」時先呼叫它，不要猜。',
       overviewLibrary:
-        'list_books 列出書庫；get_book 查看一本書的章節列表與各章翻譯進度。長篇不要讀整本目錄：用 recent_chapters 只取最近幾章，用 volume_id 只看某一卷，或把 include_chapters 設為 false 只看卷的概覽。術語、角色很多時，list_terms / list_characters 用 limit、offset 分頁並把 compact 設為 true。',
+        'list_books 列出書庫；get_book 查看一本書的章節列表與各章翻譯進度。長篇不要讀整本目錄：用 recent_chapters 只取最近幾章，用 volume_id 只看某一卷，用 from_first_untranslated 搭配 limit 只取從第一個沒譯完的章節起的幾章，或把 include_chapters 設為 false 只看卷的概覽。術語、角色很多時，list_terms / list_characters 用 limit、offset 分頁並把 compact 設為 true。',
       overviewSearch:
         '要知道一個詞在全書哪些地方出現，用 search_paragraphs（可搜原文、譯文，支援正規表示式）或 count_occurrences（統計次數與章節分布），不要逐章讀取；啟用了本機嵌入時還可以用 search_chapters 依內容描述找章節。這些搜尋以及 get_chapter_paragraphs、list_terms、list_characters、search_help_docs 的關鍵字預設都是精確比對；記不清確切寫法，或原文可能有錯字、異寫時，加上 fuzzy: true 做模糊比對。',
       overviewHelp:
@@ -117,9 +117,9 @@ export default {
       workflowsNote: '下面是每類任務的步驟，照著執行即可。',
       wfTranslateTitle: '翻譯一章',
       wfTranslate1:
-        '呼叫 get_translation_chunk，傳入 chapter_id，mode 設為 "untranslated"。一塊最多 40 段、約 4000 字原文（可用 max_paragraphs、chunk_size 調整），正好一次譯完、一次提交；續取同一章的後續塊時加上 compact: true，省略第一塊已給過的資訊和為空的清單。',
+        '呼叫 get_translation_chunk，傳入 chapter_id，mode 設為 "untranslated"。一塊最多 60 段（不計標點不超過 8 個字的短行算半段）、約 4000 字原文，整個回應不超過約 9000 位元組（可用 max_paragraphs、chunk_size、max_response_bytes 調整），正好一次譯完、一次提交；續取同一章的後續塊時加上 compact: true，省略第一塊已給過的資訊和為空的清單。',
       wfTranslate2:
-        '回傳的 paragraphs 是待翻譯段落（含 id 與原文）；context_before 是本章前文已有的譯文，用來銜接語氣；本章還沒有譯文時改看 previous_chapter_tail，它是上一章末尾的原文與譯文，標點習慣和章末固定用語要與它保持一致；recent_chapter_titles 是最近幾章的標題原文與譯名，新章節的標題格式要與它們一致。matched_terms、matched_characters 是這一塊命中的術語和角色；possible_terms、possible_characters 是原文寫法略有出入的近似命中（text_in_source 是原文裡的寫法），可能是原文的錯字或異寫，確認是同一個詞後再使用。repeated_passages 列出本塊裡與前文同文的段落（本章前文或之前 30 章裡原文完全相同、已有譯文）和當時的譯法：回憶、首尾呼應的句子沿用它，語境不同時再調整；更早的章節和只是相近的句子不會列出，遇到前後篇、回憶、複述前文的段落時用 search_paragraphs 查前文的譯法。memories 是相關記憶，special_instructions 是特殊指令，target_language 是目標語言。',
+        '回傳的 paragraphs 是待翻譯段落（含 id 與原文）；context_before 是本章前文已有的譯文，用來銜接語氣；本章還沒有譯文時改看 previous_chapter_tail，它是上一章末尾的原文與譯文，標點習慣和章末固定用語要與它保持一致；style_hints（只在第一塊）統計了前文譯文的引號、破折號、刪節號、對白句末句號、數字與空格的寫法，特殊指令沒有規定時照多數的寫法；recent_chapter_titles 是最近幾章的標題原文與譯名，新章節的標題格式要與它們一致。matched_terms、matched_characters 是這一塊命中的術語和角色；possible_terms、possible_characters 是原文寫法略有出入的近似命中（text_in_source 是原文裡的寫法），可能是原文的錯字或異寫，確認是同一個詞後再使用。repeated_passages 列出本塊裡與前文同文的段落（本章前文或之前 30 章裡原文完全相同、已有譯文）和當時的譯法：回憶、首尾呼應的句子沿用它，語境不同時再調整；更早的章節和只是相近的句子不會列出，遇到前後篇、回憶、複述前文的段落時用 search_paragraphs 查前文的譯法。memories 是相關記憶，special_instructions 是特殊指令，target_language 是目標語言。',
       wfTranslate3:
         '逐段翻譯：一個原文段落對應一個譯文段落，不合併、不拆分、不省略；術語和角色名使用給出的譯法。',
       wfTranslate4:
@@ -148,7 +148,8 @@ export default {
       wfImport3:
         '站點不受支援或抓取失敗時，自行取得正文，用 create_book 建書，再用 add_chapters 寫入章節。錯誤裡帶有 book_id 時表示書已存在，只需要 add_chapters，不要重新建書。',
       wfUpdateTitle: '跟進連載更新',
-      wfUpdate1: '呼叫 check_book_updates 查看來源站點的新章節。',
+      wfUpdate1:
+        '呼叫 check_book_updates 查看來源站點的新章節。回傳的 local_progress 給出本機的翻譯進度：使用者可能已經手動匯入了新章節，has_updates 為 false 時也要看還有沒有沒譯完的章節。',
       wfUpdate2:
         '呼叫 apply_book_updates 匯入，預設只匯入新章節。回傳的 applied_chapters 裡就有新章節的 chapter_id，不需要再讀整本目錄。status 為 partial 表示有章節沒能檢查或匯入，見 failed，不要當作已經更新完。',
       wfUpdate3:
@@ -158,7 +159,7 @@ export default {
       wfWorld1:
         '開始翻譯一本書之前，先用 list_terms 和 list_characters 了解已有的譯法。get_app_context 回傳 local_embedding_enabled: false 時，記憶只按關鍵字帶出：再用 list_memories 瀏覽全部摘要，確認標點、稱呼等全書約定。',
       wfWorld2:
-        '遇到作品特有的新術語或新角色時，用 upsert_terms、upsert_characters 記錄下來，之後全書沿用。無歧義的日常詞不建術語；有多種常見譯法、需要全書統一的詞（職業、魔物類別、設定高頻詞，如魔道具、アンデッド）要建，依塊帶出；人名放角色表，不放術語表；建角色前先確認它不是既有角色的別名。',
+        '遇到作品特有的新術語或新角色時，用 upsert_terms、upsert_characters 記錄下來，之後全書沿用。無歧義的日常詞不建術語；有多種常見譯法、需要全書統一的詞（職業、魔物類別、設定高頻詞，如魔道具、アンデッド）要建，依塊帶出；人名放角色表，不放術語表；建角色前先確認它不是既有角色的別名。更新時只傳 id（或名稱）和要改的欄位，省略的欄位保留原值；給角色補別名用 append_aliases，不會覆蓋既有的別名。',
       wfWorld3:
         '可重複使用的翻譯決定（稱呼怎麼譯、某個詞固定怎麼譯、文風偏好、固定用語）用 upsert_memory 記下，取翻譯塊時會依相關度自動帶出；劇情、背景和世界觀不要寫進記憶。需要查找時用 search_memories，結果依相關度排序並帶有分數。',
       wfWorld4:
@@ -293,18 +294,20 @@ export default {
       search_help_docs: '依標題、簡介和內文搜尋內建使用文件；不帶搜尋詞時列出全部文件。',
       get_help_doc: '讀取一篇內建使用文件的全文。',
       list_books: '列出本機書庫全部書籍的中繼資料、卷章數與目標翻譯語言。',
-      get_book: '取得單本書籍完整卷章目錄及各章翻譯進度統計。',
+      get_book: '取得單本書籍卷章目錄及各章翻譯進度，可從第一個沒譯完的章節起只取幾章。',
       create_book: '於本機書庫建立新書籍，支援同時寫入初始章節。',
       add_chapters: '依純文字分段或段落陣列向指定卷批次新增章節。',
       update_book: '修改書籍的作者、簡介、標籤與別名。',
       move_chapters: '調整章節在卷內的順序，或把章節移到另一卷（可新建一卷）。',
       import_book_from_url: '透過內建站點能力從支援的 URL 匯入或增量更新書籍及章節正文。',
-      check_book_updates: '檢查書籍來源站點是否有新章節，可選比對已匯入章節的正文是否改動。',
+      check_book_updates:
+        '檢查書籍來源站點是否有新章節，可選比對已匯入章節的正文，並附帶本機翻譯進度。',
       apply_book_updates:
         '把來源站點的更新匯入書籍：預設只匯入新章節，可選套用已匯入章節的正文改動。',
       search_chapters: '依內容描述找出最相關的章節（需要啟用本機嵌入）。',
       delete_book: '永久刪除指定書籍與章節（僅完全控制模式可用）。',
-      get_translation_chunk: '依字元預算打包待譯段落、前文銜接、命中術語/角色/記憶與特殊指令。',
+      get_translation_chunk:
+        '依段數、字數與回應大小打包待譯段落、前文銜接、命中術語/角色/記憶、標點習慣與特殊指令。',
       submit_translations: '驗證並批次儲存段落譯文及可選章節標題譯文，即時重新整理介面。',
       get_chapter_paragraphs: '依索引區間或關鍵字讀取章節段落、目前譯文及可選歷史版本。',
       update_chapter_title: '更新指定章節在目標語言下的譯文標題。',
@@ -313,9 +316,9 @@ export default {
       count_occurrences: '統計關鍵字在全書原文或譯文裡出現的次數、段落數與章節分布。',
       replace_in_translations: '在全書或單一章節目前選用的譯文裡尋找並取代文字，可先預覽再寫入。',
       list_terms: '列出書籍全部術語及目前目標語言譯法。',
-      upsert_terms: '依名稱批次新增或更新術語譯法與說明。',
+      upsert_terms: '依名稱或 ID 批次新增術語，或按補丁更新譯法與說明。',
       list_characters: '列出書籍全部角色設定、別名與說話風格。',
-      upsert_characters: '依角色名批次新增或更新角色設定與別名譯法。',
+      upsert_characters: '依角色名或 ID 批次新增角色，或按補丁更新設定、追加別名。',
       search_memories:
         '依自然語言混合檢索書籍的記憶（可重複使用的翻譯決定），結果依相關度排序；不帶查詢時列出最近的記憶。',
       upsert_memory:

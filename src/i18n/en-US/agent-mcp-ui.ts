@@ -84,23 +84,23 @@ export default {
       overviewContext:
         'get_app_context: which page the user is on, the open book and chapter (with translation progress), the selected paragraph with its original text and translation, any text highlighted on the page (selected_text), and the interface language. Call it first when the user says "this paragraph", "this chapter" or "here" instead of guessing.',
       overviewLibrary:
-        'list_books lists the library; get_book shows the chapter list and per-chapter translation progress of one book. For long books do not fetch the whole table of contents: use recent_chapters for only the latest chapters, volume_id for one volume, or set include_chapters to false for a volume outline. When a book has many terms or characters, page list_terms / list_characters with limit and offset and set compact to true.',
+        'list_books lists the library; get_book shows the chapter list and per-chapter translation progress of one book. For long books do not fetch the whole table of contents: use recent_chapters for only the latest chapters, volume_id for one volume, from_first_untranslated with limit for the next chapters to translate, or set include_chapters to false for a volume outline. When a book has many terms or characters, page list_terms / list_characters with limit and offset and set compact to true.',
       overviewSearch:
-        'To see where a word appears across the book, use search_paragraphs (original text or translations, regular expressions supported) or count_occurrences (counts and per-chapter distribution) instead of reading chapter by chapter. With local embedding enabled, search_chapters finds chapters from a description of their content. These searches, and the keyword filters of get_chapter_paragraphs, list_terms, list_characters and search_help_docs, match exactly by default; when you are unsure of the exact spelling, or the source may contain typos or variants, add fuzzy: true for fuzzy matching.',
+        'To find where a word appears across the book, use search_paragraphs (source or translations, regex supported) or count_occurrences (counts per chapter) instead of reading chapter by chapter. With local embedding enabled, search_chapters finds chapters by a description of their content. These searches and the keyword filters of get_chapter_paragraphs, list_terms, list_characters and search_help_docs match exactly by default; add fuzzy: true when unsure of the spelling or the source may have typos or variants.',
       overviewHelp:
         'When the user asks how to use Tsukuyomi or where a feature is, find the relevant guide with search_help_docs, read it in full with get_help_doc, then answer. Do not answer from memory.',
       overviewWorkflows:
         'The full procedure for each kind of task is written under "Workflows" below; there is nothing else to read. The MCP prompts translate-chapter, polish-chapter and import-and-translate (prompts/get) contain the same steps and exist so the user can start a task directly.',
       overviewWorkflowsWeb:
-        'The full procedure for each kind of task is written under "Workflows" below; there is nothing else to read. get_workflow_guide returns the same steps and is only needed to read the current procedure when this guide is out of date.',
+        'Each kind of task is described step by step under "Workflows" below; nothing else needs reading. get_workflow_guide returns the same steps and is only needed when this guide is out of date.',
       ruleIds:
         'Submit strictly one translation per returned paragraph ID; do not merge, split or skip paragraphs.',
       ruleNoRepeat:
         'Do not submit different translations for the same paragraph repeatedly. If a submission is rejected, fix it using the returned reason and resubmit only the rejected paragraphs.',
       intro:
-        "This is the usage guide for Tsukuyomi, a novel translation tool. It provides tools through an MCP server (server name: tsukuyomi): use them to read and write the user's library directly, and write results back into the app rather than only printing them in the chat.",
+        "This is the usage guide for Tsukuyomi, a novel translation tool. It provides tools through an MCP server (server name: tsukuyomi): use them to read and write the user's library directly and write results back into the app, not only into the chat.",
       introWeb:
-        "This is the usage guide for Tsukuyomi, a novel translation tool. It runs in the user's browser and provides tools through a local relay called webmcp-local-relay: use them to read and write the user's library directly, and write results back into the app rather than only printing them in the chat. The tools come from the open page and disappear temporarily when it is closed or reloaded.",
+        "This is the usage guide for Tsukuyomi, a novel translation tool. It runs in the user's browser and provides tools through a local relay called webmcp-local-relay: use them to read and write the user's library directly and write results back into the app, not only into the chat. The tools come from the open page and disappear temporarily when it is closed or reloaded.",
       versionNote: 'This guide is for Tsukuyomi {version}.',
       overviewVersion:
         'If the app_version returned by get_app_context differs from the version at the top of this guide, the guide is out of date: call get_quick_start_guide to get the guide for the current version and replace the saved AGENTS.md with it; the existing MCP configuration stays as it is.',
@@ -125,19 +125,19 @@ export default {
       workflowsNote: 'These are the steps for each kind of task; follow them as written.',
       wfTranslateTitle: 'Translate a chapter',
       wfTranslate1:
-        'Call get_translation_chunk with the chapter_id and mode set to "untranslated". A chunk holds at most 40 paragraphs and about 4000 source characters (adjust with max_paragraphs, chunk_size): translate and submit it in one go. For later chunks of the same chapter pass compact: true, which drops what the first chunk already gave and any empty list.',
+        'Call get_translation_chunk with the chapter_id and mode set to "untranslated". Translate and submit each chunk in one go (at most 60 paragraphs and about 9000 bytes; adjust with max_paragraphs, max_response_bytes). For later chunks of the same chapter pass compact: true, which drops what the first chunk already gave and any empty list.',
       wfTranslate2:
-        "paragraphs are what to translate. context_before is this chapter's preceding translated text, for continuity; when there is none yet, previous_chapter_tail gives the end of the previous chapter (source and translation): follow its punctuation habits and fixed closing phrases. Match the format of recent_chapter_titles for a new chapter title. matched_terms and matched_characters occur in this chunk; possible_terms and possible_characters are near matches (text_in_source shows the source spelling, likely a typo or variant): confirm it is the same word before using them. repeated_passages gives the earlier translation of paragraphs whose identical source appears earlier in this chapter or the previous 30 chapters: reuse it for flashbacks and callbacks unless the context differs; for older or merely similar lines (two-part chapters, retold passages) look up the earlier wording with search_paragraphs. memories are related notes; follow special_instructions and translate into target_language.",
+        "paragraphs are what to translate. context_before is this chapter's preceding translated text; without it, previous_chapter_tail gives the end of the previous chapter: keep its punctuation habits and fixed closing phrases. style_hints (first chunk) counts punctuation styles in earlier translations: follow the dominant one unless special_instructions differ. Match recent_chapter_titles when translating the chapter title. matched_terms and matched_characters occur in this chunk; possible_terms and possible_characters are near matches (text_in_source is the source spelling, likely a typo): confirm before using them. repeated_passages gives the earlier translation of identical source lines in this chapter or the previous 30: reuse it for flashbacks and callbacks unless the context differs; find older or merely similar lines with search_paragraphs. memories are related notes; follow special_instructions and translate into target_language.",
       wfTranslate3:
         'Translate paragraph by paragraph: one translated paragraph per source paragraph, with no merging, splitting or omission. Use the given renderings for terms and character names.',
       wfTranslate4:
-        'Call submit_translations; each item in paragraphs has paragraph_id and translated_text. If the book has source-prefix validation enabled, also include original_text_prefix (the first 3 to 20 characters of the source paragraph). With the first chunk of a chapter you can also submit the translated chapter title as chapter_title_translation; put the name of the model you are using in model_label. Submit the whole chunk in one call and wait for the result before starting the next chunk; do not submit to the same chapter in parallel.',
+        'Call submit_translations; each item in paragraphs has paragraph_id and translated_text, plus original_text_prefix (the first 3 to 20 characters of the source paragraph) if the book has source-prefix validation enabled. With the first chunk you can also submit the chapter title as chapter_title_translation; put your model name in model_label. Submit the whole chunk in one call and wait for the result before the next one; do not submit to the same chapter in parallel.',
       wfTranslate5:
-        'Check failed_items in the result and fix and resubmit only those paragraphs. While remaining_untranslated_count is greater than 0, go back to step 1; when it reaches 0 the chapter is done. When translating several chapters in a row, finish the review of each chapter before starting the next; do not skip it to save time.',
+        'Check failed_items in the result and fix and resubmit only those paragraphs. While remaining_untranslated_count is greater than 0, go back to step 1; when it reaches 0 the chapter is done. When translating several chapters in a row, review each one before starting the next; never skip it to save time.',
       wfTranslatePlan:
         'Before submitting any translation, prepare the same way the built-in translation does in its planning phase. Create new terms, new characters and reusable translation decisions at this point instead of leaving them until afterwards:',
       wfTranslateReview:
-        'After submitting this chunk, review it the same way the built-in translation does in its review phase. When correcting a translation you just submitted, set write_mode to "overwrite" to revise that draft in place instead of using up another version. Whatever you had to confirm with search_paragraphs (a form of address, a voice, punctuation, a fixed rendering) is missing from the settings: add it to that character\'s speaking_style or an existing memory (honorific address forms go in memories, not aliases). Watch for “” or —— the source lacks, typos, and he/she for a character of unknown gender. Checklist:',
+        'After submitting this chunk, review it as the built-in translation does in its review phase. To correct a translation you just submitted, set write_mode to "overwrite": it revises that draft in place instead of using another version. Whatever you had to confirm with search_paragraphs (a form of address, a voice, punctuation, a fixed rendering) is missing from the settings: add it to that character\'s speaking_style or an existing memory (honorific address forms go in memories, not aliases). Watch for “” or —— the source lacks, typos, and he/she for a character of unknown gender. Checklist:',
       wfTranslateBrief:
         'For every later chunk a short preparation is enough, followed by the same translate, submit and review steps:',
       wfPolishTitle: 'Polish and proofread',
@@ -159,7 +159,8 @@ export default {
       wfImport3:
         'If the site is unsupported or fetching fails, fetch the text yourself, create the book with create_book and write the chapters with add_chapters. If the error includes a book_id the book already exists: use add_chapters only and do not create it again.',
       wfUpdateTitle: 'Follow an ongoing serial',
-      wfUpdate1: 'Call check_book_updates to see which chapters are new on the source site.',
+      wfUpdate1:
+        'Call check_book_updates to see which chapters are new on the source site. Its local_progress also shows unfinished local chapters: check it even when has_updates is false.',
       wfUpdate2:
         'Call apply_book_updates to import them; by default only new chapters are imported. The returned applied_chapters already contains the chapter_id of each new chapter, so there is no need to fetch the table of contents again. A status of partial means some chapters could not be checked or imported (see failed); do not treat the book as up to date.',
       wfUpdate3:
@@ -169,7 +170,7 @@ export default {
       wfWorld1:
         'Before translating a book, check the existing renderings with list_terms and list_characters. When get_app_context shows local_embedding_enabled: false, memories match by keyword only, so also skim every summary with list_memories for book-wide conventions.',
       wfWorld2:
-        'Record terms and characters specific to the work with upsert_terms and upsert_characters for the whole book. Skip unambiguous everyday words, but add words with several common renderings that must stay uniform (classes, monster types). Personal names go in the character list, not the term list; check that a new character is not an alias of an existing one.',
+        'Record terms and characters specific to the work with upsert_terms and upsert_characters for the whole book. Skip unambiguous everyday words, but add words with several common renderings that must stay uniform (classes, monster types). Personal names go in the character list, not the term list; check that a new character is not an alias of an existing one. Updates are patches: send only the fields to change; append_aliases keeps existing aliases.',
       wfWorld3:
         'Record reusable translation decisions (how a form of address is rendered, the fixed rendering of a word, style preferences, fixed phrases) with upsert_memory; they are brought back automatically by relevance when you fetch a translation chunk. Do not store plot, background or world-building in memories. Use search_memories to look things up; results are ranked by relevance and carry a score.',
       wfWorld4:
@@ -324,7 +325,8 @@ export default {
       get_help_doc: 'Read one built-in user guide in full.',
       list_books:
         'List all books in the local library with metadata, volume/chapter counts, and target language.',
-      get_book: 'Get full volumes, chapters, and per-chapter translation progress for a book.',
+      get_book:
+        'Get volumes, chapters, and per-chapter translation progress for a book, optionally just the next chapters to translate.',
       create_book: 'Create a new book in the local library with optional initial chapters.',
       add_chapters: 'Batch-add chapters from plain text or paragraph arrays to a volume.',
       update_book: "Edit a book's author, description, tags and alternate titles.",
@@ -333,14 +335,14 @@ export default {
       import_book_from_url:
         'Fetch and import or incrementally update a book and its chapter contents from a supported URL.',
       check_book_updates:
-        "Checks a book's source site for new chapters, optionally comparing the text of imported chapters for changes.",
+        "Checks a book's source site for new chapters, optionally comparing the text of imported chapters, and reports local translation progress.",
       apply_book_updates:
         'Imports updates from the source site: new chapters by default, optionally text changes to chapters already imported.',
       search_chapters:
         'Find the chapters most relevant to a description of their content (needs local embedding).',
       delete_book: 'Permanently delete a book and its chapters (full permission mode only).',
       get_translation_chunk:
-        'Bundle the next paragraph chunk with preceding context, matched terms, characters, memories, and instructions.',
+        'Bundle the next paragraph chunk, sized to fit the response, with preceding context, matched terms, characters, memories, punctuation habits, and instructions.',
       submit_translations:
         'Validate and persist batch paragraph translations and optional chapter title translation with live UI refresh.',
       get_chapter_paragraphs:
@@ -353,9 +355,9 @@ export default {
       replace_in_translations:
         'Find and replace text in the selected translations across the whole book or one chapter, with an optional preview.',
       list_terms: 'List all terminology entries for a book.',
-      upsert_terms: 'Batch create or update terminology translations and descriptions.',
+      upsert_terms: 'Batch create terms, or patch their translations and descriptions.',
       list_characters: 'List all character settings, aliases, and speaking styles for a book.',
-      upsert_characters: 'Batch create or update character settings and alias translations.',
+      upsert_characters: 'Batch create characters, or patch their settings and append aliases.',
       search_memories:
         "Search a book's memories (reusable translation decisions) via hybrid semantic + keyword retrieval, ranked by relevance; lists recent memories when no query is given.",
       upsert_memory:
